@@ -1,0 +1,548 @@
+name: 7-Agent QA Pipeline
+
+# Trigger Strategy:
+#   pull_request -> Runs ALL 7 agents (AGT-01 through AGT-07).
+#                  PR only passes after AGT-07 (Report Architect) completes.
+#                  Blocks merge on: missing JIRA ticket, FAIL alignment verdict,
+#                  coverage below threshold, or test execution failures.
+#   push / schedule / manual -> Full 7-agent pipeline on the target branch.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop]
+
+  push:
+    branches: [main, develop]
+
+  schedule:
+    - cron: "0 2 * * *"
+
+  workflow_dispatch:
+    inputs:
+      from_agent:
+        description: "Resume full pipeline from agent number (1-7)"
+        required: false
+        default: "1"
+      single_agent:
+        description: "Run only this agent (0 = run all)"
+        required: false
+        default: "0"
+
+# =============================================================================
+# JOB 1 - PR Pipeline (AGT-01 through AGT-07)
+# Runs on every pull_request event.
+# The PR check only passes after AGT-07 completes successfully.
+# =============================================================================
+
+jobs:
+  pr-pipeline:
+    name: "PR Pipeline (AGT-01 to AGT-07)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    permissions:
+      pull-requests: write
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: qa_reports
+          POSTGRES_USER: qa_user
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Run DB migrations
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: postgresql://qa_user:${{ secrets.DB_PASSWORD }}@localhost:5432/qa_reports
+
+      - name: Resolve changed files
+        run: |
+          FILES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          printf 'PR_CHANGED_FILES<<EOF\n%s\nEOF\n' "$FILES" >> "$GITHUB_ENV"
+          echo "Changed files:"
+          echo "$FILES"
+
+      # Post a "pipeline in progress" comment immediately so the PR author
+      # knows the full run has started (it will be updated when complete).
+      - name: Post pipeline started comment
+        uses: actions/github-script@v7
+        env:
+          REPO_VAR: ${{ github.repository }}
+          RUN_ID_VAR: ${{ github.run_id }}
+          SERVER_URL_VAR: ${{ github.server_url }}
+          PR_TITLE_VAR: ${{ github.event.pull_request.title }}
+        with:
+          script: |
+            const repo      = process.env.REPO_VAR       || '';
+            const runId     = process.env.RUN_ID_VAR     || '';
+            const serverUrl = process.env.SERVER_URL_VAR || '';
+            const prTitle   = process.env.PR_TITLE_VAR   || '';
+            const runUrl    = serverUrl + '/' + repo + '/actions/runs/' + runId;
+
+            const body = [
+              '## :hourglass_flowing_sand: QA Pipeline - Running',
+              '',
+              'The full 7-agent pipeline has started for this PR.',
+              '',
+              '| Agent | Role | Status |',
+              '|-------|------|--------|',
+              '| AGT-01 | Codebase Analyst | :hourglass: Running |',
+              '| AGT-02 | JIRA Story Validator | :clock1: Pending |',
+              '| AGT-03 | Test Case Designer | :clock1: Pending |',
+              '| AGT-04 | Playwright Engineer | :clock1: Pending |',
+              '| AGT-05 | Coverage Auditor | :clock1: Pending |',
+              '| AGT-06 | Test Executor | :clock1: Pending |',
+              '| AGT-07 | Report Architect | :clock1: Pending |',
+              '',
+              '> The PR check will only pass after AGT-07 completes successfully.',
+              '',
+              '[View live run](' + runUrl + ')'
+            ].join('\n');
+
+            const listResp = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const existing = listResp.data.find(function(c) {
+              return c.user.type === 'Bot' && c.body.indexOf('QA Pipeline') !== -1;
+            });
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              const resp = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+              core.exportVariable('BOT_COMMENT_ID', String(resp.data.id));
+            }
+
+      # Run the full pipeline. AGT-01 extracts the JIRA ticket from the PR
+      # title/branch. AGT-02 validates code vs story. AGT-03 to AGT-07
+      # generate tests, execute them, and publish the report.
+      # The pipeline exits non-zero on any failure (JIRA mismatch, coverage
+      # below threshold, SLA breach, etc.) which fails the PR check.
+      - name: Run full 7-agent pipeline (AGT-01 to AGT-07)
+        id: pipeline
+        continue-on-error: true
+        run: npm run pipeline
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_HOST: ${{ vars.JIRA_HOST }}
+          JIRA_HOST_ALLOWLIST: ${{ vars.JIRA_HOST }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          REPO_PATH: "./"
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BRANCH: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          MAX_FILES_SCAN: "500"
+          ALLOWED_TEST_URLS: ${{ vars.STAGING_URL }}
+          BASE_URL: ${{ vars.STAGING_URL }}
+          SLA_PASS_RATE: "0.95"
+          MIN_P0_COVERAGE: "80"
+          MIN_P1_COVERAGE: "80"
+          MAX_GAP_PERCENT: "20"
+          STAKEHOLDER_EMAILS: ${{ vars.STAKEHOLDER_EMAILS }}
+          DATABASE_URL: postgresql://qa_user:${{ secrets.DB_PASSWORD }}@localhost:5432/qa_reports
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+
+      # Post the final report comment regardless of pipeline outcome.
+      # This updates the "in progress" comment posted above.
+      - name: Post final report to PR
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          JIRA_HOST_VAR: ${{ vars.JIRA_HOST }}
+          REPO_VAR: ${{ github.repository }}
+          RUN_ID_VAR: ${{ github.run_id }}
+          SERVER_URL_VAR: ${{ github.server_url }}
+          PIPELINE_OUTCOME: ${{ steps.pipeline.outcome }}
+        with:
+          script: |
+            const fs         = require('fs');
+            const jiraHost   = process.env.JIRA_HOST_VAR    || '';
+            const repo       = process.env.REPO_VAR         || '';
+            const runId      = process.env.RUN_ID_VAR       || '';
+            const serverUrl  = process.env.SERVER_URL_VAR   || '';
+            const outcome    = process.env.PIPELINE_OUTCOME || 'failure';
+            const runUrl     = serverUrl + '/' + repo + '/actions/runs/' + runId;
+            const succeeded  = outcome === 'success';
+
+            // Helper to safely read a JSON state file
+            function readState(filename) {
+              try {
+                return JSON.parse(fs.readFileSync('pipeline-state/' + filename, 'utf8'));
+              } catch (e) {
+                return null;
+              }
+            }
+
+            const validated  = readState('validated-scenarios.json');
+            const coverage   = readState('coverage-report.json');
+            const execution  = readState('execution-result.json');
+            const dashboard  = readState('dashboard-data.json');
+
+            const first      = validated && validated[0] ? validated[0] : null;
+            const verdict    = first ? (first.alignmentVerdict || 'UNKNOWN') : 'UNKNOWN';
+            const ticket     = first ? (first.jiraRef || 'N/A') : 'N/A';
+            const jiraSum    = first ? (first.jiraSummary || 'N/A') : 'N/A';
+            const findings   = first ? (first.alignmentFindings || []) : [];
+
+            // Determine per-agent status icons
+            function agentIcon(stateFile, extraCheck) {
+              var data = readState(stateFile);
+              if (!data) return ':x: Failed';
+              if (extraCheck && !extraCheck(data)) return ':warning: Warning';
+              return ':white_check_mark: Passed';
+            }
+
+            var agt01Icon = validated ? ':white_check_mark: Passed' : ':x: Failed';
+            var agt02Icon = first
+              ? (verdict === 'PASS' ? ':white_check_mark: Passed' : verdict === 'WARN' ? ':warning: Warning' : ':x: Failed')
+              : ':x: Failed';
+            var agt03Icon = readState('test-cases.json') ? ':white_check_mark: Passed' : ':x: Failed';
+            var agt04Icon = coverage ? ':white_check_mark: Passed' : ':x: Failed';
+            var agt05Icon = coverage
+              ? (coverage.blocked ? ':x: Failed (coverage below threshold)' : ':white_check_mark: Passed')
+              : ':x: Failed';
+            var agt06Icon = execution
+              ? (execution.failed > 0 ? ':warning: ' + execution.failed + ' tests failed' : ':white_check_mark: Passed')
+              : ':x: Failed';
+            var agt07Icon = succeeded ? ':white_check_mark: Passed' : ':x: Failed';
+
+            var passRate   = execution ? (execution.passRate * 100).toFixed(1) + '%' : 'N/A';
+            var covPct     = coverage  ? coverage.coveragePercent.toFixed(1) + '%' : 'N/A';
+            var p0Pct      = coverage  ? coverage.p0CoveragePercent.toFixed(1) + '%' : 'N/A';
+            var duration   = execution ? (execution.durationMs / 1000).toFixed(0) + 's' : 'N/A';
+
+            var headerIcon = succeeded ? ':white_check_mark:' : ':x:';
+            var headerText = succeeded ? 'QA Pipeline Passed' : 'QA Pipeline Failed';
+
+            // Alignment findings section
+            var criticals = findings.filter(function(f) { return f.severity === 'critical'; });
+            var majors    = findings.filter(function(f) { return f.severity === 'major'; });
+
+            var findingRows = findings.slice(0, 10)
+              .map(function(f) {
+                return '| ' + f.type + ' | ' + f.category + ' | ' + f.severity + ' | ' + f.description + ' |';
+              })
+              .join('\n');
+
+            var critSection = criticals.length > 0
+              ? '### :x: Critical Findings (' + criticals.length + ')\n' +
+                criticals.map(function(f) { return '- **[' + f.category + ']** ' + f.description; }).join('\n')
+              : '';
+
+            var majorSection = majors.length > 0
+              ? '### :warning: Major Findings (' + majors.length + ')\n' +
+                majors.map(function(f) { return '- **[' + f.category + ']** ' + f.description; }).join('\n')
+              : '';
+
+            var alignmentSummary = first && first.alignmentSummary ? '> ' + first.alignmentSummary : '';
+
+            var parts = [
+              '## ' + headerIcon + ' ' + headerText,
+              '',
+              '**JIRA Story:** [`' + ticket + '`](' + jiraHost + '/browse/' + ticket + ') - ' + jiraSum,
+              '**Alignment Verdict:** `' + verdict + '`',
+              '',
+              alignmentSummary,
+              '',
+              '### Agent Results',
+              '',
+              '| Agent | Role | Result |',
+              '|-------|------|--------|',
+              '| AGT-01 | Codebase Analyst | ' + agt01Icon + ' |',
+              '| AGT-02 | JIRA Story Validator | ' + agt02Icon + ' |',
+              '| AGT-03 | Test Case Designer | ' + agt03Icon + ' |',
+              '| AGT-04 | Playwright Engineer | ' + agt04Icon + ' |',
+              '| AGT-05 | Coverage Auditor | ' + agt05Icon + ' |',
+              '| AGT-06 | Test Executor | ' + agt06Icon + ' |',
+              '| AGT-07 | Report Architect | ' + agt07Icon + ' |',
+              '',
+              '### Test Results',
+              '',
+              '| Metric | Value |',
+              '|--------|-------|',
+              '| Pass Rate | ' + passRate + ' |',
+              '| Overall Coverage | ' + covPct + ' |',
+              '| P0 Coverage | ' + p0Pct + ' |',
+              '| Duration | ' + duration + ' |',
+              '',
+              critSection,
+              majorSection,
+            ];
+
+            if (findings.length > 0) {
+              parts = parts.concat([
+                '',
+                '<details>',
+                '<summary>All JIRA Alignment Findings (' + findings.length + ')</summary>',
+                '',
+                '| Type | Category | Severity | Finding |',
+                '|------|----------|----------|---------|',
+                findingRows,
+                '</details>',
+              ]);
+            }
+
+            parts = parts.concat([
+              '',
+              '---',
+              '*[View full pipeline run](' + runUrl + ')*',
+            ]);
+
+            var body = parts.join('\n');
+
+            // Upsert the comment
+            var listResp = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            var existing = listResp.data.find(function(c) {
+              return c.user.type === 'Bot' && c.body.indexOf('QA Pipeline') !== -1;
+            });
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body,
+              });
+            }
+
+      - name: Upload pipeline state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-pipeline-state-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          path: pipeline-state/
+          retention-days: 14
+
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-playwright-results-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          path: test-results/
+          retention-days: 14
+
+      - name: Upload QA dashboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-qa-dashboard-${{ github.event.pull_request.number }}-${{ github.run_id }}
+          path: reports/
+          retention-days: 14
+
+      # This step is what actually fails the PR check.
+      # It runs after the comment is posted so the author always gets feedback.
+      - name: Enforce pipeline success (AGT-07 gate)
+        if: steps.pipeline.outcome == 'failure'
+        run: |
+          echo "Pipeline did not complete successfully through AGT-07."
+          echo "Check the QA report comment on this PR for details."
+          exit 1
+
+      - name: PR Pipeline summary
+        if: always()
+        run: |
+          echo "## PR Pipeline Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f pipeline-state/execution-result.json ]; then
+            node -e "var r=require('./pipeline-state/execution-result.json');var c=require('./pipeline-state/coverage-report.json');var v=require('./pipeline-state/validated-scenarios.json');var first=v[0]||{};console.log('| Metric | Value |');console.log('|--------|-------|');console.log('| JIRA Ticket | '+(first.jiraRef||'N/A')+' |');console.log('| Alignment Verdict | '+(first.alignmentVerdict||'N/A')+' |');console.log('| Pass Rate | '+(r.passRate*100).toFixed(1)+'% |');console.log('| Passed | '+r.passed+'/'+r.totalTests+' |');console.log('| P0 Coverage | '+c.p0CoveragePercent.toFixed(1)+'% |');console.log('| Duration | '+(r.durationMs/1000).toFixed(0)+'s |');" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Pipeline did not reach AGT-06 execution stage" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+# =============================================================================
+# JOB 2 - Full Pipeline on push / schedule / manual dispatch
+# =============================================================================
+
+  full-pipeline:
+    name: "Full QA Pipeline (AGT-01 to AGT-07)"
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: qa_reports
+          POSTGRES_USER: qa_user
+          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Run DB migrations
+        run: npm run db:migrate
+        env:
+          DATABASE_URL: postgresql://qa_user:${{ secrets.DB_PASSWORD }}@localhost:5432/qa_reports
+
+      - name: Restore pipeline state (resume runs only)
+        if: github.event.inputs.from_agent != '' && github.event.inputs.from_agent != '1'
+        uses: actions/cache@v4
+        with:
+          path: pipeline-state/
+          key: pipeline-state-${{ github.ref }}-${{ github.run_id }}
+          restore-keys: pipeline-state-${{ github.ref }}-
+
+      - name: Resolve changed files (push events)
+        if: github.event_name == 'push'
+        run: |
+          FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
+          printf 'PR_CHANGED_FILES<<EOF\n%s\nEOF\n' "$FILES" >> "$GITHUB_ENV"
+
+      - name: Run 7-Agent QA Pipeline
+        run: |
+          FROM="${{ github.event.inputs.from_agent || '1' }}"
+          SINGLE="${{ github.event.inputs.single_agent || '0' }}"
+          if [ "$SINGLE" != "0" ]; then
+            npm run pipeline -- --agent="$SINGLE"
+          else
+            npm run pipeline -- --from="$FROM"
+          fi
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_HOST: ${{ vars.JIRA_HOST }}
+          JIRA_HOST_ALLOWLIST: ${{ vars.JIRA_HOST }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          REPO_PATH: "./"
+          PR_TITLE: ${{ github.event.head_commit.message }}
+          PR_BRANCH: ${{ github.ref_name }}
+          PR_NUMBER: ${{ github.run_number }}
+          GITHUB_BASE_REF: "main"
+          ALLOWED_TEST_URLS: ${{ vars.STAGING_URL }}
+          BASE_URL: ${{ vars.STAGING_URL }}
+          SLA_PASS_RATE: "0.95"
+          MIN_P0_COVERAGE: "80"
+          MIN_P1_COVERAGE: "80"
+          MAX_GAP_PERCENT: "20"
+          STAKEHOLDER_EMAILS: ${{ vars.STAKEHOLDER_EMAILS }}
+          DATABASE_URL: postgresql://qa_user:${{ secrets.DB_PASSWORD }}@localhost:5432/qa_reports
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+
+      - name: Save pipeline state
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: pipeline-state/
+          key: pipeline-state-${{ github.ref }}-${{ github.run_id }}
+
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-${{ github.run_id }}
+          path: test-results/
+          retention-days: 30
+
+      - name: Upload QA dashboard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-dashboard-${{ github.run_id }}
+          path: reports/
+          retention-days: 7
+
+      - name: Upload traceability matrix
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: traceability-matrix-${{ github.run_id }}
+          path: pipeline-state/traceability-matrix.json
+          retention-days: 30
+
+      - name: Pipeline summary
+        if: always()
+        run: |
+          echo "## 7-Agent QA Pipeline Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f pipeline-state/execution-result.json ]; then
+            node -e "var r=require('./pipeline-state/execution-result.json');var c=require('./pipeline-state/coverage-report.json');console.log('| Metric | Value |');console.log('|--------|-------|');console.log('| Pass Rate | '+(r.passRate*100).toFixed(1)+'% |');console.log('| Passed | '+r.passed+'/'+r.totalTests+' |');console.log('| Failed | '+r.failed+' |');console.log('| P0 Coverage | '+c.p0CoveragePercent.toFixed(1)+'% |');console.log('| Overall Coverage | '+c.coveragePercent.toFixed(1)+'% |');console.log('| Duration | '+(r.durationMs/1000).toFixed(0)+'s |');" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No execution results found - pipeline may not have reached AGT-06" >> "$GITHUB_STEP_SUMMARY"
+          fi
