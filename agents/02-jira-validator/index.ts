@@ -1,7 +1,7 @@
 /**
  * AGT-02 — JIRA Story Validator
  *
- * Fetches the specific JIRA story identified in the PR (tg-demo-xxxxx format),
+ * Fetches the specific JIRA story identified in the PR (TGDEMO-xxxxx format),
  * then performs a deep alignment analysis:
  *
  *   1. Fetches the story's description, acceptance criteria, and linked issues

@@ -15,7 +15,7 @@ Every PR triggers the complete pipeline. All 7 agents run sequentially. The PR c
            │
            ▼
   ┌─────────────────┐
-  │     AGT-01      │  Extracts tg-demo-xxxxx ticket from PR title or branch.
+  │     AGT-01      │  Extracts TGDEMO-xxxxx ticket from PR title or branch.
   │  Codebase       │  Scans only the files changed in this PR.
   │  Analyst        │  Generates PR-scoped test scenarios.
   └────────┬────────┘
@@ -127,19 +127,19 @@ npm run pipeline
 AGT-01 extracts the JIRA ticket from the PR title or branch name. The ticket format is:
 
 ```
-tg-demo-XXXXX   (case-insensitive, 1–6 digits)
+TGDEMO-XXXXX   (case-insensitive, 1–6 digits)
 ```
 
 Examples that will be detected:
 
 ```
 # In PR title
-feat: tg-demo-12345 add payment gateway integration
-fix: [TG-DEMO-99] correct invoice rounding error
+feat: TGDEMO-12345 add payment gateway integration
+fix: [TGDEMO-99] correct invoice rounding error
 
 # In branch name
-feat/tg-demo-12345-payment-gateway
-bugfix/tg-demo-99-invoice-rounding
+feat/TGDEMO-12345-payment-gateway
+bugfix/TGDEMO-99-invoice-rounding
 ```
 
 If no ticket is found in either the PR title or branch name, AGT-01 throws immediately and the pipeline halts before any LLM calls are made.
@@ -177,7 +177,7 @@ Triggered on every PR open or update targeting `main` or `develop`. The PR statu
 
 | Condition | Source | Detail |
 |-----------|--------|--------|
-| Missing JIRA ticket | AGT-01 | `tg-demo-xxxxx` not found in PR title or branch |
+| Missing JIRA ticket | AGT-01 | `TGDEMO-xxxxx` not found in PR title or branch |
 | Alignment FAIL | AGT-02 | Code contradicts or is unrelated to the JIRA story |
 | P0 coverage below threshold | AGT-05 | <80% P0 test coverage after gap remediation |
 | P1 coverage below threshold | AGT-05 | <80% P1 test coverage after gap remediation |
@@ -212,7 +212,7 @@ Triggered on every PR open or update targeting `main` or `develop`. The PR statu
 | Variable | Example |
 |----------|---------|
 | `JIRA_HOST` | `https://yourcompany.atlassian.net` |
-| `JIRA_PROJECT_KEY` | `TG-DEMO` |
+| `JIRA_PROJECT_KEY` | `TGDEMO` |
 | `STAGING_URL` | `https://staging.yourapp.com` |
 | `STAKEHOLDER_EMAILS` | `qa@company.com,eng-lead@company.com` |
 
@@ -346,7 +346,7 @@ test_failures (
 ## Contributing
 
 1. Fork the repository
-2. Create a branch named with your ticket: `git checkout -b feat/tg-demo-12345-description`
+2. Create a branch named with your ticket: `git checkout -b feat/TGDEMO-12345-description`
 3. Make your changes — agents are isolated modules in `agents/`
 4. Run `npm run typecheck && npm run lint` before committing
 5. Open a PR — the pipeline runs automatically and posts a full report comment

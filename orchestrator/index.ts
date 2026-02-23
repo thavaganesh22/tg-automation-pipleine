@@ -51,7 +51,7 @@ async function main(): Promise<void> {
       log.info(`Validating JIRA story: ${ticket ?? "(no ticket found)"}`);
     }
 
-    // AGT-02 fetches the specific story identified in the PR (tg-demo-xxxxx)
+    // AGT-02 fetches the specific story identified in the PR (TGDEMO-xxxxx)
     // and validates that the code changes actually match the story description
     // and acceptance criteria. Throws on FAIL verdict — blocks the pipeline.
     const validatedScenarios = await runJiraValidator(scenarios, config.jira);

@@ -2,7 +2,7 @@
  * AGT-01 — Codebase Analyst
  *
  * Triggered on Pull Request. Extracts the JIRA story number from the PR title
- * or branch name (format: tg-demo-xxxxx), then scans ONLY the files changed in
+ * or branch name (format: TGDEMO-xxxxx), then scans ONLY the files changed in
  * that PR to generate focused, PR-scoped high-level test scenarios.
  *
  * PR context is injected via environment variables set by the GitHub Actions
@@ -30,7 +30,7 @@ const ScenarioSchema = z.object({
   userJourneys: z.array(z.string()).optional(),
   apiEndpoints: z.array(z.string()).optional(),
   // PR-specific fields
-  jiraTicket: z.string(),             // e.g. "TG-DEMO-12345"
+  jiraTicket: z.string(),             // e.g. "TGDEMO-12345"
   prNumber: z.string().optional(),
   changedFiles: z.array(z.string()),  // files touched in this PR
 });
@@ -38,7 +38,7 @@ const ScenarioSchema = z.object({
 export type Scenario = z.infer<typeof ScenarioSchema>;
 
 export interface PRContext {
-  jiraTicket: string;   // Extracted ticket ID, e.g. "TG-DEMO-12345"
+  jiraTicket: string;   // Extracted ticket ID, e.g. "TGDEMO-12345"
   prNumber: string;
   prTitle: string;
   prBranch: string;
@@ -52,10 +52,10 @@ const MAX_FILES = parseInt(process.env.MAX_FILES_SCAN ?? "1000", 10);
 const MAX_FILE_SIZE_BYTES = 500_000; // 500KB
 
 /**
- * JIRA ticket format: tg-demo-xxxxx (case-insensitive).
+ * JIRA ticket format: TGDEMO-xxxxx (case-insensitive).
  * Matches in PR title, branch name, or commit messages.
  */
-const JIRA_TICKET_PATTERN = /\b(tg-demo-\d{1,6})\b/i;
+const JIRA_TICKET_PATTERN = /\b(TGDEMO-\d{1,6})\b/i;
 
 const IGNORED_EXTENSIONS = new Set([
   ".lock", ".map", ".min.js", ".min.css", ".png", ".jpg",
@@ -124,7 +124,7 @@ export function extractPRContext(): PRContext {
       `[AGT-01 GUARDRAIL] No JIRA ticket found in PR title or branch name.\n` +
       `  PR title:  "${prTitle}"\n` +
       `  Branch:    "${prBranch}"\n` +
-      `  Expected format: tg-demo-xxxxx (e.g. tg-demo-12345)\n` +
+      `  Expected format: TGDEMO-xxxxx (e.g. TGDEMO-12345)\n` +
       `  Please include the JIRA ticket in your PR title or branch name.`
     );
   }
