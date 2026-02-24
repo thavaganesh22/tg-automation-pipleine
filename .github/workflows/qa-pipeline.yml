@@ -15,8 +15,8 @@ on:
   push:
     branches: [main, develop]
 
-  schedule:
-    - cron: "0 2 * * *"
+  # schedule:
+  # - cron: "0 2 * * *"
 
   workflow_dispatch:
     inputs:
@@ -409,9 +409,9 @@ jobs:
             echo "Pipeline did not reach AGT-06 execution stage" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-# =============================================================================
-# JOB 2 - Full Pipeline on push / schedule / manual dispatch
-# =============================================================================
+  # =============================================================================
+  # JOB 2 - Full Pipeline on push / schedule / manual dispatch
+  # =============================================================================
 
   full-pipeline:
     name: "Full QA Pipeline (AGT-01 to AGT-07)"
