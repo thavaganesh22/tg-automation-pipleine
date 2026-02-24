@@ -1,0 +1,114 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Employee Directory — Docker Compose
+#
+#  Services:
+#    mongodb   — MongoDB 7 with seeded employee data
+#    backend   — Express/TypeScript REST API  (port 4000)
+#    frontend  — React/Vite SPA via nginx     (port 3000)
+#
+#  Quick start:
+#    docker compose up --build
+#
+#  Then open:
+#    App:        http://localhost:3000
+#    API health: http://localhost:4000/api/health
+#    Mongo shell: docker compose exec mongodb mongosh employee_directory
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── MongoDB ─────────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7.0
+    container_name: emp-mongodb
+    restart: unless-stopped
+
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme}
+      MONGO_INITDB_DATABASE: employee_directory
+
+    volumes:
+      # Persistent data across restarts
+      - mongo_data:/data/db
+      # Seed script — runs once on first startup
+      - ./employee-app/mongo-init/seed.js:/docker-entrypoint-initdb.d/seed.js:ro
+
+    ports:
+      - "27017:27017"
+
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    networks:
+      - emp-net
+
+  # ── Backend API ──────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./employee-app/backend
+      dockerfile: Dockerfile
+    container_name: emp-backend
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # Uses admin credentials to connect; Mongoose creates the DB if needed
+      MONGODB_URI: mongodb://admin:${MONGO_ROOT_PASSWORD:-changeme}@mongodb:27017/employee_directory?authSource=admin
+      CORS_ORIGIN: http://localhost:3000
+
+    ports:
+      - "4000:4000"
+
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 25s
+
+    networks:
+      - emp-net
+
+  # ── Frontend ──────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./employee-app/frontend
+      dockerfile: Dockerfile
+    container_name: emp-frontend
+    restart: unless-stopped
+
+    ports:
+      - "3000:80"
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - emp-net
+
+# ── Volumes & networks ──────────────────────────────────────────────────────────
+volumes:
+  mongo_data:
+    name: emp-mongo-data
+
+networks:
+  emp-net:
+    name: emp-network
+    driver: bridge

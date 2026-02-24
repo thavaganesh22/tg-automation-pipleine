@@ -15,8 +15,8 @@ const log = new PipelineLogger();
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const fromAgent = parseInt(args.find(a => a.startsWith("--from="))?.split("=")[1] ?? "1");
-  const singleAgent = parseInt(args.find(a => a.startsWith("--agent="))?.split("=")[1] ?? "0");
+  const fromAgent = parseInt(args.find((a) => a.startsWith("--from="))?.split("=")[1] ?? "1");
+  const singleAgent = parseInt(args.find((a) => a.startsWith("--agent="))?.split("=")[1] ?? "0");
 
   log.banner();
   const config = await loadConfig();
@@ -29,7 +29,7 @@ async function main(): Promise<void> {
     // PR context is set by the CI workflow via environment variables:
     //   PR_TITLE, PR_BRANCH, PR_NUMBER, GITHUB_BASE_REF, PR_CHANGED_FILES
     // AGT-01 reads these directly from process.env — no explicit passing needed.
-    const prTitle  = process.env.PR_TITLE ?? "";
+    const prTitle = process.env.PR_TITLE ?? "";
     const prBranch = process.env.PR_BRANCH ?? "";
     if (prTitle || prBranch) {
       log.info(`PR context: "${prTitle}" (${prBranch})`);
@@ -38,7 +38,10 @@ async function main(): Promise<void> {
     const scenarios = await runCodebaseAnalyst(config.repoPath);
     await state.save("scenarios", scenarios);
     log.done(`Generated ${scenarios.length} PR-scoped scenarios`);
-    if (singleAgent === 1) { log.complete("Single-agent run complete"); return; }
+    if (singleAgent === 1) {
+      log.complete("Single-agent run complete");
+      return;
+    }
   }
 
   // ── AGENT 02: JIRA Story Alignment Validation ─────────────────────────────
@@ -69,10 +72,13 @@ async function main(): Promise<void> {
 
     log.done(
       `${validatedScenarios.length} scenarios validated | ` +
-      `Verdict: ${verdict} | ` +
-      `${mismatches.length} mismatches | ${gaps.length} gaps`
+        `Verdict: ${verdict} | ` +
+        `${mismatches.length} mismatches | ${gaps.length} gaps`
     );
-    if (singleAgent === 2) { log.complete("Single-agent run complete"); return; }
+    if (singleAgent === 2) {
+      log.complete("Single-agent run complete");
+      return;
+    }
   }
 
   // ── AGENT 03: Test Case Design ────────────────────────────────────────────
@@ -82,7 +88,10 @@ async function main(): Promise<void> {
     const testCases = await runTestCaseDesigner(validatedScenarios);
     await state.save("test-cases", testCases);
     log.done(`Generated ${testCases.length} manual test cases`);
-    if (singleAgent === 3) { log.complete("Single-agent run complete"); return; }
+    if (singleAgent === 3) {
+      log.complete("Single-agent run complete");
+      return;
+    }
   }
 
   // ── AGENT 04: Playwright Test Generation ──────────────────────────────────
@@ -92,7 +101,10 @@ async function main(): Promise<void> {
     const apiSpecs = await loadApiSpecs(config.openApiPath);
     await runPlaywrightEngineer(testCases, apiSpecs);
     log.done("Playwright specs, POMs, and fixtures written to playwright-tests/");
-    if (singleAgent === 4) { log.complete("Single-agent run complete"); return; }
+    if (singleAgent === 4) {
+      log.complete("Single-agent run complete");
+      return;
+    }
   }
 
   // ── AGENT 05: Coverage Audit ──────────────────────────────────────────────
@@ -104,15 +116,17 @@ async function main(): Promise<void> {
 
     log.done(
       `Coverage: ${coverageReport.coveragePercent.toFixed(1)}% | ` +
-      `P0: ${coverageReport.p0CoveragePercent.toFixed(1)}% | ` +
-      `P1: ${coverageReport.p1CoveragePercent.toFixed(1)}%`
+        `P0: ${coverageReport.p0CoveragePercent.toFixed(1)}% | ` +
+        `P1: ${coverageReport.p1CoveragePercent.toFixed(1)}%`
     );
 
     // GUARDRAIL: feedback loop — remediate gaps before execution
     if (coverageReport.blocked) {
       log.warn("P0/P1 coverage < 80% — triggering AGT-04 gap remediation pass");
       const apiSpecs = await loadApiSpecs(config.openApiPath);
-      const gapCaseIds = new Set(coverageReport.gapCases.map((g: { testCaseId: string }) => g.testCaseId));
+      const gapCaseIds = new Set(
+        coverageReport.gapCases.map((g: { testCaseId: string }) => g.testCaseId)
+      );
       const gapTestCases = testCases.filter((tc: { id: string }) => gapCaseIds.has(tc.id));
       await runPlaywrightEngineer(gapTestCases, apiSpecs, { remediationMode: true });
 
@@ -123,15 +137,18 @@ async function main(): Promise<void> {
       if (coverageReport.blocked) {
         log.error(
           `Coverage still below threshold after remediation.\n` +
-          `P0: ${coverageReport.p0CoveragePercent.toFixed(1)}% | P1: ${coverageReport.p1CoveragePercent.toFixed(1)}%\n` +
-          `Escalating to human review — pipeline halted.`
+            `P0: ${coverageReport.p0CoveragePercent.toFixed(1)}% | P1: ${coverageReport.p1CoveragePercent.toFixed(1)}%\n` +
+            `Escalating to human review — pipeline halted.`
         );
         process.exit(1);
       }
       log.done("Remediation successful — coverage thresholds met");
     }
 
-    if (singleAgent === 5) { log.complete("Single-agent run complete"); return; }
+    if (singleAgent === 5) {
+      log.complete("Single-agent run complete");
+      return;
+    }
   }
 
   // ── AGENT 06: Test Execution ──────────────────────────────────────────────
@@ -145,9 +162,12 @@ async function main(): Promise<void> {
     const passRate = ((executionResult.passed / executionResult.totalTests) * 100).toFixed(1);
     log.done(
       `${executionResult.passed}/${executionResult.totalTests} passed (${passRate}%) ` +
-      `in ${(executionResult.durationMs / 1000).toFixed(1)}s`
+        `in ${(executionResult.durationMs / 1000).toFixed(1)}s`
     );
-    if (singleAgent === 6) { log.complete("Single-agent run complete"); return; }
+    if (singleAgent === 6) {
+      log.complete("Single-agent run complete");
+      return;
+    }
   }
 
   // ── AGENT 07: Report Generation ───────────────────────────────────────────

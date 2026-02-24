@@ -30,15 +30,15 @@ const ScenarioSchema = z.object({
   userJourneys: z.array(z.string()).optional(),
   apiEndpoints: z.array(z.string()).optional(),
   // PR-specific fields
-  jiraTicket: z.string(),             // e.g. "TGDEMO-12345"
+  jiraTicket: z.string(), // e.g. "TGDEMO-12345"
   prNumber: z.string().optional(),
-  changedFiles: z.array(z.string()),  // files touched in this PR
+  changedFiles: z.array(z.string()), // files touched in this PR
 });
 
 export type Scenario = z.infer<typeof ScenarioSchema>;
 
 export interface PRContext {
-  jiraTicket: string;   // Extracted ticket ID, e.g. "TGDEMO-12345"
+  jiraTicket: string; // Extracted ticket ID, e.g. "TGDEMO-12345"
   prNumber: string;
   prTitle: string;
   prBranch: string;
@@ -58,8 +58,19 @@ const MAX_FILE_SIZE_BYTES = 500_000; // 500KB
 const JIRA_TICKET_PATTERN = /\b(TGDEMO-\d{1,6})\b/i;
 
 const IGNORED_EXTENSIONS = new Set([
-  ".lock", ".map", ".min.js", ".min.css", ".png", ".jpg",
-  ".jpeg", ".gif", ".svg", ".ico", ".woff", ".woff2", ".ttf",
+  ".lock",
+  ".map",
+  ".min.js",
+  ".min.css",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".svg",
+  ".ico",
+  ".woff",
+  ".woff2",
+  ".ttf",
 ]);
 
 const SECRET_PATTERNS = [
@@ -110,9 +121,9 @@ export async function runCodebaseAnalyst(repoPath: string): Promise<Scenario[]> 
 // ── PR Context Extraction ──────────────────────────────────────────────────
 
 export function extractPRContext(): PRContext {
-  const prTitle  = process.env.PR_TITLE   ?? "";
-  const prBranch = process.env.PR_BRANCH  ?? "";
-  const prNumber = process.env.PR_NUMBER  ?? "0";
+  const prTitle = process.env.PR_TITLE ?? "";
+  const prBranch = process.env.PR_BRANCH ?? "";
+  const prNumber = process.env.PR_NUMBER ?? "0";
   const baseBranch = process.env.GITHUB_BASE_REF ?? "main";
 
   // Extract JIRA ticket from PR title first, then branch name
@@ -122,16 +133,23 @@ export function extractPRContext(): PRContext {
   if (!jiraTicket) {
     throw new Error(
       `[AGT-01 GUARDRAIL] No JIRA ticket found in PR title or branch name.\n` +
-      `  PR title:  "${prTitle}"\n` +
-      `  Branch:    "${prBranch}"\n` +
-      `  Expected format: TGDEMO-xxxxx (e.g. TGDEMO-12345)\n` +
-      `  Please include the JIRA ticket in your PR title or branch name.`
+        `  PR title:  "${prTitle}"\n` +
+        `  Branch:    "${prBranch}"\n` +
+        `  Expected format: TGDEMO-xxxxx (e.g. TGDEMO-12345)\n` +
+        `  Please include the JIRA ticket in your PR title or branch name.`
     );
   }
 
   const changedFiles = getChangedFiles(baseBranch);
 
-  return { jiraTicket: jiraTicket.toUpperCase(), prNumber, prTitle, prBranch, baseBranch, changedFiles };
+  return {
+    jiraTicket: jiraTicket.toUpperCase(),
+    prNumber,
+    prTitle,
+    prBranch,
+    baseBranch,
+    changedFiles,
+  };
 }
 
 function extractJiraTicket(text: string): string | null {
@@ -147,7 +165,10 @@ function getChangedFiles(baseBranch: string): string[] {
   // If GH Actions provides the list directly, use it (avoids git fetch overhead)
   const envList = process.env.PR_CHANGED_FILES;
   if (envList) {
-    return envList.split("\n").map(f => f.trim()).filter(Boolean);
+    return envList
+      .split("\n")
+      .map((f) => f.trim())
+      .filter(Boolean);
   }
 
   // Fallback: use git diff
@@ -156,9 +177,14 @@ function getChangedFiles(baseBranch: string): string[] {
       `git diff --name-only origin/${baseBranch}...HEAD 2>/dev/null || git diff --name-only HEAD~1`,
       { encoding: "utf-8" }
     );
-    return raw.split("\n").map(f => f.trim()).filter(Boolean);
+    return raw
+      .split("\n")
+      .map((f) => f.trim())
+      .filter(Boolean);
   } catch {
-    console.warn("  [AGT-01] Could not determine changed files via git — scanning all source files");
+    console.warn(
+      "  [AGT-01] Could not determine changed files via git — scanning all source files"
+    );
     return [];
   }
 }
@@ -194,7 +220,9 @@ async function readChangedFiles(
 
       // GUARDRAIL: skip files > 500KB
       if (stat.size > MAX_FILE_SIZE_BYTES) {
-        console.warn(`[AGT-01 GUARDRAIL] Skipping large file: ${relativePath} (${(stat.size / 1024).toFixed(0)}KB)`);
+        console.warn(
+          `[AGT-01 GUARDRAIL] Skipping large file: ${relativePath} (${(stat.size / 1024).toFixed(0)}KB)`
+        );
         continue;
       }
 

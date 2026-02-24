@@ -33,11 +33,13 @@ const JiraStorySchema = z.object({
   storyType: z.string(),
   assignee: z.string().nullable(),
   labels: z.array(z.string()),
-  linkedIssues: z.array(z.object({
-    key: z.string(),
-    type: z.string(),
-    summary: z.string(),
-  })),
+  linkedIssues: z.array(
+    z.object({
+      key: z.string(),
+      type: z.string(),
+      summary: z.string(),
+    })
+  ),
   components: z.array(z.string()),
 });
 
@@ -50,8 +52,8 @@ export const AlignmentFindingSchema = z.object({
   type: z.enum(["MATCH", "MISMATCH", "MISSING", "EXTRA", "PARTIAL"]),
   category: z.enum(["acceptance-criteria", "description", "scope", "behaviour", "api-contract"]),
   description: z.string(),
-  storyReference: z.string().optional(),  // quote from the JIRA story
-  codeReference: z.string().optional(),   // file path or code element
+  storyReference: z.string().optional(), // quote from the JIRA story
+  codeReference: z.string().optional(), // file path or code element
   severity: z.enum(["critical", "major", "minor", "info"]),
 });
 
@@ -88,7 +90,7 @@ export interface JiraValidationReport {
   overallVerdict: AlignmentVerdict;
   findings: AlignmentFinding[];
   summary: string;
-  blockedReason: string | null;  // Set when verdict is FAIL
+  blockedReason: string | null; // Set when verdict is FAIL
   validatedScenarios: ValidatedScenario[];
 }
 
@@ -103,11 +105,13 @@ export interface JiraConfig {
 
 function assertHostAllowed(host: string): void {
   const allowlist = (process.env.JIRA_HOST_ALLOWLIST ?? "")
-    .split(",").map(s => s.trim()).filter(Boolean);
-  if (!allowlist.some(h => host.startsWith(h))) {
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!allowlist.some((h) => host.startsWith(h))) {
     throw new Error(
       `[AGT-02 GUARDRAIL] JIRA host "${host}" is not in JIRA_HOST_ALLOWLIST.\n` +
-      `  Allowed: ${allowlist.join(", ")}`
+        `  Allowed: ${allowlist.join(", ")}`
     );
   }
 }
@@ -138,9 +142,9 @@ export async function runJiraValidator(
     // GUARDRAIL: fail-safe — if JIRA is unreachable, warn but continue with WARN verdict
     console.warn(
       `  [AGT-02 GUARDRAIL] JIRA unreachable: ${(err as Error).message}\n` +
-      `  Continuing with WARN verdict — manual review required`
+        `  Continuing with WARN verdict — manual review required`
     );
-    return scenarios.map(s => buildFallbackScenario(s, jiraTicket));
+    return scenarios.map((s) => buildFallbackScenario(s, jiraTicket));
   }
 
   // ── Step 2: Deep alignment analysis — code changes vs story ─────────────
@@ -148,7 +152,9 @@ export async function runJiraValidator(
   const report = await analyseAlignment(scenarios, story);
 
   console.log(`  [AGT-02] Alignment verdict: ${report.overallVerdict}`);
-  console.log(`  [AGT-02] Findings: ${report.findings.length} (${report.findings.filter(f => f.severity === "critical").length} critical)`);
+  console.log(
+    `  [AGT-02] Findings: ${report.findings.length} (${report.findings.filter((f) => f.severity === "critical").length} critical)`
+  );
 
   // ── Step 3: GUARDRAIL — block on FAIL verdict ────────────────────────────
   if (report.overallVerdict === "FAIL") {
@@ -158,8 +164,8 @@ export async function runJiraValidator(
       `  Reason: ${report.blockedReason ?? "Code changes do not match the JIRA story intent"}\n\n` +
       `  Critical findings:\n` +
       report.findings
-        .filter(f => f.severity === "critical")
-        .map(f => `    ✗ [${f.category}] ${f.description}`)
+        .filter((f) => f.severity === "critical")
+        .map((f) => `    ✗ [${f.category}] ${f.description}`)
         .join("\n") +
       `\n\n  Resolve the mismatch between the PR and JIRA story before proceeding.`;
 
@@ -169,7 +175,7 @@ export async function runJiraValidator(
   if (report.overallVerdict === "WARN") {
     console.warn(
       `  [AGT-02] ⚠ Alignment WARN — pipeline continues but manual review recommended.\n` +
-      `  ${report.summary}`
+        `  ${report.summary}`
     );
   }
 
@@ -181,19 +187,17 @@ export async function runJiraValidator(
 
 async function fetchJiraStory(ticketKey: string, config: JiraConfig): Promise<JiraStory> {
   // GUARDRAIL: read-only — GET only, no POST/PUT/PATCH
-  const { data } = await axios.get(
-    `${config.host}/rest/api/3/issue/${ticketKey}`,
-    {
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        Accept: "application/json",
-      },
-      params: {
-        fields: "summary,description,status,priority,issuetype,assignee,labels,issuelinks,components,customfield_10016",
-      },
-      timeout: 15_000,
-    }
-  );
+  const { data } = await axios.get(`${config.host}/rest/api/3/issue/${ticketKey}`, {
+    headers: {
+      Authorization: `Bearer ${config.token}`,
+      Accept: "application/json",
+    },
+    params: {
+      fields:
+        "summary,description,status,priority,issuetype,assignee,labels,issuelinks,components,customfield_10016",
+    },
+    timeout: 15_000,
+  });
 
   const fields = data.fields as Record<string, unknown>;
 
@@ -211,7 +215,9 @@ async function fetchJiraStory(ticketKey: string, config: JiraConfig): Promise<Ji
     assignee: ((fields.assignee as Record<string, unknown> | null)?.displayName as string) ?? null,
     labels: (fields.labels as string[]) ?? [],
     linkedIssues: extractLinkedIssues(fields.issuelinks),
-    components: ((fields.components as Array<Record<string, unknown>>) ?? []).map(c => c.name as string),
+    components: ((fields.components as Array<Record<string, unknown>>) ?? []).map(
+      (c) => c.name as string
+    ),
   });
 }
 
@@ -237,27 +243,31 @@ function extractAcceptanceCriteria(fields: Record<string, unknown>): string | nu
 
 function extractLinkedIssues(links: unknown): JiraStory["linkedIssues"] {
   if (!Array.isArray(links)) return [];
-  return links.map((link: Record<string, unknown>) => {
-    const issue = (link.inwardIssue ?? link.outwardIssue) as Record<string, unknown> | undefined;
-    if (!issue) return null;
-    return {
-      key: issue.key as string,
-      type: (link.type as Record<string, unknown>)?.name as string ?? "",
-      summary: (issue.fields as Record<string, unknown>)?.summary as string ?? "",
-    };
-  }).filter((l): l is NonNullable<typeof l> => l !== null);
+  return links
+    .map((link: Record<string, unknown>) => {
+      const issue = (link.inwardIssue ?? link.outwardIssue) as Record<string, unknown> | undefined;
+      if (!issue) return null;
+      return {
+        key: issue.key as string,
+        type: ((link.type as Record<string, unknown>)?.name as string) ?? "",
+        summary: ((issue.fields as Record<string, unknown>)?.summary as string) ?? "",
+      };
+    })
+    .filter((l): l is NonNullable<typeof l> => l !== null);
 }
 
 function extractAdfText(adf: unknown): string | null {
   if (!adf || typeof adf !== "object") return null;
   if (typeof adf === "string") return adf;
 
-  const doc = adf as { content?: Array<{ type?: string; content?: Array<{ text?: string; type?: string }> }> };
+  const doc = adf as {
+    content?: Array<{ type?: string; content?: Array<{ text?: string; type?: string }> }>;
+  };
   if (!doc.content) return null;
 
   const lines: string[] = [];
   for (const block of doc.content) {
-    const texts = (block.content ?? []).map(inline => inline.text ?? "").join("");
+    const texts = (block.content ?? []).map((inline) => inline.text ?? "").join("");
     if (texts.trim()) lines.push(texts);
   }
   return lines.join("\n") || null;
@@ -269,9 +279,8 @@ async function analyseAlignment(
   scenarios: Scenario[],
   story: JiraStory
 ): Promise<JiraValidationReport> {
-
-  const changedFiles = [...new Set(scenarios.flatMap(s => s.changedFiles))];
-  const scenarioDescriptions = scenarios.map(s => ({
+  const changedFiles = [...new Set(scenarios.flatMap((s) => s.changedFiles))];
+  const scenarioDescriptions = scenarios.map((s) => ({
     title: s.title,
     module: s.module,
     description: s.description,
@@ -299,7 +308,7 @@ ${story.acceptanceCriteria ?? "(no acceptance criteria defined)"}
 **Components:** ${story.components.join(", ") || "none"}
 
 **Linked Issues:**
-${story.linkedIssues.map(l => `- ${l.type}: ${l.key} — ${l.summary}`).join("\n") || "none"}
+${story.linkedIssues.map((l) => `- ${l.type}: ${l.key} — ${l.summary}`).join("\n") || "none"}
 
 ---
 
@@ -371,7 +380,11 @@ Return ONLY valid JSON.`,
     blockedReason?: string | null;
     findings?: unknown[];
     alignmentSummary?: string;
-    enrichedScenarios?: Array<{ scenarioTitle?: string; coverageStatus?: string; storyAlignment?: string }>;
+    enrichedScenarios?: Array<{
+      scenarioTitle?: string;
+      coverageStatus?: string;
+      storyAlignment?: string;
+    }>;
   };
 
   const analysis = analysisRaw as RawAnalysis;
@@ -379,7 +392,11 @@ Return ONLY valid JSON.`,
   // Parse and validate findings
   const findings: AlignmentFinding[] = (analysis.findings ?? [])
     .map((f) => {
-      try { return AlignmentFindingSchema.parse(f); } catch { return null; }
+      try {
+        return AlignmentFindingSchema.parse(f);
+      } catch {
+        return null;
+      }
     })
     .filter((f): f is AlignmentFinding => f !== null);
 
@@ -389,8 +406,9 @@ Return ONLY valid JSON.`,
 
   // Build enriched validated scenarios
   const validatedScenarios = scenarios.map((s): ValidatedScenario => {
-    const enriched = analysis.enrichedScenarios?.find(e => e.scenarioTitle === s.title);
-    const coverageStatus = (enriched?.coverageStatus as ValidatedScenario["coverageStatus"]) ?? "GAP";
+    const enriched = analysis.enrichedScenarios?.find((e) => e.scenarioTitle === s.title);
+    const coverageStatus =
+      (enriched?.coverageStatus as ValidatedScenario["coverageStatus"]) ?? "GAP";
 
     return ValidatedScenarioSchema.parse({
       ...s,
@@ -426,12 +444,14 @@ function buildFallbackScenario(s: Scenario, jiraTicket: string): ValidatedScenar
     jiraDescription: null,
     jiraAcceptanceCriteria: null,
     alignmentVerdict: "WARN",
-    alignmentFindings: [{
-      type: "MISSING",
-      category: "description",
-      description: "JIRA story could not be fetched — alignment not verified",
-      severity: "major",
-    }],
+    alignmentFindings: [
+      {
+        type: "MISSING",
+        category: "description",
+        description: "JIRA story could not be fetched — alignment not verified",
+        severity: "major",
+      },
+    ],
     alignmentSummary: "JIRA was unreachable during validation. Manual review required.",
     coverageStatus: "GAP",
   });
@@ -446,15 +466,17 @@ function buildFallbackReport(
     jiraTicket: story.key,
     story,
     overallVerdict: "WARN",
-    findings: [{
-      type: "MISSING",
-      category: "description",
-      description: reason,
-      severity: "major",
-    }],
+    findings: [
+      {
+        type: "MISSING",
+        category: "description",
+        description: reason,
+        severity: "major",
+      },
+    ],
     summary: `Alignment analysis incomplete: ${reason}`,
     blockedReason: null,
-    validatedScenarios: scenarios.map(s => buildFallbackScenario(s, story.key)),
+    validatedScenarios: scenarios.map((s) => buildFallbackScenario(s, story.key)),
   };
 }
 

@@ -1,9 +1,10 @@
 {
-  "name": "qa-pipeline",
+  "name": "tg-automation-pipeline",
   "version": "1.0.0",
   "description": "7-Agent Autonomous QA Testing Pipeline powered by Claude",
   "main": "dist/orchestrator/index.js",
   "scripts": {
+    "install-all": "npm install && npm install --prefix employee-app/frontend && npm install --prefix employee-app/backend",
     "build": "tsc",
     "pipeline": "ts-node orchestrator/index.ts",
     "pipeline:from": "ts-node orchestrator/index.ts --from=",
@@ -23,22 +24,28 @@
     "axios": "^1.7.0",
     "dotenv": "^16.4.0",
     "fast-glob": "^3.3.2",
-    "nodemailer": "^6.9.0",
+    "nodemailer": "^8.0.1",
     "pg": "^8.11.0",
     "prettier": "^3.2.0",
     "uuid": "^9.0.0",
     "zod": "^3.23.0"
   },
+  "private": true,
+  "workspaces": [
+    "employee-app/frontend",
+    "employee-app/backend"
+  ],
   "devDependencies": {
+    "@types/jest": "^29.5.14",
     "@types/node": "^20.0.0",
     "@types/nodemailer": "^6.4.0",
     "@types/pg": "^8.11.0",
     "@types/uuid": "^9.0.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "eslint": "^10.0.2",
     "jest": "^29.7.0",
-    "ts-jest": "^29.1.0",
+    "ts-jest": "^29.4.6",
     "ts-node": "^10.9.0",
     "typescript": "^5.4.0"
   },
