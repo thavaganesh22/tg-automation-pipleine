@@ -337,12 +337,13 @@ Focus on: what the PR changes, new behaviour, modified flows, regression risks, 
   return raw
     .map((item) => {
       try {
+        const obj = item as Record<string, unknown>;
         return ScenarioSchema.parse({
-          ...item,
+          ...obj,
           id: uuidv4(),
           jiraTicket: prContext.jiraTicket,
           prNumber: prContext.prNumber,
-          changedFiles: (item as { changedFiles?: string[] }).changedFiles ?? Object.keys(files),
+          changedFiles: (obj["changedFiles"] as string[] | undefined) ?? Object.keys(files),
         });
       } catch {
         return null;

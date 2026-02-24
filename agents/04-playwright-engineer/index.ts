@@ -36,9 +36,9 @@ export async function runPlaywrightEngineer(
 
     if (!options.remediationMode) {
       // GUARDRAIL: never overwrite existing passing tests
-      if (await fileExists(specPath) && await hasPassingTests(specPath)) {
+      if ((await fileExists(specPath)) && (await hasPassingTests(specPath))) {
         console.log(`  [AGT-04] Merging into existing passing spec: ${specPath}`);
-        await mergeSpec(specPath, cases, apiSpecs);
+        await mergeSpec(specPath, cases);
         continue;
       }
     }
@@ -70,13 +70,16 @@ Rules:
 - waitForSelector / waitForResponse used for async operations
 - TypeScript strict mode — no 'any' types
 - Return ONLY the TypeScript code, no markdown fences`,
-    messages: [{
-      role: "user",
-      content: `Generate POM for module "${module}".\nTest cases:\n${JSON.stringify(
-        cases.map(c => ({ title: c.title, steps: c.steps.map(s => s.action) })),
-        null, 2
-      )}`,
-    }],
+    messages: [
+      {
+        role: "user",
+        content: `Generate POM for module "${module}".\nTest cases:\n${JSON.stringify(
+          cases.map((c) => ({ title: c.title, steps: c.steps.map((s) => s.action) })),
+          null,
+          2
+        )}`,
+      },
+    ],
   });
   return (response.content[0] as { text: string }).text;
 }
@@ -97,10 +100,12 @@ Rules:
 - Export named async functions: setup${toPascalCase(module)}Mocks(page)
 - TypeScript strict mode — no 'any' types
 - Return ONLY the TypeScript code, no markdown fences`,
-    messages: [{
-      role: "user",
-      content: `Generate fixtures for module "${module}".\nAPI specs: ${JSON.stringify(apiSpecs).slice(0, 3000)}\nTest cases: ${JSON.stringify(cases.map(c => c.title))}`,
-    }],
+    messages: [
+      {
+        role: "user",
+        content: `Generate fixtures for module "${module}".\nAPI specs: ${JSON.stringify(apiSpecs).slice(0, 3000)}\nTest cases: ${JSON.stringify(cases.map((c) => c.title))}`,
+      },
+    ],
   });
   return (response.content[0] as { text: string }).text;
 }
@@ -119,19 +124,17 @@ Rules:
 - TypeScript strict mode — no 'any' types
 - Split into separate describe blocks by test type (positive/negative/edge)
 - Return ONLY the TypeScript code, no markdown fences`,
-    messages: [{
-      role: "user",
-      content: `Generate Playwright spec for module "${module}":\n${JSON.stringify(cases, null, 2)}`,
-    }],
+    messages: [
+      {
+        role: "user",
+        content: `Generate Playwright spec for module "${module}":\n${JSON.stringify(cases, null, 2)}`,
+      },
+    ],
   });
   return (response.content[0] as { text: string }).text;
 }
 
-async function mergeSpec(
-  specPath: string,
-  newCases: TestCase[],
-  apiSpecs: Record<string, unknown>
-): Promise<void> {
+async function mergeSpec(specPath: string, newCases: TestCase[]): Promise<void> {
   const existing = await fs.readFile(specPath, "utf-8");
   const response = await client.messages.create({
     model: "claude-opus-4-6",
@@ -142,10 +145,12 @@ Rules:
 - Add new test() blocks for each new case with // TC-<id> comments
 - Keep consistent style with existing code
 - Return ONLY the merged TypeScript code, no markdown fences`,
-    messages: [{
-      role: "user",
-      content: `Existing spec:\n${existing}\n\nNew test cases to add:\n${JSON.stringify(newCases, null, 2)}`,
-    }],
+    messages: [
+      {
+        role: "user",
+        content: `Existing spec:\n${existing}\n\nNew test cases to add:\n${JSON.stringify(newCases, null, 2)}`,
+      },
+    ],
   });
   const merged = (response.content[0] as { text: string }).text;
   await writeChecked(specPath, merged, "merged");
@@ -156,7 +161,9 @@ Rules:
 async function writeChecked(filePath: string, content: string, label: string): Promise<void> {
   const lines = content.split("\n");
   if (lines.length > MAX_LINES_PER_FILE) {
-    console.warn(`[AGT-04 GUARDRAIL] ${label}: ${lines.length} lines > ${MAX_LINES_PER_FILE} limit. Consider splitting.`);
+    console.warn(
+      `[AGT-04 GUARDRAIL] ${label}: ${lines.length} lines > ${MAX_LINES_PER_FILE} limit. Consider splitting.`
+    );
   }
   await fs.writeFile(filePath, content, "utf-8");
 }
@@ -192,7 +199,7 @@ function groupByModule(cases: TestCase[]): Record<string, TestCase[]> {
 }
 
 function toPascalCase(str: string): string {
-  return str.replace(/(^\w|-\w)/g, s => s.replace("-", "").toUpperCase());
+  return str.replace(/(^\w|-\w)/g, (s) => s.replace("-", "").toUpperCase());
 }
 
 async function ensureDirs(): Promise<void> {
@@ -202,5 +209,10 @@ async function ensureDirs(): Promise<void> {
 }
 
 async function fileExists(p: string): Promise<boolean> {
-  try { await fs.access(p); return true; } catch { return false; }
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
 }

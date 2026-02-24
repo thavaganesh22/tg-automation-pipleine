@@ -37,7 +37,10 @@ export interface ExecutionResult {
 
 // ── Guardrail Constants ────────────────────────────────────────────────────
 
-const ALLOWED_URLS = (process.env.ALLOWED_TEST_URLS ?? "").split(",").map(s => s.trim()).filter(Boolean);
+const ALLOWED_URLS = (process.env.ALLOWED_TEST_URLS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 const MAX_WORKERS = Math.min(parseInt(process.env.MAX_WORKERS ?? "8", 10), 8);
 const TEST_TIMEOUT_MS = 60_000;
 const SUITE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -82,7 +85,12 @@ export async function runTestExecutor(
     durationMs,
     passRate: report.total > 0 ? report.passed / report.total : 0,
     artifactsDir,
-    ...report,
+    totalTests: report.total,
+    passed: report.passed,
+    failed: report.failed,
+    flaky: report.flaky,
+    skipped: report.skipped,
+    failedTests: report.failedTests,
   };
 }
 
@@ -90,13 +98,15 @@ export async function runTestExecutor(
 
 function assertURLAllowed(url: string): void {
   if (ALLOWED_URLS.length === 0) {
-    throw new Error("[AGT-06 GUARDRAIL] ALLOWED_TEST_URLS is not set. Set it in .env to permit test execution.");
+    throw new Error(
+      "[AGT-06 GUARDRAIL] ALLOWED_TEST_URLS is not set. Set it in .env to permit test execution."
+    );
   }
-  if (!ALLOWED_URLS.some(allowed => url.startsWith(allowed))) {
+  if (!ALLOWED_URLS.some((allowed) => url.startsWith(allowed))) {
     throw new Error(
       `[AGT-06 GUARDRAIL] Base URL "${url}" is not in ALLOWED_TEST_URLS.\n` +
-      `Allowed: ${ALLOWED_URLS.join(", ")}\n` +
-      `NEVER point tests at production.`
+        `Allowed: ${ALLOWED_URLS.join(", ")}\n` +
+        `NEVER point tests at production.`
     );
   }
 }
@@ -160,18 +170,23 @@ async function parseReport(reportPath: string, artifactsDir: string): Promise<Pa
     }>;
   };
 
-  let passed = 0, failed = 0, flaky = 0, skipped = 0;
+  let passed = 0,
+    failed = 0,
+    flaky = 0,
+    skipped = 0;
   const failedTests: FailedTest[] = [];
 
   function walkSuites(suites: typeof report.suites): void {
     if (!suites) return;
     for (const suite of suites) {
-      for (const spec of (suite.specs ?? [])) {
-        for (const test of (spec.tests ?? [])) {
+      for (const spec of suite.specs ?? []) {
+        for (const test of spec.tests ?? []) {
           const retried = (test.results?.length ?? 0) > 1;
           if (test.status === "passed") passed++;
-          else if (test.status === "flaky") { flaky++; passed++; }
-          else if (test.status === "skipped") skipped++;
+          else if (test.status === "flaky") {
+            flaky++;
+            passed++;
+          } else if (test.status === "skipped") skipped++;
           else {
             failed++;
             const errorMsg = test.results?.[0]?.error?.message ?? "Unknown error";
@@ -196,9 +211,17 @@ async function parseReport(reportPath: string, artifactsDir: string): Promise<Pa
 }
 
 function locateArtifact(dir: string, title: string, ext: string): string | null {
-  const safe = title.replace(/[^a-z0-9]/gi, "-").toLowerCase().slice(0, 50);
+  const safe = title
+    .replace(/[^a-z0-9]/gi, "-")
+    .toLowerCase()
+    .slice(0, 50);
   const candidate = path.join(dir, `${safe}.${ext}`);
-  try { require("fs").accessSync(candidate); return candidate; } catch { return null; }
+  try {
+    require("fs").accessSync(candidate);
+    return candidate;
+  } catch {
+    return null;
+  }
 }
 
 async function writePlaywrightConfig(

@@ -42,9 +42,7 @@ const FORBIDDEN_PATTERNS = [
 
 // ── Main Agent ─────────────────────────────────────────────────────────────
 
-export async function runTestCaseDesigner(
-  scenarios: ValidatedScenario[]
-): Promise<TestCase[]> {
+export async function runTestCaseDesigner(scenarios: ValidatedScenario[]): Promise<TestCase[]> {
   const allCases: TestCase[] = [];
 
   for (const scenario of scenarios) {
@@ -63,9 +61,7 @@ export async function runTestCaseDesigner(
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-async function generateCasesForScenario(
-  scenario: ValidatedScenario
-): Promise<TestCase[]> {
+async function generateCasesForScenario(scenario: ValidatedScenario): Promise<TestCase[]> {
   const response = await client.messages.create({
     model: "claude-opus-4-6",
     max_tokens: 6000,
@@ -104,8 +100,9 @@ Schema:
   return raw
     .map((item) => {
       try {
+        const obj = item as Record<string, unknown>;
         const tc = TestCaseSchema.parse({
-          ...item,
+          ...obj,
           id: uuidv4(),
           scenarioId: scenario.id,
           jiraRef: scenario.jiraRef,
