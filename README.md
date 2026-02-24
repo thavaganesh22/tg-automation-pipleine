@@ -81,15 +81,15 @@ Pushes to `main`/`develop`, nightly schedule, and manual dispatch also run the f
 
 ## Agent Reference
 
-| Agent | Name | Model | Role |
-|-------|------|-------|------|
-| AGT-01 | Codebase Analyst | claude-opus-4-6 | Extracts JIRA ticket from PR; scans changed files only; generates PR-scoped scenarios |
-| AGT-02 | JIRA Story Validator | claude-opus-4-6 | Fetches JIRA story by key; deep code-vs-story alignment; FAIL verdict blocks pipeline |
-| AGT-03 | Test Case Designer | claude-opus-4-6 | Expands scenarios into detailed manual test cases (positive + negative variants) |
-| AGT-04 | Playwright Engineer | claude-opus-4-6 | Generates Page Object Models, HTTP mock fixtures, and Playwright spec files |
-| AGT-05 | Coverage Auditor | claude-sonnet-4-6 | Traceability matrix; P0/P1 coverage gates; triggers AGT-04 gap remediation |
-| AGT-06 | Test Executor | — | Executes Playwright suite; retries flaky tests; captures failure artifacts |
-| AGT-07 | Report Architect | claude-sonnet-4-6 | PostgreSQL persistence; HTML dashboard; SLA alerting |
+| Agent  | Name                 | Model             | Role                                                                                  |
+| ------ | -------------------- | ----------------- | ------------------------------------------------------------------------------------- |
+| AGT-01 | Codebase Analyst     | claude-opus-4-6   | Extracts JIRA ticket from PR; scans changed files only; generates PR-scoped scenarios |
+| AGT-02 | JIRA Story Validator | claude-opus-4-6   | Fetches JIRA story by key; deep code-vs-story alignment; FAIL verdict blocks pipeline |
+| AGT-03 | Test Case Designer   | claude-opus-4-6   | Expands scenarios into detailed manual test cases (positive + negative variants)      |
+| AGT-04 | Playwright Engineer  | claude-opus-4-6   | Generates Page Object Models, HTTP mock fixtures, and Playwright spec files           |
+| AGT-05 | Coverage Auditor     | claude-sonnet-4-6 | Traceability matrix; P0/P1 coverage gates; triggers AGT-04 gap remediation            |
+| AGT-06 | Test Executor        | —                 | Executes Playwright suite; retries flaky tests; captures failure artifacts            |
+| AGT-07 | Report Architect     | claude-sonnet-4-6 | PostgreSQL persistence; HTML dashboard; SLA alerting                                  |
 
 ---
 
@@ -107,8 +107,8 @@ Pushes to `main`/`develop`, nightly schedule, and manual dispatch also run the f
 
 ```bash
 # 1. Clone and install
-git clone https://github.com/your-org/qa-pipeline.git
-cd qa-pipeline
+git clone https://github.com/thavaganesh22/tg-automation-pipleine.git
+cd tg-automation-pipeline
 npm install
 
 # 2. Configure environment
@@ -175,45 +175,46 @@ Triggered on every PR open or update targeting `main` or `develop`. The PR statu
 
 **Blocking conditions — any of these fail the PR check:**
 
-| Condition | Source | Detail |
-|-----------|--------|--------|
-| Missing JIRA ticket | AGT-01 | `TGDEMO-xxxxx` not found in PR title or branch |
-| Alignment FAIL | AGT-02 | Code contradicts or is unrelated to the JIRA story |
-| P0 coverage below threshold | AGT-05 | <80% P0 test coverage after gap remediation |
-| P1 coverage below threshold | AGT-05 | <80% P1 test coverage after gap remediation |
-| AGT-07 did not complete | AGT-07 | Report Architect must finish for the check to pass |
+| Condition                   | Source | Detail                                             |
+| --------------------------- | ------ | -------------------------------------------------- |
+| Missing JIRA ticket         | AGT-01 | `TGDEMO-xxxxx` not found in PR title or branch     |
+| Alignment FAIL              | AGT-02 | Code contradicts or is unrelated to the JIRA story |
+| P0 coverage below threshold | AGT-05 | <80% P0 test coverage after gap remediation        |
+| P1 coverage below threshold | AGT-05 | <80% P1 test coverage after gap remediation        |
+| AGT-07 did not complete     | AGT-07 | Report Architect must finish for the check to pass |
 
 **PR comment behaviour:**
+
 - "Pipeline in progress" table posted immediately when the run starts
 - Replaced with the full report when the pipeline finishes (pass or fail)
 - Report includes: per-agent status, JIRA alignment verdict and findings, pass rate, coverage %, duration
 
 ### Job 2: `full-pipeline` — Push / Nightly / Manual
 
-| Trigger | Behaviour |
-|---------|-----------|
-| Push to `main` or `develop` | Full pipeline; AGT-01 scopes to the commit diff |
-| Nightly (`cron: 0 2 * * *`) | Full pipeline at 02:00 UTC |
+| Trigger                      | Behaviour                                                   |
+| ---------------------------- | ----------------------------------------------------------- |
+| Push to `main` or `develop`  | Full pipeline; AGT-01 scopes to the commit diff             |
+| Nightly (`cron: 0 2 * * *`)  | Full pipeline at 02:00 UTC                                  |
 | Manual (`workflow_dispatch`) | Supports `--from=N` (resume) and `--agent=N` (single agent) |
 
 ### Required GitHub Secrets
 
-| Secret | Description |
-|--------|-------------|
-| `ANTHROPIC_API_KEY` | Anthropic API key |
-| `JIRA_TOKEN` | JIRA API token (read-only) |
-| `DB_PASSWORD` | PostgreSQL password |
-| `SMTP_HOST` | SMTP server hostname for SLA alerts |
-| `SMTP_USER` | SMTP username |
-| `SMTP_PASS` | SMTP password |
+| Secret              | Description                         |
+| ------------------- | ----------------------------------- |
+| `ANTHROPIC_API_KEY` | Anthropic API key                   |
+| `JIRA_TOKEN`        | JIRA API token (read-only)          |
+| `DB_PASSWORD`       | PostgreSQL password                 |
+| `SMTP_HOST`         | SMTP server hostname for SLA alerts |
+| `SMTP_USER`         | SMTP username                       |
+| `SMTP_PASS`         | SMTP password                       |
 
 ### Required GitHub Variables
 
-| Variable | Example |
-|----------|---------|
-| `JIRA_HOST` | `https://yourcompany.atlassian.net` |
-| `JIRA_PROJECT_KEY` | `TGDEMO` |
-| `STAGING_URL` | `https://staging.yourapp.com` |
+| Variable             | Example                               |
+| -------------------- | ------------------------------------- |
+| `JIRA_HOST`          | `https://yourcompany.atlassian.net`   |
+| `JIRA_PROJECT_KEY`   | `TGDEMO`                              |
+| `STAGING_URL`        | `https://staging.yourapp.com`         |
 | `STAKEHOLDER_EMAILS` | `qa@company.com,eng-lead@company.com` |
 
 ---
@@ -286,6 +287,7 @@ The pipeline is **restartable at any agent**. If AGT-06 fails due to a flaky env
 ## Guardrails
 
 ### Security
+
 - All secrets injected via environment variables — never hardcoded or logged
 - JIRA API is **read-only** — agents never modify tickets
 - AGT-01 redacts secrets (tokens, keys, passwords) from source code before any LLM call
@@ -294,6 +296,7 @@ The pipeline is **restartable at any agent**. If AGT-06 fails due to a flaky env
 - AGT-06 error messages truncated to 500 characters before database storage (PII protection)
 
 ### Quality
+
 - Pipeline halts if P0/P1 Playwright coverage falls below 80% (configurable)
 - AGT-05 triggers a targeted AGT-04 **gap remediation pass** before halting
 - TypeScript strict-mode compilation verified after every generated spec file
@@ -301,6 +304,7 @@ The pipeline is **restartable at any agent**. If AGT-06 fails due to a flaky env
 - All external HTTP calls in tests must use `page.route()` mocks — no live API traffic
 
 ### Operational
+
 - AGT-01 scans at most `MAX_FILES_SCAN` files (default: 1,000) per run
 - Files larger than 500KB are skipped with a logged warning
 - AGT-03 generates at most `MAX_TEST_CASES` test cases (default: 500) per cycle
@@ -338,6 +342,7 @@ test_failures (
 ```
 
 **Views:**
+
 - `vw_recent_runs` — 90-day window with `pass_rate_pct`
 - `vw_flaky_tests` — flakiness index grouped by test name
 
@@ -356,3 +361,105 @@ test_failures (
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.
+
+---
+
+## Employee Directory App
+
+A full-stack demo application bundled with this repo. It serves as the **target application** that the 7-agent QA pipeline tests — giving the pipeline a real codebase to analyse, real API specs to reference, and a running service to execute Playwright tests against.
+
+### Stack
+
+| Layer    | Technology                                          |
+| -------- | --------------------------------------------------- |
+| Frontend | React 18 + TypeScript + Vite + nginx                |
+| Backend  | Node.js 20 + Express + Mongoose                     |
+| Database | MongoDB 7                                           |
+| Spec     | OpenAPI 3.1 (`employee-app/api-specs/openapi.yaml`) |
+
+### Running locally with Docker Compose
+
+```bash
+# 1. Copy and edit environment
+cp .env.example .env
+# Set MONGO_ROOT_PASSWORD to something secure
+
+# 2. Build and start all three services
+docker compose up --build
+
+# Services:
+#   Frontend  →  http://localhost:3000
+#   Backend   →  http://localhost:4000/api/health
+#   MongoDB   →  localhost:27017
+```
+
+MongoDB is seeded automatically on first start with 12 realistic employee records across multiple departments and countries.
+
+### Employee App Structure
+
+```
+employee-app/
+├── frontend/               # React SPA
+│   ├── src/
+│   │   ├── api/            # Typed fetch wrappers (employeeApi.ts)
+│   │   ├── components/     # EmployeesPage, EmployeeDrawer, EmployeeForm,
+│   │   │                   # EmployeeTable, StatusBadge, Avatar, ConfirmDialog
+│   │   ├── types/          # TypeScript interfaces matching OpenAPI schema
+│   │   └── App.tsx
+│   ├── nginx.conf          # SPA routing + /api proxy to backend
+│   └── Dockerfile
+│
+├── backend/                # Express REST API
+│   ├── src/
+│   │   ├── config/         # Zod-validated env config
+│   │   ├── models/         # Mongoose Employee model + enums
+│   │   ├── routes/         # employees.ts — GET/POST/PATCH/DELETE
+│   │   └── middleware/     # Zod validation, error handler
+│   └── Dockerfile
+│
+├── mongo-init/
+│   └── seed.js             # Auto-runs on first container start
+│
+└── api-specs/
+    └── openapi.yaml        # Full OpenAPI 3.1 specification
+```
+
+### API Endpoints
+
+| Method   | Path                 | Description                        |
+| -------- | -------------------- | ---------------------------------- |
+| `GET`    | `/api/health`        | Health check                       |
+| `GET`    | `/api/employees`     | List with search/filter/pagination |
+| `POST`   | `/api/employees`     | Create employee                    |
+| `GET`    | `/api/employees/:id` | Get by ID                          |
+| `PATCH`  | `/api/employees/:id` | Update fields                      |
+| `DELETE` | `/api/employees/:id` | Delete employee                    |
+
+Query parameters for `GET /api/employees`: `page`, `limit`, `search`, `department`, `status`.
+
+### Development without Docker
+
+```bash
+# Terminal 1 — Backend (requires MongoDB running)
+cd employee-app/backend
+npm install
+MONGODB_URI=mongodb://localhost:27017/employee_directory npm run dev
+
+# Terminal 2 — Frontend
+cd employee-app/frontend
+npm install
+npm run dev   # http://localhost:5173  (Vite proxies /api → localhost:4000)
+```
+
+### How the QA Pipeline uses this app
+
+The `OPEN_API_PATH` in `.env.example` points to `employee-app/api-specs/openapi.yaml`. When the pipeline runs against a PR that modifies the employee app:
+
+1. **AGT-01** scans changed files in `employee-app/`
+2. **AGT-02** validates changes against the linked JIRA story
+3. **AGT-03** designs test cases covering employee CRUD flows
+4. **AGT-04** generates Playwright specs using the OpenAPI spec for HTTP mocks
+5. **AGT-06** executes tests against `http://localhost:3000` (started by CI)
+6. **AGT-07** reports results — pass rate, coverage, trend
+
+The `ALLOWED_TEST_URLS` in `.env.example` includes `http://localhost:3000` so AGT-06's URL guardrail allows it.

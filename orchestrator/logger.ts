@@ -6,7 +6,6 @@ const CYAN = "\x1b[36m";
 const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
 const MAGENTA = "\x1b[35m";
-const WHITE = "\x1b[37m";
 
 export class PipelineLogger {
   private startTime = Date.now();
@@ -18,7 +17,7 @@ export class PipelineLogger {
     console.log(`${DIM}  Started: ${new Date().toISOString()}${RESET}\n`);
   }
 
-  phase(agentNum: number, code: string, name: string): void {
+  phase(_agentNum: number, code: string, name: string): void {
     const elapsed = this.elapsed();
     console.log(`\n${BOLD}${MAGENTA}┌─ [${code}] ${name} ${DIM}(+${elapsed})${RESET}`);
   }
