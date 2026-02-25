@@ -24,7 +24,7 @@ export class PipelineStateManager {
     } catch {
       throw new Error(
         `[STATE] Cannot load "${key}" — has the previous agent run successfully?\n` +
-        `Expected file: ${filePath}`
+          `Expected file: ${filePath}`
       );
     }
   }

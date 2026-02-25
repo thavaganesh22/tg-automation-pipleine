@@ -20,8 +20,12 @@ const log = new PipelineLogger();
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const fromAgent = parseInt(args.find((a) => a.startsWith("--from="))?.split("=")[1] ?? "1");
-  const singleAgent = parseInt(args.find((a) => a.startsWith("--agent="))?.split("=")[1] ?? "0");
+  const fromAgent = parseInt(
+    args.find((a: string) => a.startsWith("--from="))?.split("=")[1] ?? "1"
+  );
+  const singleAgent = parseInt(
+    args.find((a: string) => a.startsWith("--agent="))?.split("=")[1] ?? "0"
+  );
 
   log.banner();
   const config = await loadConfig();
@@ -59,7 +63,7 @@ async function main(): Promise<void> {
       log.info(`Validating JIRA story: ${ticket ?? "(no ticket found)"}`);
     }
 
-    // AGT-02 fetches the specific story identified in the PR (tg-demo-xxxxx)
+    // AGT-02 fetches the specific story identified in the PR (TGDEMO-xxxxx)
     // and validates that the code changes actually match the story description
     // and acceptance criteria. Throws on FAIL verdict — blocks the pipeline.
     const validatedScenarios = await runJiraValidator(scenarios, config.jira);

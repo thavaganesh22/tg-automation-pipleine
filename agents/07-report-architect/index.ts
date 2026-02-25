@@ -55,7 +55,9 @@ interface RunSummary {
 // ── Guardrails ─────────────────────────────────────────────────────────────
 
 const STAKEHOLDER_EMAILS = (process.env.STAKEHOLDER_EMAILS ?? "")
-  .split(",").map(e => e.trim()).filter(e => e.includes("@"));
+  .split(",")
+  .map((e: string) => e.trim())
+  .filter((e: string) => e.includes("@"));
 
 const SLA_PASS_RATE = parseFloat(process.env.SLA_PASS_RATE ?? "0.95");
 
@@ -110,19 +112,22 @@ export async function runReportArchitect(
 
 // ── DB Operations ──────────────────────────────────────────────────────────
 
-async function persistRunResult(
-  result: ExecutionResult,
-  coverage: CoverageReport
-): Promise<void> {
+async function persistRunResult(result: ExecutionResult, coverage: CoverageReport): Promise<void> {
   await db!.query(
     `INSERT INTO test_runs
        (run_id, started_at, finished_at, total, passed, failed, flaky, skipped, duration_ms, coverage_pct, p0_coverage_pct)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      ON CONFLICT (run_id) DO NOTHING`,
     [
-      result.runId, result.startedAt, result.finishedAt,
-      result.totalTests, result.passed, result.failed,
-      result.flaky, result.skipped, result.durationMs,
+      result.runId,
+      result.startedAt,
+      result.finishedAt,
+      result.totalTests,
+      result.passed,
+      result.failed,
+      result.flaky,
+      result.skipped,
+      result.durationMs,
       coverage.coveragePercent.toFixed(2),
       coverage.p0CoveragePercent.toFixed(2),
     ]
@@ -199,20 +204,22 @@ async function generateInsights(
 Write a concise summary (max 3 paragraphs).
 Focus on: trends, top flaky tests, and actionable recommendations.
 STRICT GUARDRAIL: NEVER include personal data, usernames, email addresses, or PII of any kind.`,
-    messages: [{
-      role: "user",
-      content: JSON.stringify({
-        latestRun: {
-          passed: latest.passed,
-          failed: latest.failed,
-          total: latest.totalTests,
-          passRate: `${(latest.passRate * 100).toFixed(1)}%`,
-          durationMs: latest.durationMs,
-        },
-        recentHistory: history.slice(0, 10),
-        topFlaky: flakiness.slice(0, 5),
-      }),
-    }],
+    messages: [
+      {
+        role: "user",
+        content: JSON.stringify({
+          latestRun: {
+            passed: latest.passed,
+            failed: latest.failed,
+            total: latest.totalTests,
+            passRate: `${(latest.passRate * 100).toFixed(1)}%`,
+            durationMs: latest.durationMs,
+          },
+          recentHistory: history.slice(0, 10),
+          topFlaky: flakiness.slice(0, 5),
+        }),
+      },
+    ],
   });
 
   return (response.content[0] as { text: string }).text;
@@ -240,8 +247,12 @@ function buildDashboardHTML(
   coverage: CoverageReport
 ): string {
   const passRate = (execution.passRate * 100).toFixed(1);
-  const trendIcon = data.currentRunSummary.trend === "improving" ? "↑" :
-    data.currentRunSummary.trend === "degrading" ? "↓" : "→";
+  const trendIcon =
+    data.currentRunSummary.trend === "improving"
+      ? "↑"
+      : data.currentRunSummary.trend === "degrading"
+        ? "↓"
+        : "→";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -318,39 +329,55 @@ function buildDashboardHTML(
     <div class="insights">${data.aiInsights.replace(/\n/g, "<br>")}</div>
   </div>
 
-  ${execution.failedTests.length > 0 ? `
+  ${
+    execution.failedTests.length > 0
+      ? `
   <div class="section">
     <div class="section-title">FAILED TESTS (${execution.failedTests.length})</div>
     <table>
       <thead><tr><th>TEST</th><th>FILE</th><th>ERROR</th><th>RETRIED</th></tr></thead>
       <tbody>
-        ${execution.failedTests.map(t => `
+        ${execution.failedTests
+          .map(
+            (t) => `
         <tr>
           <td>${t.title}</td>
           <td style="color:#4A5568;font-size:11px">${t.file}</td>
           <td style="color:#FCA5A5;font-size:11px">${t.error.slice(0, 100)}…</td>
           <td><span class="badge ${t.retried ? "badge-yellow" : "badge-red"}">${t.retried ? "YES" : "NO"}</span></td>
-        </tr>`).join("")}
+        </tr>`
+          )
+          .join("")}
       </tbody>
     </table>
-  </div>` : ""}
+  </div>`
+      : ""
+  }
 
-  ${data.flakinessByTest.length > 0 ? `
+  ${
+    data.flakinessByTest.length > 0
+      ? `
   <div class="section">
     <div class="section-title">TOP FLAKY TESTS (90-DAY WINDOW)</div>
     <table>
       <thead><tr><th>TEST</th><th>FLAKY RUNS</th><th>TOTAL RUNS</th><th>FLAKINESS INDEX</th></tr></thead>
       <tbody>
-        ${data.flakinessByTest.map(f => `
+        ${data.flakinessByTest
+          .map(
+            (f) => `
         <tr>
           <td>${f.testName}</td>
           <td class="yellow">${f.flakyCount}</td>
           <td>${f.totalRuns}</td>
           <td><span class="badge badge-yellow">${f.flakinessIndex}%</span></td>
-        </tr>`).join("")}
+        </tr>`
+          )
+          .join("")}
       </tbody>
     </table>
-  </div>` : ""}
+  </div>`
+      : ""
+  }
 </body>
 </html>`;
 }
@@ -364,7 +391,7 @@ async function sendSLAAlert(result: ExecutionResult): Promise<void> {
   }
   console.warn(
     `[AGT-07] SLA BREACH: ${(result.passRate * 100).toFixed(1)}% pass rate < ${(SLA_PASS_RATE * 100).toFixed(0)}% SLA\n` +
-    `  Notifying: ${STAKEHOLDER_EMAILS.join(", ")}`
+      `  Notifying: ${STAKEHOLDER_EMAILS.join(", ")}`
   );
   // Wire up nodemailer or SendGrid here for production
 }
@@ -373,8 +400,8 @@ async function sendSLAAlert(result: ExecutionResult): Promise<void> {
 
 function computeTrend(history: RunRecord[]): "improving" | "degrading" | "stable" {
   if (history.length < 4) return "stable";
-  const recent = history.slice(0, 3).map(r => r.passed / r.total);
-  const older = history.slice(3, 6).map(r => r.passed / r.total);
+  const recent = history.slice(0, 3).map((r) => r.passed / r.total);
+  const older = history.slice(3, 6).map((r) => r.passed / r.total);
   const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
   const olderAvg = older.reduce((a, b) => a + b, 0) / older.length;
   if (recentAvg > olderAvg + 0.02) return "improving";

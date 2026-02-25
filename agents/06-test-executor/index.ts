@@ -39,7 +39,7 @@ export interface ExecutionResult {
 
 const ALLOWED_URLS = (process.env.ALLOWED_TEST_URLS ?? "")
   .split(",")
-  .map((s) => s.trim())
+  .map((s: string) => s.trim())
   .filter(Boolean);
 const MAX_WORKERS = Math.min(parseInt(process.env.MAX_WORKERS ?? "8", 10), 8);
 const TEST_TIMEOUT_MS = 60_000;
@@ -102,7 +102,7 @@ function assertURLAllowed(url: string): void {
       "[AGT-06 GUARDRAIL] ALLOWED_TEST_URLS is not set. Set it in .env to permit test execution."
     );
   }
-  if (!ALLOWED_URLS.some((allowed) => url.startsWith(allowed))) {
+  if (!ALLOWED_URLS.some((allowed: string) => url.startsWith(allowed))) {
     throw new Error(
       `[AGT-06 GUARDRAIL] Base URL "${url}" is not in ALLOWED_TEST_URLS.\n` +
         `Allowed: ${ALLOWED_URLS.join(", ")}\n` +

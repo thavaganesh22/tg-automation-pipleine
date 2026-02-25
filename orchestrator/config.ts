@@ -47,15 +47,21 @@ export async function loadConfig(): Promise<PipelineConfig> {
       passRate: Number(process.env.SLA_PASS_RATE ?? "0.95"),
       stakeholderEmails: (process.env.STAKEHOLDER_EMAILS ?? "")
         .split(",")
-        .map((e) => e.trim())
+        .map((e: string) => e.trim())
         .filter(Boolean),
     },
   };
 
   const result = ConfigSchema.safeParse(raw);
   if (!result.success) {
-    const errors = result.error.errors.map((e) => `  ${e.path.join(".")}: ${e.message}`).join("\n");
-    throw new Error(`[CONFIG] Invalid pipeline configuration:\n${errors}\n\nCheck your .env file against .env.example`);
+    const errors = result.error.errors
+      .map(
+        (e: { path: (string | number)[]; message: string }) => `  ${e.path.join(".")}: ${e.message}`
+      )
+      .join("\n");
+    throw new Error(
+      `[CONFIG] Invalid pipeline configuration:\n${errors}\n\nCheck your .env file against .env.example`
+    );
   }
 
   return result.data;

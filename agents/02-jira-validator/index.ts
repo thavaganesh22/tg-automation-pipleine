@@ -66,6 +66,7 @@ export const ValidatedScenarioSchema = z.object({
   description: z.string(),
   entryPoints: z.array(z.string()),
   priority: z.enum(["P0", "P1", "P2", "P3"]),
+  scenarioScope: z.enum(["regression", "new-feature"]).default("new-feature"),
   userJourneys: z.array(z.string()).optional(),
   apiEndpoints: z.array(z.string()).optional(),
   jiraTicket: z.string(),
@@ -106,9 +107,9 @@ export interface JiraConfig {
 function assertHostAllowed(host: string): void {
   const allowlist = (process.env.JIRA_HOST_ALLOWLIST ?? "")
     .split(",")
-    .map((s) => s.trim())
+    .map((s: string) => s.trim())
     .filter(Boolean);
-  if (!allowlist.some((h) => host.startsWith(h))) {
+  if (!allowlist.some((h: string) => host.startsWith(h))) {
     throw new Error(
       `[AGT-02 GUARDRAIL] JIRA host "${host}" is not in JIRA_HOST_ALLOWLIST.\n` +
         `  Allowed: ${allowlist.join(", ")}`
@@ -308,7 +309,7 @@ ${story.acceptanceCriteria ?? "(no acceptance criteria defined)"}
 **Components:** ${story.components.join(", ") || "none"}
 
 **Linked Issues:**
-${story.linkedIssues.map((l) => `- ${l.type}: ${l.key} — ${l.summary}`).join("\n") || "none"}
+${story.linkedIssues.map((l: { type: string; key: string; summary: string }) => `- ${l.type}: ${l.key} — ${l.summary}`).join("\n") || "none"}
 
 ---
 

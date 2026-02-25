@@ -49,13 +49,13 @@ export async function runCoverageAuditor(
     };
   });
 
-  const covered = traceMatrix.filter(t => t.covered);
-  const gaps = traceMatrix.filter(t => !t.covered);
+  const covered = traceMatrix.filter((t) => t.covered);
+  const gaps = traceMatrix.filter((t) => !t.covered);
 
-  const p0Total = testCases.filter(t => t.priority === "P0").length;
-  const p1Total = testCases.filter(t => t.priority === "P1").length;
-  const p0Covered = traceMatrix.filter(t => t.priority === "P0" && t.covered).length;
-  const p1Covered = traceMatrix.filter(t => t.priority === "P1" && t.covered).length;
+  const p0Total = testCases.filter((t) => t.priority === "P0").length;
+  const p1Total = testCases.filter((t) => t.priority === "P1").length;
+  const p0Covered = traceMatrix.filter((t) => t.priority === "P0" && t.covered).length;
+  const p1Covered = traceMatrix.filter((t) => t.priority === "P1" && t.covered).length;
 
   const p0Pct = p0Total > 0 ? (p0Covered / p0Total) * 100 : 100;
   const p1Pct = p1Total > 0 ? (p1Covered / p1Total) * 100 : 100;
@@ -72,12 +72,12 @@ export async function runCoverageAuditor(
   if (gapPercent > maxGap) {
     console.warn(
       `[AGT-05 GUARDRAIL] Gap count ${gapPercent.toFixed(1)}% exceeds ${maxGap}% threshold. ` +
-      `Human review required.`
+        `Human review required.`
     );
   }
 
-  const remediationTasks = gaps.map(g =>
-    `[AGT-04-TASK] TC-${g.testCaseId} | Priority: ${g.priority} | "${g.testCaseTitle}"`
+  const remediationTasks = gaps.map(
+    (g) => `[AGT-04-TASK] TC-${g.testCaseId} | Priority: ${g.priority} | "${g.testCaseTitle}"`
   );
 
   // Write traceability matrix to disk
@@ -116,15 +116,18 @@ function findTestInSpecs(
     // Primary: match by TC ID comment
     if (content.includes(`TC-${tcId}`)) {
       const lines = content.split("\n");
-      const idx = lines.findIndex(l => l.includes(`TC-${tcId}`));
+      const idx = lines.findIndex((l) => l.includes(`TC-${tcId}`));
       const searchLines = lines.slice(idx, idx + 5);
-      const testLine = searchLines.find(l => /test\s*\(/.test(l));
+      const testLine = searchLines.find((l) => /test\s*\(/.test(l));
       const testName = testLine?.match(/test\s*\(['"`](.+?)['"`]/)?.[1] ?? tcTitle;
       return { file, testName };
     }
 
     // Fallback: fuzzy title match (first 40 chars, normalised)
-    const needle = tcTitle.toLowerCase().replace(/[^a-z0-9 ]/g, "").slice(0, 40);
+    const needle = tcTitle
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, "")
+      .slice(0, 40);
     if (content.toLowerCase().includes(needle)) {
       return { file, testName: tcTitle };
     }
@@ -141,8 +144,10 @@ async function loadSpecFiles(specDir: string): Promise<Record<string, string>> {
     return result;
   }
 
-  const entries = (await fs.readdir(specDir, { recursive: true, withFileTypes: true }))
-    .filter(e => e.isFile() && (e.name.endsWith(".spec.ts") || e.name.endsWith(".spec.js")));
+  const entries = (await fs.readdir(specDir, { recursive: true, withFileTypes: true })).filter(
+    (e: { isFile(): boolean; name: string }) =>
+      e.isFile() && (e.name.endsWith(".spec.ts") || e.name.endsWith(".spec.js"))
+  );
 
   for (const entry of entries) {
     const fullPath = path.join(specDir, entry.name);
