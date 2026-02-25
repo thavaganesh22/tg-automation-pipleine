@@ -162,6 +162,21 @@ jobs:
       # generate tests, execute them, and publish the report.
       # The pipeline exits non-zero on any failure (JIRA mismatch, coverage
       # below threshold, SLA breach, etc.) which fails the PR check.
+      - name: Start employee-app (docker compose)
+        run: |
+          docker compose up -d --build --wait
+          echo "Employee app started — waiting for frontend on port 3000"
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:3000 > /dev/null && echo "App reachable" && break
+            echo "Attempt $i/20 — waiting 3s..."
+            sleep 3
+          done
+        env:
+          MONGO_ROOT_PASSWORD: ${{ secrets.MONGO_ROOT_PASSWORD || 'changeme' }}
+          MONGODB_URI: mongodb://admin:${{ secrets.MONGO_ROOT_PASSWORD || 'changeme' }}@localhost:27017/employee_directory?authSource=admin
+          CORS_ORIGIN: http://localhost:5173
+          PORT: 4000
+
       - name: Run full 7-agent pipeline (AGT-01 to AGT-07)
         id: pipeline
         continue-on-error: true
@@ -365,6 +380,10 @@ jobs:
               });
             }
 
+      - name: Stop employee-app
+        if: always()
+        run: docker compose down --volumes
+
       - name: Upload pipeline state
         if: always()
         uses: actions/upload-artifact@v4
@@ -473,6 +492,21 @@ jobs:
           FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
           printf 'PR_CHANGED_FILES<<EOF\n%s\nEOF\n' "$FILES" >> "$GITHUB_ENV"
 
+      - name: Start employee-app (docker compose)
+        run: |
+          docker compose up -d --build --wait
+          echo "Employee app started — waiting for frontend on port 3000"
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:3000 > /dev/null && echo "App reachable" && break
+            echo "Attempt $i/20 — waiting 3s..."
+            sleep 3
+          done
+        env:
+          MONGO_ROOT_PASSWORD: ${{ secrets.MONGO_ROOT_PASSWORD || 'changeme' }}
+          MONGODB_URI: mongodb://admin:${{ secrets.MONGO_ROOT_PASSWORD || 'changeme' }}@localhost:27017/employee_directory?authSource=admin
+          CORS_ORIGIN: http://localhost:5173
+          PORT: 4000
+
       - name: Run 7-Agent QA Pipeline
         run: |
           FROM="${{ github.event.inputs.from_agent || '1' }}"
@@ -504,6 +538,10 @@ jobs:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+
+      - name: Stop employee-app
+        if: always()
+        run: docker compose down --volumes
 
       - name: Save pipeline state
         if: always()

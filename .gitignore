@@ -24,6 +24,7 @@ pipeline-state/
 # ── Playwright ────────────────────────────────────────────────
 playwright-report/
 /test-results/
+playwright-agt06-run-*.config.js
 
 # ── TypeScript ────────────────────────────────────────────────
 *.tsbuildinfo

@@ -158,10 +158,21 @@ export async function runCodebaseAnalyst(repoPath: string): Promise<Scenario[]> 
   // ── Pass B: PR delta → new-feature scenarios ─────────────────────────────
   const newFeatureScenarios: Scenario[] = [];
 
-  if (prContext.changedFiles.length > 0) {
-    console.log(`  [AGT-01] Pass B — analysing PR delta for new-feature scenarios…`);
+  // Filter changed files to only those inside repoPath (the target application).
+  // git diff returns all files in the branch, which may include pipeline source
+  // files (agents/, orchestrator/) that should not be analysed as new features.
+  const repoPathNorm = repoPath.replace(/\\/g, "/").replace(/\/$/, "") + "/";
+  const appChangedFiles = prContext.changedFiles.filter((f) => {
+    const normalised = f.replace(/\\/g, "/");
+    return normalised.startsWith(repoPathNorm) || normalised.startsWith("./" + repoPathNorm);
+  });
+
+  if (appChangedFiles.length > 0) {
+    console.log(
+      `  [AGT-01] Pass B — analysing ${appChangedFiles.length} app-scoped PR changed files…`
+    );
     // Changed files from git are relative to the repo root (process.cwd()), not repoPath
-    const prContents = await readFiles(prContext.changedFiles, process.cwd(), "pr");
+    const prContents = await readFiles(appChangedFiles, process.cwd(), "pr");
     const prChunks = chunkFiles(prContents, PR_CHUNK_CHARS, 3000);
 
     for (let i = 0; i < prChunks.length; i++) {
@@ -171,7 +182,16 @@ export async function runCodebaseAnalyst(repoPath: string): Promise<Scenario[]> 
     }
     console.log(`  [AGT-01] New-feature scenarios: ${newFeatureScenarios.length}`);
   } else {
-    console.warn("  [AGT-01] No changed files — skipping Pass B");
+    const skipped = prContext.changedFiles.length - appChangedFiles.length;
+    if (skipped > 0) {
+      console.warn(
+        `  [AGT-01] Pass B skipped — ${prContext.changedFiles.length} changed files found but ` +
+          `none are inside REPO_PATH (${repoPath}). ` +
+          `Only app files inside REPO_PATH generate new-feature scenarios.`
+      );
+    } else {
+      console.warn("  [AGT-01] No changed files — skipping Pass B");
+    }
   }
 
   const all = deduplicateScenarios([...regressionScenarios, ...newFeatureScenarios]);

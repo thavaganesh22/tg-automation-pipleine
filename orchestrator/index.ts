@@ -88,9 +88,61 @@ async function main(): Promise<void> {
   if (shouldRun(3, fromAgent, singleAgent)) {
     log.phase(3, "AGT-03", "Test Case Design");
     const validatedScenarios = await state.load<ValidatedScenario[]>("validated-scenarios");
-    const testCases = await runTestCaseDesigner(validatedScenarios);
+
+    let testCases: TestCase[];
+    const baselineExists = await state.exists("regression-baseline");
+
+    if (baselineExists) {
+      // ── Subsequent runs: load stable regression baseline ─────────────────
+      const baselineCases = await state.load<TestCase[]>("regression-baseline");
+      log.info(`Loaded ${baselineCases.length} regression test cases from baseline (UUIDs preserved)`);
+
+      const regressionScenarios = validatedScenarios.filter((s) => s.scenarioScope === "regression");
+      const newFeatureScenarios = validatedScenarios.filter((s) => s.scenarioScope === "new-feature");
+
+      // Only generate new regression cases for modules not already in the baseline
+      const baselineModules = new Set(baselineCases.map((tc) => tc.module));
+      const newRegressionScenarios = regressionScenarios.filter(
+        (s) => !baselineModules.has(s.module)
+      );
+
+      const scenariosToProcess = [...newRegressionScenarios, ...newFeatureScenarios];
+      let freshCases: TestCase[] = [];
+
+      if (scenariosToProcess.length > 0) {
+        log.info(
+          `Generating test cases for ${newRegressionScenarios.length} new regression module(s) + ` +
+            `${newFeatureScenarios.length} new-feature scenario(s)`
+        );
+        freshCases = await runTestCaseDesigner(scenariosToProcess);
+      } else {
+        log.info("No new modules or new-feature scenarios — using baseline as-is");
+      }
+
+      // Additive baseline update: append new regression cases for new modules
+      const freshRegression = freshCases.filter((tc) => tc.caseScope === "regression");
+      if (freshRegression.length > 0) {
+        const updatedBaseline = [...baselineCases, ...freshRegression];
+        await state.save("regression-baseline", updatedBaseline);
+        log.info(`Baseline updated: +${freshRegression.length} new regression case(s) (total: ${updatedBaseline.length})`);
+      }
+
+      const freshNewFeature = freshCases.filter((tc) => tc.caseScope === "new-feature");
+      testCases = [...baselineCases, ...freshRegression, ...freshNewFeature];
+    } else {
+      // ── First run: generate all test cases and save regression baseline ──
+      log.info("No regression baseline found — running full test case design");
+      testCases = await runTestCaseDesigner(validatedScenarios);
+
+      const regressionCases = testCases.filter((tc) => tc.caseScope === "regression");
+      await state.save("regression-baseline", regressionCases);
+      log.info(`Regression baseline created: ${regressionCases.length} test cases saved to pipeline-state/regression-baseline.json`);
+    }
+
     await state.save("test-cases", testCases);
-    log.done(`Generated ${testCases.length} manual test cases`);
+    const rCount = testCases.filter((tc) => tc.caseScope === "regression").length;
+    const nfCount = testCases.filter((tc) => tc.caseScope === "new-feature").length;
+    log.done(`${testCases.length} test cases ready (${rCount} regression | ${nfCount} new-feature)`);
     if (singleAgent === 3) {
       log.complete("Single-agent run complete");
       return;
@@ -114,25 +166,29 @@ async function main(): Promise<void> {
   if (shouldRun(5, fromAgent, singleAgent)) {
     log.phase(5, "AGT-05", "Coverage Audit");
     const testCases = await state.load<TestCase[]>("test-cases");
-    let coverageReport = await runCoverageAuditor(testCases, "playwright-tests/specs");
+    let coverageReport = await runCoverageAuditor(testCases, "playwright-tests/specs", config.guardrails);
     await state.save("coverage-report", coverageReport);
 
     log.done(
       `Coverage: ${coverageReport.coveragePercent.toFixed(1)}% | ` +
-        `P0: ${coverageReport.p0CoveragePercent.toFixed(1)}% | ` +
-        `P1: ${coverageReport.p1CoveragePercent.toFixed(1)}%`
+        `P0: ${coverageReport.p0CoveragePercent.toFixed(1)}% (min: ${config.guardrails.minP0Coverage}%) | ` +
+        `P1: ${coverageReport.p1CoveragePercent.toFixed(1)}% (min: ${config.guardrails.minP1Coverage}%)`
     );
 
     // GUARDRAIL: feedback loop — remediate gaps before execution
     if (coverageReport.blocked) {
-      log.warn("P0/P1 coverage < 80% — triggering AGT-04 gap remediation pass");
+      log.warn(
+        `P0 coverage ${coverageReport.p0CoveragePercent.toFixed(1)}% < ${config.guardrails.minP0Coverage}% or ` +
+          `P1 coverage ${coverageReport.p1CoveragePercent.toFixed(1)}% < ${config.guardrails.minP1Coverage}% — ` +
+          `triggering AGT-04 gap remediation pass`
+      );
       const apiSpecs = await loadApiSpecs(config.openApiPath);
       const gapCaseIds = new Set(coverageReport.gapCases.map((g) => g.testCaseId));
       const gapTestCases = testCases.filter((tc) => gapCaseIds.has(tc.id));
       await runPlaywrightEngineer(gapTestCases, apiSpecs, { remediationMode: true });
 
       log.info("Re-checking coverage after remediation…");
-      coverageReport = await runCoverageAuditor(testCases, "playwright-tests/specs");
+      coverageReport = await runCoverageAuditor(testCases, "playwright-tests/specs", config.guardrails);
       await state.save("coverage-report", coverageReport);
 
       if (coverageReport.blocked) {

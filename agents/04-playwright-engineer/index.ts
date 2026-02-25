@@ -257,10 +257,13 @@ Rules:
 - Import: import { setup${pascal}Mocks } from '../fixtures/${module}.fixture'
 - CRITICAL: ONLY call methods from this EXACT list — do NOT invent new method names:
   ${pomMethods.join(", ")}
-- Organise into TWO top-level describe blocks:
-    describe('${module} — Regression Suite', ...) for caseScope="regression"
-    describe('${module} — New Feature', ...) for caseScope="new-feature"
-- Within each describe block, group by type: positive / negative / edge
+- When creating employees via API in setup/teardown steps, ALWAYS include ALL required fields:
+  { firstName, lastName, email, department, position } — omitting any causes 400 and a broken test
+- CRITICAL: use test.describe() NOT describe() — Playwright does not expose describe as a global
+- Organise into TWO top-level blocks:
+    test.describe('${module} — Regression Suite', ...) for caseScope="regression"
+    test.describe('${module} — New Feature', ...) for caseScope="new-feature"
+- Within each test.describe block, group by type using nested test.describe('positive', ...) / test.describe('negative', ...) / test.describe('edge', ...)
 - Add traceability comment above each test: // TC-<id>  SCOPE:<caseScope>
 - Call setup${pascal}Mocks(page) at the start of each test
 - TypeScript strict mode — no 'any'
@@ -304,8 +307,9 @@ async function mergeNewFeatureCases(
 
 Rules:
 - Preserve EVERY existing test() block exactly — do not modify or remove any
-- Add new test() blocks for each new case into the '${module} — New Feature' describe block
-  (create this describe block if it does not already exist)
+- CRITICAL: use test.describe() NOT describe() — Playwright does not expose describe as a global
+- Add new test() blocks for each new case into the '${module} — New Feature' test.describe block
+  (create this test.describe block if it does not already exist)
 - Add traceability comment above each new test: // TC-<id>  SCOPE:new-feature
 - Call setup${pascal}Mocks(page) at start of each new test
 - Maintain consistent style with existing code

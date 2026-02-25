@@ -15,11 +15,15 @@ Every PR triggers the complete pipeline. All 7 agents run sequentially. The PR c
            │
            ▼
   ┌─────────────────┐
-  │     AGT-01      │  Extracts TGDEMO-xxxxx ticket from PR title or branch.
-  │  Codebase       │  Scans only the files changed in this PR.
-  │  Analyst        │  Generates PR-scoped test scenarios.
+  │     AGT-01      │  TWO-PASS STRATEGY:
+  │  Codebase       │  Pass A — walks full codebase; generates REGRESSION
+  │  Analyst        │    scenarios covering existing behaviour.
+  │                 │  Pass B — reads only PR-changed files; generates
+  │                 │    NEW-FEATURE scenarios for introduced/modified code.
+  │                 │  JIRA ticket extracted from PR title or branch (warns
+  │                 │    if missing but does NOT block the pipeline).
   └────────┬────────┘
-           │  scenarios.json
+           │  scenarios.json  (scenarioScope: "regression" | "new-feature")
            ▼
   ┌─────────────────┐
   │     AGT-02      │  Fetches the JIRA story by ticket key.
@@ -31,30 +35,37 @@ Every PR triggers the complete pipeline. All 7 agents run sequentially. The PR c
            │  validated-scenarios.json
            ▼
   ┌─────────────────┐
-  │     AGT-03      │  Expands scenarios into detailed step-by-step
-  │  Test Case      │  test cases with positive and negative variants.
-  │  Designer       │  Max 500 test cases per cycle.
+  │     AGT-03      │  BASELINE STRATEGY:
+  │  Test Case      │  First run — generates all test cases; saves regression
+  │  Designer       │    cases to regression-baseline.json (UUIDs stable).
+  │                 │  Subsequent runs — loads baseline; generates only new
+  │                 │    cases for new modules + new-feature scenarios.
   └────────┬────────┘
-           │  test-cases.json
+           │  test-cases.json  (regression baseline + new-feature cases)
            ▼
   ┌─────────────────┐
-  │     AGT-04      │  Generates Playwright Page Object Models,
-  │  Playwright     │  HTTP mock fixtures, and spec files.
-  │  Engineer       │  TypeScript strict mode validated after each file.
-  └────────┬────────┘
+  │     AGT-04      │  SMART MERGE STRATEGY:
+  │  Playwright     │  New module → full suite (POM → fixtures → spec).
+  │  Engineer       │  Existing spec → merge new-feature cases only.
+  │                 │  Remediation mode → append gap cases to existing spec.
+  │                 │  POM always generated first; spec uses exact POM methods.
+  └────────┬────────┘  TypeScript strict-mode check after each file.
            │  playwright-tests/
            ▼
   ┌─────────────────┐
   │     AGT-05      │  Builds traceability matrix (TC-ID → spec mapping).
-  │  Coverage       │  Checks P0/P1 coverage thresholds (default 80%).
-  │  Auditor        │  ⟳ If P0/P1 < 80% → triggers AGT-04 gap remediation.
+  │  Coverage       │  Match by TC-ID comment (primary); fuzzy title (fallback).
+  │  Auditor        │  Checks P0/P1 coverage thresholds (default 80%).
+  │                 │  ⟳ If P0/P1 < 80% → triggers AGT-04 gap remediation.
   └────────┬────────┘  ❌ Still < 80% after remediation → pipeline halts
            │  coverage-report.json
            ▼
   ┌─────────────────┐
-  │     AGT-06      │  Executes Playwright suite (max 8 workers, 60s/test).
-  │  Test           │  Retries flaky tests up to 2×.
-  │  Executor       │  Captures screenshots, traces, and videos on failure.
+  │     AGT-06      │  Pre-flight TCP check — verifies app is reachable
+  │  Test           │    before spawning Playwright (10 retries, 3 s apart).
+  │  Executor       │  Executes Playwright suite (max 8 workers, 60s/test).
+  │                 │  Retries flaky tests up to 2×.
+  │                 │  Captures screenshots, traces, and videos on failure.
   └────────┬────────┘
            │  execution-result.json
            ▼
@@ -83,13 +94,13 @@ Pushes to `main`/`develop`, nightly schedule, and manual dispatch also run the f
 
 | Agent  | Name                 | Model             | Role                                                                                  |
 | ------ | -------------------- | ----------------- | ------------------------------------------------------------------------------------- |
-| AGT-01 | Codebase Analyst     | claude-opus-4-6   | Extracts JIRA ticket from PR; scans changed files only; generates PR-scoped scenarios |
-| AGT-02 | JIRA Story Validator | claude-opus-4-6   | Fetches JIRA story by key; deep code-vs-story alignment; FAIL verdict blocks pipeline |
-| AGT-03 | Test Case Designer   | claude-opus-4-6   | Expands scenarios into detailed manual test cases (positive + negative variants)      |
-| AGT-04 | Playwright Engineer  | claude-opus-4-6   | Generates Page Object Models, HTTP mock fixtures, and Playwright spec files           |
-| AGT-05 | Coverage Auditor     | claude-sonnet-4-6 | Traceability matrix; P0/P1 coverage gates; triggers AGT-04 gap remediation            |
-| AGT-06 | Test Executor        | —                 | Executes Playwright suite; retries flaky tests; captures failure artifacts            |
-| AGT-07 | Report Architect     | claude-sonnet-4-6 | PostgreSQL persistence; HTML dashboard; SLA alerting                                  |
+| AGT-01 | Codebase Analyst     | claude-opus-4-6   | Two-pass: full codebase → regression scenarios (Pass A); PR changed files → new-feature scenarios (Pass B) |
+| AGT-02 | JIRA Story Validator | claude-opus-4-6   | Fetches JIRA story by key; deep code-vs-story alignment; FAIL verdict blocks pipeline                      |
+| AGT-03 | Test Case Designer   | claude-opus-4-6   | Baseline strategy: generates all cases on first run; subsequent runs reuse baseline + only new cases        |
+| AGT-04 | Playwright Engineer  | claude-opus-4-6   | Smart merge: new modules get full suite; existing specs get new-feature merge; POM generated before spec   |
+| AGT-05 | Coverage Auditor     | —                 | Traceability matrix (TC-ID + fuzzy match); P0/P1 coverage gates; triggers AGT-04 gap remediation           |
+| AGT-06 | Test Executor        | —                 | Pre-flight reachability check; executes Playwright suite; retries flaky tests; captures failure artifacts  |
+| AGT-07 | Report Architect     | claude-sonnet-4-6 | PostgreSQL persistence; HTML dashboard; SLA alerting                                                       |
 
 ---
 
@@ -142,7 +153,7 @@ feat/TGDEMO-12345-payment-gateway
 bugfix/TGDEMO-99-invoice-rounding
 ```
 
-If no ticket is found in either the PR title or branch name, AGT-01 throws immediately and the pipeline halts before any LLM calls are made.
+If no ticket is found in either the PR title or branch name, AGT-01 logs a warning and continues with `jiraTicket: "UNKNOWN-0"`. Regression Pass A always runs regardless of PR context; Pass B (new-feature scenarios) is skipped if no app-scoped changed files are found. Full JIRA traceability requires `PR_TITLE` or `PR_BRANCH` to contain the ticket key.
 
 ### Targeted Runs (local / manual CI)
 
@@ -175,13 +186,14 @@ Triggered on every PR open or update targeting `main` or `develop`. The PR statu
 
 **Blocking conditions — any of these fail the PR check:**
 
-| Condition                   | Source | Detail                                             |
-| --------------------------- | ------ | -------------------------------------------------- |
-| Missing JIRA ticket         | AGT-01 | `TGDEMO-xxxxx` not found in PR title or branch     |
-| Alignment FAIL              | AGT-02 | Code contradicts or is unrelated to the JIRA story |
-| P0 coverage below threshold | AGT-05 | <80% P0 test coverage after gap remediation        |
-| P1 coverage below threshold | AGT-05 | <80% P1 test coverage after gap remediation        |
-| AGT-07 did not complete     | AGT-07 | Report Architect must finish for the check to pass |
+| Condition                   | Source | Detail                                                                             |
+| --------------------------- | ------ | ---------------------------------------------------------------------------------- |
+| Alignment FAIL              | AGT-02 | Code contradicts or is unrelated to the JIRA story                                |
+| P0 coverage below threshold | AGT-05 | <80% P0 test coverage after gap remediation                                        |
+| P1 coverage below threshold | AGT-05 | <80% P1 test coverage after gap remediation                                        |
+| AGT-07 did not complete     | AGT-07 | Report Architect must finish for the check to pass                                 |
+
+> **Note:** A missing JIRA ticket (`TGDEMO-xxxxx` not found in PR title or branch) logs a warning but does **not** block the pipeline. Regression analysis continues; new-feature scenarios require a valid ticket for full traceability.
 
 **PR comment behaviour:**
 
@@ -270,11 +282,15 @@ All agents communicate through JSON files in `pipeline-state/`:
 ```
 pipeline-state/
 ├── scenarios.json              # AGT-01 output → AGT-02 input
+│                               #   Each scenario tagged: scenarioScope = "regression" | "new-feature"
 │                               #   Contains: jiraTicket, prNumber, changedFiles
 ├── validated-scenarios.json    # AGT-02 output → AGT-03 input
 │                               #   Adds: jiraRef, alignmentVerdict, alignmentFindings,
 │                               #         jiraSummary, jiraAcceptanceCriteria, coverageStatus
+├── regression-baseline.json    # AGT-03 output (first run only) — stable regression test cases
+│                               #   UUIDs preserved across runs; appended when new modules appear
 ├── test-cases.json             # AGT-03 output → AGT-04 + AGT-05 input
+│                               #   = regression baseline + any new-feature cases for this PR
 ├── coverage-report.json        # AGT-05 output → AGT-06 + AGT-07 input
 ├── execution-result.json       # AGT-06 output → AGT-07 input
 └── traceability-matrix.json    # AGT-05 output (uploaded as CI artifact, 30-day retention)
@@ -306,7 +322,7 @@ The pipeline is **restartable at any agent**. If AGT-06 fails due to a flaky env
 ### Operational
 
 - AGT-01 scans at most `MAX_FILES_SCAN` files (default: 1,000) per run
-- Files larger than 500KB are skipped with a logged warning
+- Files larger than 300 KB are skipped with a logged warning
 - AGT-03 generates at most `MAX_TEST_CASES` test cases (default: 500) per cycle
 - Playwright hard timeout: **30 minutes** total; **60 seconds** per individual test
 - Maximum **8 parallel workers**
@@ -315,10 +331,21 @@ The pipeline is **restartable at any agent**. If AGT-06 fails due to a flaky env
 
 ### AGT-05 → AGT-04 Feedback Loop
 
-1. AGT-05 identifies test case IDs with no matching Playwright spec
-2. AGT-04 re-runs in `remediationMode` with only the gap cases
-3. AGT-05 re-checks coverage
-4. If still below threshold → `process.exit(1)` — pipeline fails, PR blocked
+1. AGT-05 builds a traceability matrix — each test case matched by `TC-<id>` comment (primary) or fuzzy title (fallback)
+2. AGT-05 identifies test case IDs with no matching Playwright spec
+3. AGT-04 re-runs in `remediationMode` with only the gap cases — appends tests to existing specs (never overwrites)
+4. AGT-05 re-checks coverage
+5. If still below threshold → `process.exit(1)` — pipeline fails, PR blocked
+
+### AGT-03 Regression Baseline
+
+On the **first run**, AGT-03 generates all test cases and saves regression cases to `pipeline-state/regression-baseline.json`. UUIDs are stable across runs, ensuring consistent TC-ID traceability.
+
+On **subsequent runs**, AGT-03 loads the baseline and only generates:
+- New regression cases for modules that did not exist in the baseline
+- New-feature cases for this PR's new-feature scenarios
+
+The baseline is **additively updated** — new module cases are appended; nothing is ever removed.
 
 ---
 

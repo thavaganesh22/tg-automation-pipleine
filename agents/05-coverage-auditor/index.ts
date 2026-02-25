@@ -29,9 +29,16 @@ export interface CoverageReport {
 
 // ── Main Agent ─────────────────────────────────────────────────────────────
 
+export interface CoverageGuardrails {
+  minP0Coverage: number;
+  minP1Coverage: number;
+  maxGapPercent: number;
+}
+
 export async function runCoverageAuditor(
   testCases: TestCase[],
-  specDir: string
+  specDir: string,
+  guardrails?: CoverageGuardrails
 ): Promise<CoverageReport> {
   const specFiles = await loadSpecFiles(specDir);
   console.log(`  [AGT-05] Loaded ${Object.keys(specFiles).length} spec files`);
@@ -60,9 +67,9 @@ export async function runCoverageAuditor(
   const p0Pct = p0Total > 0 ? (p0Covered / p0Total) * 100 : 100;
   const p1Pct = p1Total > 0 ? (p1Covered / p1Total) * 100 : 100;
 
-  const minP0 = parseFloat(process.env.MIN_P0_COVERAGE ?? "80");
-  const minP1 = parseFloat(process.env.MIN_P1_COVERAGE ?? "80");
-  const maxGap = parseFloat(process.env.MAX_GAP_PERCENT ?? "20");
+  const minP0 = guardrails?.minP0Coverage ?? parseFloat(process.env.MIN_P0_COVERAGE ?? "80");
+  const minP1 = guardrails?.minP1Coverage ?? parseFloat(process.env.MIN_P1_COVERAGE ?? "80");
+  const maxGap = guardrails?.maxGapPercent ?? parseFloat(process.env.MAX_GAP_PERCENT ?? "20");
 
   // GUARDRAIL: block if critical coverage below threshold
   const blocked = p0Pct < minP0 || p1Pct < minP1;
