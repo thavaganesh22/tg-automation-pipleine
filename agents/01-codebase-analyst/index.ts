@@ -1,18 +1,19 @@
 /**
- * AGT-01 — Codebase Analyst  (v2)
+ * AGT-01 — Codebase Analyst  (v3)
  *
- * Two-pass analysis strategy:
+ * Full-codebase regression analysis strategy:
  *
- *   Pass A — Full codebase scan
- *     Walks the entire repo source tree to build a module map.
- *     Each module produces REGRESSION scenarios covering existing behaviour
- *     that must keep working regardless of what the PR changes.
+ *   Walks the entire repo source tree to build a module map.
+ *   Produces REGRESSION scenarios covering existing behaviour that must keep
+ *   working regardless of what the PR changes.
  *
- *   Pass B — PR delta scan
- *     Reads only the files changed in this PR. Produces NEW-FEATURE scenarios
- *     covering the specific behaviour introduced or modified by this PR.
+ *   Test type is controlled by the --test-type flag or TEST_TYPE env var:
+ *     ui   — UI/frontend scenarios only (React components, forms, navigation)
+ *     api  — API/backend scenarios only (HTTP endpoints, CRUD, auth errors)
+ *     both — Both UI and API scenarios (default)
  *
- * Output: Scenario[] tagged with scenarioScope = "regression" | "new-feature"
+ * Output: Scenario[] tagged with scenarioScope = "regression"
+ *         and testType = "ui" | "api"
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -34,6 +35,7 @@ const ScenarioSchema = z.object({
   entryPoints: z.array(z.string()),
   priority: z.enum(["P0", "P1", "P2", "P3"]),
   scenarioScope: z.enum(["regression", "new-feature"]),
+  testType: z.enum(["ui", "api"]),
   userJourneys: z.array(z.string()).optional(),
   apiEndpoints: z.array(z.string()).optional(),
   jiraTicket: z.string(),
@@ -42,6 +44,9 @@ const ScenarioSchema = z.object({
 });
 
 export type Scenario = z.infer<typeof ScenarioSchema>;
+
+/** Controls which scenario types are generated and returned by AGT-01. */
+export type TestType = "ui" | "api" | "both";
 
 export interface PRContext {
   jiraTicket: string;
@@ -57,14 +62,9 @@ export interface PRContext {
 const MAX_FILES = parseInt(process.env.MAX_FILES_SCAN ?? "1000", 10);
 const MAX_FILE_SIZE_BYTES = 300_000;
 const CODEBASE_CHUNK_CHARS = 60_000;
-const PR_CHUNK_CHARS = 50_000;
 // Max scenarios per LLM call — keeps output within the max_tokens budget
 const MAX_REGRESSION_SCENARIOS_PER_CHUNK = parseInt(
   process.env.MAX_REGRESSION_SCENARIOS_PER_CHUNK ?? "20",
-  10
-);
-const MAX_NEW_FEATURE_SCENARIOS_PER_CHUNK = parseInt(
-  process.env.MAX_NEW_FEATURE_SCENARIOS_PER_CHUNK ?? "15",
   10
 );
 
@@ -122,16 +122,33 @@ const SECRET_PATTERNS = [
 
 // ── Main Agent ─────────────────────────────────────────────────────────────
 
-export async function runCodebaseAnalyst(repoPath: string): Promise<Scenario[]> {
+/**
+ * Run the codebase analyst agent.
+ *
+ * @param repoPath  Path to the target application repo (REPO_PATH in .env).
+ * @param testType  Which scenario types to generate and return.
+ *                  "ui"   → UI/frontend only
+ *                  "api"  → API/backend only
+ *                  "both" → both (default)
+ *                  Falls back to TEST_TYPE env var, then "both".
+ */
+export async function runCodebaseAnalyst(
+  repoPath: string,
+  testType?: TestType
+): Promise<Scenario[]> {
   await fs.access(repoPath);
+
+  // Resolve effective test type: explicit arg > env var > default "both"
+  const effectiveTestType: TestType =
+    testType ?? ((process.env.TEST_TYPE as TestType | undefined) ?? "both");
 
   const prContext = extractPRContext();
   console.log(`  [AGT-01] PR #${prContext.prNumber} — JIRA: ${prContext.jiraTicket}`);
   console.log(`  [AGT-01] Branch: ${prContext.prBranch} → ${prContext.baseBranch}`);
-  console.log(`  [AGT-01] PR changed files: ${prContext.changedFiles.length}`);
+  console.log(`  [AGT-01] Test type filter: ${effectiveTestType}`);
 
-  // ── Pass A: full codebase → regression scenarios ─────────────────────────
-  console.log(`  [AGT-01] Pass A — scanning full codebase for regression scenarios…`);
+  // ── Full codebase scan → regression scenarios ────────────────────────────
+  console.log(`  [AGT-01] Scanning full codebase for regression scenarios…`);
   console.log(`  [AGT-01] Scanning repo path: ${path.resolve(repoPath)}`);
   const allSourceFiles = await walkSourceTree(repoPath);
   console.log(`  [AGT-01] Source files found: ${allSourceFiles.length}`);
@@ -149,56 +166,30 @@ export async function runCodebaseAnalyst(repoPath: string): Promise<Scenario[]> 
   const regressionScenarios: Scenario[] = [];
 
   for (let i = 0; i < codebaseChunks.length; i++) {
-    console.log(`  [AGT-01] Codebase chunk ${i + 1}/${codebaseChunks.length}…`);
-    const s = await analyseForRegression(codebaseChunks[i], prContext, i, codebaseChunks.length);
+    console.log(`  [AGT-01] Chunk ${i + 1}/${codebaseChunks.length}…`);
+    const s = await analyseForRegression(
+      codebaseChunks[i],
+      prContext,
+      effectiveTestType,
+      i,
+      codebaseChunks.length
+    );
     regressionScenarios.push(...s);
   }
-  console.log(`  [AGT-01] Regression scenarios: ${regressionScenarios.length}`);
 
-  // ── Pass B: PR delta → new-feature scenarios ─────────────────────────────
-  const newFeatureScenarios: Scenario[] = [];
+  // Filter by testType before deduplication
+  const filtered =
+    effectiveTestType === "both"
+      ? regressionScenarios
+      : regressionScenarios.filter((s) => s.testType === effectiveTestType);
 
-  // Filter changed files to only those inside repoPath (the target application).
-  // git diff returns all files in the branch, which may include pipeline source
-  // files (agents/, orchestrator/) that should not be analysed as new features.
-  const repoPathNorm = repoPath.replace(/\\/g, "/").replace(/\/$/, "") + "/";
-  const appChangedFiles = prContext.changedFiles.filter((f) => {
-    const normalised = f.replace(/\\/g, "/");
-    return normalised.startsWith(repoPathNorm) || normalised.startsWith("./" + repoPathNorm);
-  });
+  const all = deduplicateScenarios(filtered);
 
-  if (appChangedFiles.length > 0) {
-    console.log(
-      `  [AGT-01] Pass B — analysing ${appChangedFiles.length} app-scoped PR changed files…`
-    );
-    // Changed files from git are relative to the repo root (process.cwd()), not repoPath
-    const prContents = await readFiles(appChangedFiles, process.cwd(), "pr");
-    const prChunks = chunkFiles(prContents, PR_CHUNK_CHARS, 3000);
-
-    for (let i = 0; i < prChunks.length; i++) {
-      console.log(`  [AGT-01] PR delta chunk ${i + 1}/${prChunks.length}…`);
-      const s = await analyseForNewFeature(prChunks[i], prContext, i, prChunks.length);
-      newFeatureScenarios.push(...s);
-    }
-    console.log(`  [AGT-01] New-feature scenarios: ${newFeatureScenarios.length}`);
-  } else {
-    const skipped = prContext.changedFiles.length - appChangedFiles.length;
-    if (skipped > 0) {
-      console.warn(
-        `  [AGT-01] Pass B skipped — ${prContext.changedFiles.length} changed files found but ` +
-          `none are inside REPO_PATH (${repoPath}). ` +
-          `Only app files inside REPO_PATH generate new-feature scenarios.`
-      );
-    } else {
-      console.warn("  [AGT-01] No changed files — skipping Pass B");
-    }
-  }
-
-  const all = deduplicateScenarios([...regressionScenarios, ...newFeatureScenarios]);
+  const uiCount = all.filter((s) => s.testType === "ui").length;
+  const apiCount = all.filter((s) => s.testType === "api").length;
   console.log(
-    `  [AGT-01] Total unique scenarios: ${all.length} ` +
-      `(${all.filter((s) => s.scenarioScope === "regression").length} regression + ` +
-      `${all.filter((s) => s.scenarioScope === "new-feature").length} new-feature)`
+    `  [AGT-01] Total unique regression scenarios: ${all.length} ` +
+      `(${uiCount} UI | ${apiCount} API)`
   );
   return all;
 }
@@ -376,17 +367,33 @@ function chunkFiles(
   return chunks;
 }
 
-// ── LLM Analysis — Pass A: Regression ─────────────────────────────────────
+// ── LLM Analysis — Regression ──────────────────────────────────────────────
 
 async function analyseForRegression(
   files: Record<string, string>,
   prContext: PRContext,
+  testType: TestType,
   chunkIndex: number,
   totalChunks: number
 ): Promise<Scenario[]> {
   const filesSummary = Object.entries(files)
     .map(([p, c]) => `### ${p}\n${c}`)
     .join("\n\n");
+
+  // Build the type-constraint instruction based on the requested test type
+  const typeInstruction =
+    testType === "ui"
+      ? `GENERATE ONLY UI TEST SCENARIOS covering React/frontend behaviour:
+  page loads, user interactions, form validation, navigation, empty states, error banners.
+  Set "testType": "ui" on every scenario. Do NOT generate API or backend scenarios.`
+      : testType === "api"
+        ? `GENERATE ONLY API TEST SCENARIOS covering backend/HTTP behaviour:
+  happy-path responses (200/201), validation errors (400), auth errors (401/403), not-found (404), CRUD operations.
+  Set "testType": "api" on every scenario. Do NOT generate UI or frontend scenarios.`
+        : `GENERATE BOTH UI AND API TEST SCENARIOS:
+  - UI scenarios ("testType": "ui"): page loads, interactions, form validation, navigation, error states
+  - API scenarios ("testType": "api"): HTTP endpoints, CRUD, validation (400), auth (401/403/404)
+  For each major module include: 1 UI + 1 API scenario minimum.`;
 
   const response = await client.messages.create({
     model: "claude-opus-4-6",
@@ -397,12 +404,8 @@ Codebase chunk ${chunkIndex + 1} of ${totalChunks}.
 HARD LIMIT: Generate AT MOST ${MAX_REGRESSION_SCENARIOS_PER_CHUNK} scenarios total. Be selective — prioritise P0 and P1 coverage. Skip P3 scenarios if near the limit.
 
 IMPORTANT: This is a PURE APPLICATION ANALYSIS. Do NOT consider any PR, ticket, or recent change.
-Read the source files and identify the key testable features. Cover BOTH frontend and backend layers.
 
-FRONTEND (.tsx/.jsx files): page loads, user interactions, form validation, error states
-BACKEND (.ts routes/controllers): happy-path HTTP calls, validation errors (400), auth errors (401/403/404), CRUD
-
-For each major module include: 1 FRONTEND + 1 BACKEND + 1 ERROR scenario (that's already 3 — stop there unless critical gaps remain).
+${typeInstruction}
 
 IMPORTANT JSON FORMAT RULES:
 - Return ONLY a raw JSON array with NO markdown code fences, NO backticks, NO explanation text
@@ -410,14 +413,15 @@ IMPORTANT JSON FORMAT RULES:
 - Keep all string values SHORT (max 15 words) — no sentences or paragraphs
 - Do NOT use quotes inside string values
 
-Schema:
+Schema (every field required):
 {
-  "title": "[Frontend|Backend|Integration] <Module>: <10-word max title>",
+  "title": "[UI|API] <Module>: <10-word max title>",
   "module": "lowercase-kebab-case",
   "description": "10-word max description of what this protects",
   "entryPoints": ["file/path.ts"],
   "priority": "P0|P1|P2|P3",
   "scenarioScope": "regression",
+  "testType": "ui|api",
   "userJourneys": ["one short journey description"],
   "apiEndpoints": ["GET /api/route"],
   "jiraTicket": "${prContext.jiraTicket}",
@@ -440,69 +444,6 @@ Schema:
   );
 }
 
-// ── LLM Analysis — Pass B: New Feature ────────────────────────────────────
-
-async function analyseForNewFeature(
-  files: Record<string, string>,
-  prContext: PRContext,
-  chunkIndex: number,
-  totalChunks: number
-): Promise<Scenario[]> {
-  const filesSummary = Object.entries(files)
-    .map(([p, c]) => `### ${p}\n${c}`)
-    .join("\n\n");
-
-  const response = await client.messages.create({
-    model: "claude-opus-4-6",
-    max_tokens: 8096,
-    system: `You are a senior QA architect analysing files changed in a Pull Request.
-PR delta chunk ${chunkIndex + 1} of ${totalChunks}.
-
-HARD LIMIT: Generate AT MOST ${MAX_NEW_FEATURE_SCENARIOS_PER_CHUNK} scenarios total.
-
-Context:
-- JIRA Ticket: ${prContext.jiraTicket}
-- PR: "${prContext.prTitle}"
-- Branch: ${prContext.prBranch} → ${prContext.baseBranch}
-
-Your job: generate NEW-FEATURE SCENARIOS for behaviour INTRODUCED or MODIFIED by this PR (frontend + backend).
-
-IMPORTANT JSON FORMAT RULES:
-- Return ONLY a raw JSON array with NO markdown code fences, NO backticks, NO explanation text
-- Start your response with [ and end with ]
-- Keep all string values SHORT (max 15 words) — no long sentences
-- Do NOT use quotes inside string values
-
-Schema:
-{
-  "title": "[Frontend|Backend|Integration] <Module>: <10-word max title>",
-  "module": "lowercase-kebab-case",
-  "description": "10-word max description",
-  "entryPoints": ["file/path.ts"],
-  "priority": "P0|P1|P2|P3",
-  "scenarioScope": "new-feature",
-  "userJourneys": ["short journey description"],
-  "apiEndpoints": ["POST /api/route"],
-  "jiraTicket": "${prContext.jiraTicket}",
-  "prNumber": "${prContext.prNumber}",
-  "changedFiles": ["changed/file.ts"]
-}`,
-    messages: [
-      {
-        role: "user",
-        content: `PR changed files [${prContext.jiraTicket}] — generate up to ${MAX_NEW_FEATURE_SCENARIOS_PER_CHUNK} new-feature scenarios (raw JSON array, no code fences):\n\n${filesSummary}`,
-      },
-    ],
-  });
-
-  return parseScenarios(
-    (response.content[0] as { text: string }).text,
-    prContext,
-    Object.keys(files),
-    "new-feature"
-  );
-}
-
 // ── Parsing & Dedup ────────────────────────────────────────────────────────
 
 /** Coerce a value to a string array — handles string, array, or undefined from LLM output */
@@ -520,6 +461,21 @@ function normalisePriority(val: unknown): "P0" | "P1" | "P2" | "P3" {
   if (s.includes("CRITICAL") || s.includes("HIGH")) return "P1";
   if (s.includes("LOW") || s.includes("MINOR")) return "P3";
   return "P2";
+}
+
+/**
+ * Infer testType from LLM output.
+ * Uses the explicit "testType" field first, then falls back to the title prefix.
+ */
+function inferTestType(obj: Record<string, unknown>): "ui" | "api" {
+  const explicit = String(obj["testType"] ?? "").toLowerCase().trim();
+  if (explicit === "ui") return "ui";
+  if (explicit === "api") return "api";
+
+  // Fall back to title prefix: "[UI]..." → ui, "[API]..." → api
+  const title = String(obj["title"] ?? "").toLowerCase();
+  if (title.startsWith("[api]") || title.startsWith("[backend]")) return "api";
+  return "ui"; // default to UI when ambiguous
 }
 
 function parseScenarios(
@@ -555,6 +511,7 @@ function parseScenarios(
         entryPoints: toStringArray(obj["entryPoints"], fallbackFiles),
         priority: normalisePriority(obj["priority"]),
         scenarioScope: scope,
+        testType: inferTestType(obj),
         userJourneys: toStringArray(obj["userJourneys"]),
         apiEndpoints: toStringArray(obj["apiEndpoints"]),
         id: uuidv4(),

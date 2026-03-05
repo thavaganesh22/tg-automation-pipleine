@@ -1,28 +1,25 @@
 /**
- * AGT-03 — Test Case Designer  (v2)
+ * AGT-03 — Test Case Designer  (v3)
  *
- * Receives ValidatedScenario[] from AGT-02, which are tagged with
- * scenarioScope = "regression" | "new-feature".
+ * Receives ValidatedScenario[] from AGT-02, each tagged with:
+ *   scenarioScope = "regression" | "new-feature"
+ *   testType      = "ui" | "api"
  *
- * For REGRESSION scenarios:
- *   Generates detailed test cases that verify the application's existing,
- *   stable behaviour still works correctly. Emphasis on:
- *   - Confirming established happy paths haven't regressed
- *   - Verifying known error handling still works
- *   - Boundary conditions that have always been valid
- *   - Integration contracts that downstream systems rely on
+ * For each scenario, generates detailed test cases scoped strictly to
+ * the scenario's testType:
  *
- * For NEW-FEATURE scenarios:
- *   Generates detailed test cases validating the new/changed behaviour
- *   from the PR. Emphasis on:
- *   - Happy path for the new feature
- *   - All acceptance criteria from the JIRA story
- *   - New negative/edge cases introduced by the change
- *   - Integration regression risk from the new code
+ *   testType = "ui"
+ *     Browser-based test cases only: navigate pages, interact with UI elements
+ *     (buttons, forms, modals), assert visible text, rendered lists, redirects.
+ *     No HTTP request steps.
  *
- * Both scopes always produce: positive + negative + edge case types.
- * caseScope on each TestCase propagates to AGT-04 so it knows whether
- * to add to an existing spec (regression) or create/modify (new-feature).
+ *   testType = "api"
+ *     HTTP test cases only: send GET/POST/PUT/PATCH/DELETE requests with
+ *     headers and bodies, assert status codes and response JSON fields.
+ *     No browser navigation steps.
+ *
+ * Every TestCase carries testType so AGT-04 can write the right kind of
+ * Playwright test (page interactions vs page.evaluate fetch).
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -50,6 +47,7 @@ export const TestCaseSchema = z.object({
   priority: z.enum(["P0", "P1", "P2", "P3"]),
   type: z.enum(["positive", "negative", "edge"]),
   caseScope: z.enum(["regression", "new-feature"]),
+  testType: z.enum(["ui", "api"]), // propagated from scenario.testType — LLM cannot override
   preconditions: z.array(z.string()).min(1),
   steps: z.array(TestStepSchema).min(3).max(20),
   expectedOutcome: z.string().min(1),
@@ -88,32 +86,37 @@ export async function runTestCaseDesigner(scenarios: ValidatedScenario[]): Promi
   const newFeature = scenarios.filter((s) => s.scenarioScope === "new-feature");
 
   console.log(
-    `  [AGT-03] Scenarios: ${regression.length} regression + ${newFeature.length} new-feature`
+    `  [AGT-03] Scenarios: ` +
+      `${regression.length} regression ` +
+      `(${regression.filter((s) => s.testType === "ui").length} UI | ` +
+      `${regression.filter((s) => s.testType === "api").length} API) + ` +
+      `${newFeature.length} new-feature ` +
+      `(${newFeature.filter((s) => s.testType === "ui").length} UI | ` +
+      `${newFeature.filter((s) => s.testType === "api").length} API)`
   );
-
-  const regressionCases: TestCase[] = [];
-  const newFeatureCases: TestCase[] = [];
-
   console.log(
     `  [AGT-03] Limits: ${MAX_CASES_PER_SCENARIO} per scenario | ` +
       `${MAX_REGRESSION_CASES} regression total | ${MAX_NEW_FEATURE_CASES} new-feature total`
   );
 
+  const regressionCases: TestCase[] = [];
+  const newFeatureCases: TestCase[] = [];
+
   // Regression cases first — they form the stable baseline suite
   for (const scenario of regression) {
     if (regressionCases.length >= MAX_REGRESSION_CASES) break;
-    console.log(`  [AGT-03] [regression] ${scenario.title}`);
+    console.log(`  [AGT-03] [regression/${scenario.testType}] ${scenario.title}`);
     const remaining = MAX_REGRESSION_CASES - regressionCases.length;
-    const cases = await generateRegressionCases(scenario, MAX_CASES_PER_SCENARIO);
+    const cases = await generateCases(scenario, MAX_CASES_PER_SCENARIO, "regression");
     regressionCases.push(...cases.slice(0, remaining));
   }
 
-  // New-feature cases — test the PR delta
+  // New-feature cases — JIRA story derived scenarios from AGT-02
   for (const scenario of newFeature) {
     if (newFeatureCases.length >= MAX_NEW_FEATURE_CASES) break;
-    console.log(`  [AGT-03] [new-feature] ${scenario.title}`);
+    console.log(`  [AGT-03] [new-feature/${scenario.testType}] ${scenario.title}`);
     const remaining = MAX_NEW_FEATURE_CASES - newFeatureCases.length;
-    const cases = await generateNewFeatureCases(scenario, MAX_CASES_PER_SCENARIO);
+    const cases = await generateCases(scenario, MAX_CASES_PER_SCENARIO, "new-feature");
     newFeatureCases.push(...cases.slice(0, remaining));
   }
 
@@ -125,159 +128,124 @@ export async function runTestCaseDesigner(scenarios: ValidatedScenario[]): Promi
   }
 
   const allCases = [...regressionCases, ...newFeatureCases];
+  const uiTotal = allCases.filter((tc) => tc.testType === "ui").length;
+  const apiTotal = allCases.filter((tc) => tc.testType === "api").length;
   console.log(
-    `  [AGT-03] Total test cases: ${allCases.length} (${regressionCases.length} regression + ${newFeatureCases.length} new-feature)`
+    `  [AGT-03] Total test cases: ${allCases.length} ` +
+      `(${regressionCases.length} regression | ${newFeatureCases.length} new-feature) ` +
+      `(${uiTotal} UI | ${apiTotal} API)`
   );
 
   return allCases;
 }
 
-// ── Regression Case Generation ─────────────────────────────────────────────
+// ── Case Generation (type-aware) ───────────────────────────────────────────
 
-async function generateRegressionCases(
+async function generateCases(
   scenario: ValidatedScenario,
-  maxCases: number
+  maxCases: number,
+  caseScope: "regression" | "new-feature"
 ): Promise<TestCase[]> {
+  const isUI = scenario.testType === "ui";
+
+  // Type-specific instructions — UI cases = browser only, API cases = HTTP only
+  const typeInstruction = isUI
+    ? `UI TEST CASES ONLY — browser-based, user-facing interactions:
+  - Navigate to routes, click buttons/links, fill forms, submit data
+  - Assert: visible text, rendered lists, form validation messages, toast notifications,
+    modal states, error banners, redirects
+  - Steps must describe exactly what a browser user does and what they see
+  - Do NOT write HTTP requests, status codes, or response body assertions`
+    : `API TEST CASES ONLY — backend HTTP calls:
+  - Send HTTP requests (GET/POST/PUT/PATCH/DELETE) with appropriate headers and body
+  - Assert: HTTP status codes (200/201/400/401/403/404/422/500), response JSON field values,
+    response Content-Type, and error message text in response body
+  - Steps must be curl-style or HTTP-client steps (method, URL, headers, body)
+  - Do NOT describe browser navigation, UI elements, or DOM state`;
+
+  const titlePrefix = isUI ? "[UI]" : "[API]";
+  const exampleAction = isUI
+    ? "Navigate to / and click the Add Employee button"
+    : "Send POST /api/employees with JSON body: {firstName, email, department}";
+  const exampleResult = isUI
+    ? "Employee drawer opens and all form fields are visible and interactive"
+    : "Response 201 with JSON body containing id, firstName, email fields";
+  const exampleData = isUI
+    ? "selector: [data-testid=add-employee-btn]"
+    : '{"firstName":"Test","email":"test@test.com","department":"Engineering"}';
+
+  // Scope-specific context block
+  const scopeContext =
+    caseScope === "regression"
+      ? `These test cases verify EXISTING, STABLE behaviour. They run on every release.
+Do NOT limit them to any PR or ticket — they protect the whole module.`
+      : `These test cases validate NEW behaviour from JIRA story ${scenario.jiraTicket}.
+Acceptance Criteria: ${scenario.jiraAcceptanceCriteria ?? "N/A"}
+JIRA Description: ${scenario.jiraDescription ?? "N/A"}
+Alignment: ${scenario.alignmentSummary}`;
+
   const response = await client.messages.create({
     model: "claude-opus-4-6",
     max_tokens: 8096,
-    system: `You are a senior QA engineer writing REGRESSION test cases for a full-stack web application.
+    system: `You are a senior QA engineer writing ${scenario.testType.toUpperCase()} test cases for a web application.
 
-IMPORTANT: These test cases are for the WHOLE APPLICATION — they are NOT limited to any PR or ticket.
-They verify the EXISTING, STABLE behaviour of the module described below and run on every release.
+${typeInstruction}
 
-Rules (MANDATORY):
-1. Generate AT MOST ${maxCases} test cases total — prioritise the most critical coverage
-2. Write test cases for BOTH layers:
-   FRONTEND — use the entry point file paths to infer pages/routes/components:
-     - Navigate to the page, interact with UI elements (buttons, forms, links)
-     - Assert visible text, rendered lists, form validation messages, redirects
-   BACKEND — use the apiEndpoints list for direct HTTP call steps:
-     - Send the request (method, URL, headers, body)
-     - Assert HTTP status code and response body fields
-3. Include at least one POSITIVE (happy path), one NEGATIVE (error/rejection), one EDGE (boundary) case
-4. Each test case needs 3–20 concrete, independently reproducible steps
-5. Steps must be specific to THIS module — reference real routes and file paths provided
-6. Flag requiresPII: true if any step involves personal data (names, emails, phone, SSN)
-7. NEVER hardcode real credentials — use [VALID_USER_TOKEN], [TEST_EMAIL], [TEST_PASSWORD]
-8. Return ONLY a valid JSON array — no markdown, no explanation
+MANDATORY RULES:
+1. Generate AT MOST ${maxCases} test cases — prioritise P0 and P1 coverage
+2. Include at least: 1 positive (happy path), 1 negative (error/rejection), 1 edge (boundary)
+3. Each test case needs 3–20 concrete, independently reproducible steps
+4. Steps must reference real routes/endpoints/files from the scenario context
+5. Flag requiresPII: true if any step involves personal data (names, emails, phone, SSN)
+6. NEVER hardcode real credentials — use [VALID_USER_TOKEN], [TEST_EMAIL], [TEST_PASSWORD]
+7. Return ONLY a valid JSON array — no markdown, no explanation text
 
 Schema per test case:
 {
-  "title": "[Frontend|Backend|Integration] <short descriptive title for this module>",
+  "title": "${titlePrefix} ${scenario.module}: <short descriptive title>",
   "module": "${scenario.module}",
   "priority": "P0|P1|P2|P3",
   "type": "positive|negative|edge",
-  "caseScope": "regression",
-  "preconditions": ["required system/data state before this test runs"],
+  "caseScope": "${caseScope}",
+  "testType": "${scenario.testType}",
+  "preconditions": ["required system/data state before the test runs"],
   "steps": [
     {
       "stepNumber": 1,
-      "action": "Frontend: 'Navigate to /employees and click Add Employee' OR Backend: 'Send POST /api/employees with valid JSON body'",
-      "expectedResult": "Frontend: 'Employee list renders with name column' OR Backend: 'Response 201 with id field in body'",
-      "testData": "optional — URL path, JSON payload, selector, or input value"
+      "action": "${exampleAction}",
+      "expectedResult": "${exampleResult}",
+      "testData": "${exampleData}"
     }
   ],
-  "expectedOutcome": "overall pass criterion — what must be true for this test to pass",
+  "expectedOutcome": "overall pass criterion for this test",
   "requiresPII": false,
-  "tags": ["${scenario.module}", "regression", "frontend|backend|integration"]
+  "tags": ["${scenario.module}", "${caseScope}", "${scenario.testType}"]
 }`,
     messages: [
       {
         role: "user",
-        content: `Generate regression test cases for this application module (frontend + backend):
+        content: `Generate ${scenario.testType.toUpperCase()} test cases for this module:
 
 Module: ${scenario.module}
 Scenario: ${scenario.title}
 Description: ${scenario.description}
 Priority: ${scenario.priority}
+Test Type: ${scenario.testType.toUpperCase()} ONLY
+Scope: ${caseScope}
+
+${scopeContext}
+
 User Journeys: ${JSON.stringify(scenario.userJourneys ?? [])}
 API Endpoints: ${JSON.stringify(scenario.apiEndpoints ?? [])}
 Source Files: ${JSON.stringify(scenario.entryPoints)}
+${caseScope === "new-feature" ? `JIRA Story: ${scenario.jiraSummary}\nChanged Files: ${JSON.stringify(scenario.changedFiles)}` : ""}
 
-Write test cases that verify this module's existing behaviour still works correctly.
-Use API Endpoints for backend steps and Source Files (page/route paths) for frontend steps.`,
+Generate up to ${maxCases} test cases. ${isUI ? "Focus only on browser/UI behaviour." : "Focus only on HTTP/API behaviour."}`,
       },
     ],
   });
 
-  return parseCases((response.content[0] as { text: string }).text, scenario, "regression");
-}
-
-// ── New-Feature Case Generation ────────────────────────────────────────────
-
-async function generateNewFeatureCases(
-  scenario: ValidatedScenario,
-  maxCases: number
-): Promise<TestCase[]> {
-  const response = await client.messages.create({
-    model: "claude-opus-4-6",
-    max_tokens: 8096,
-    system: `You are a senior QA engineer writing NEW-FEATURE test cases.
-
-These test cases verify NEW or MODIFIED behaviour introduced by a PR across BOTH frontend and backend.
-They validate the JIRA story's acceptance criteria and the new code paths.
-
-Rules (MANDATORY):
-1. Generate AT MOST ${maxCases} test cases total — prioritise acceptance criteria coverage first
-2. Cover BOTH layers introduced or changed by this PR:
-   - FRONTEND tests: new UI interactions, new page states, new validation messages visible to the user
-     (navigate to pages, interact with new UI elements, assert visible outcomes)
-   - BACKEND tests: new or changed API endpoint behaviour
-     (send HTTP requests to new/modified routes, assert status codes and response bodies)
-3. Start with acceptance criteria, then negative cases, then edge cases
-4. Each test case needs 3–20 steps — precise, actionable, independently reproducible
-5. Steps must describe NEW behaviour only (not existing behaviour)
-6. Steps must reference actual routes from API Endpoints and pages from Changed Files
-7. Flag requiresPII: true if steps involve personal data
-8. NEVER include real credentials — use [VALID_USER_TOKEN], [TEST_EMAIL], [TEST_PASSWORD]
-9. Return ONLY a valid JSON array
-
-Schema per test case:
-{
-  "title": "string — include [Frontend] or [Backend] or [Integration] prefix",
-  "module": "${scenario.module}",
-  "priority": "P0|P1|P2|P3",
-  "type": "positive|negative|edge",
-  "caseScope": "new-feature",
-  "preconditions": ["setup required for this new feature"],
-  "steps": [
-    {
-      "stepNumber": 1,
-      "action": "frontend: precise UI action; or backend: HTTP method + route + headers/body",
-      "expectedResult": "exact observable outcome — UI text shown, HTTP status code, response field",
-      "testData": "optional — URL, payload, selector, or input value"
-    }
-  ],
-  "expectedOutcome": "overall pass criterion confirming the new feature works as specified",
-  "requiresPII": false,
-  "tags": ["${scenario.module}", "new-feature", "frontend|backend|integration"]
-}`,
-    messages: [
-      {
-        role: "user",
-        content: `Generate new-feature test cases for this scenario covering BOTH frontend and backend:
-
-Module: ${scenario.module}
-Title: ${scenario.title}
-Description: ${scenario.description}
-Priority: ${scenario.priority}
-JIRA Ticket: ${scenario.jiraTicket}
-JIRA Story: ${scenario.jiraSummary}
-JIRA Description: ${scenario.jiraDescription ?? "N/A"}
-Acceptance Criteria: ${scenario.jiraAcceptanceCriteria ?? "N/A"}
-User Journeys: ${JSON.stringify(scenario.userJourneys ?? [])}
-API Endpoints: ${JSON.stringify(scenario.apiEndpoints ?? [])}
-Changed Files: ${JSON.stringify(scenario.changedFiles)}
-Alignment Summary: ${scenario.alignmentSummary}
-
-Generate test cases that validate the new JIRA story behaviour in BOTH the UI and the API.
-Use API Endpoints for backend steps and Changed Files paths for frontend steps.`,
-      },
-    ],
-  });
-
-  return parseCases((response.content[0] as { text: string }).text, scenario, "new-feature");
+  return parseCases((response.content[0] as { text: string }).text, scenario, caseScope);
 }
 
 // ── Parsing helpers ────────────────────────────────────────────────────────
@@ -350,10 +318,11 @@ function parseCases(
         scenarioId: scenario.id,
         jiraRef: scenario.jiraRef ?? null,
         title: String(obj["title"] ?? "Untitled test case"),
-        module: scenario.module, // always from scenario — LLM cannot override
+        module: scenario.module,         // always from scenario — LLM cannot override
         priority: normalisePriority(obj["priority"]),
         type: normaliseType(obj["type"]),
-        caseScope: scope, // enforce scope — LLM cannot override
+        caseScope: scope,                // enforce scope — LLM cannot override
+        testType: scenario.testType,     // enforce testType — LLM cannot override
         preconditions: toStringArray(obj["preconditions"], ["Application is running"]),
         steps: normalisedSteps,
         expectedOutcome: String(obj["expectedOutcome"] ?? "Test passes as described"),
@@ -361,7 +330,7 @@ function parseCases(
           typeof obj["requiresPII"] === "boolean"
             ? obj["requiresPII"]
             : String(obj["requiresPII"]).toLowerCase() === "true",
-        tags: toStringArray(obj["tags"], [scenario.module, scope]),
+        tags: toStringArray(obj["tags"], [scenario.module, scope, scenario.testType]),
       });
 
       assertNoHardcodedCredentials(tc);

@@ -1,18 +1,25 @@
 # ─────────────────────────────────────────────────────────────────────────────
-#  Employee Directory — Docker Compose
+#  Employee Directory + QA Observability Stack — Docker Compose
 #
-#  Services:
-#    mongodb   — MongoDB 7 with seeded employee data
-#    backend   — Express/TypeScript REST API  (port 4000)
-#    frontend  — React/Vite SPA via nginx     (port 3000)
+#  App services:
+#    mongodb       — MongoDB 7 with seeded employee data
+#    backend       — Express/TypeScript REST API  (port 4000)
+#    frontend      — React/Vite SPA via nginx     (port 3000)
+#
+#  Observability services (QA pipeline reporting):
+#    elasticsearch — Single-node ES 8 cluster    (port 9200)
+#    kibana        — Kibana dashboards            (port 5601)
+#    kibana-setup  — One-shot data view creation  (exits after setup)
 #
 #  Quick start:
 #    docker compose up --build
 #
 #  Then open:
-#    App:        http://localhost:3000
-#    API health: http://localhost:4000/api/health
-#    Mongo shell: docker compose exec mongodb mongosh employee_directory
+#    App:           http://localhost:3000
+#    API health:    http://localhost:4000/api/health
+#    Kibana:        http://localhost:5601
+#    Elasticsearch: http://localhost:9200
+#    Mongo shell:   docker compose exec mongodb mongosh employee_directory
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -103,10 +110,95 @@ services:
     networks:
       - emp-net
 
+  # ── Observability: Elasticsearch ─────────────────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: qa-elasticsearch
+    restart: unless-stopped
+
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+
+    ports:
+      - "9200:9200"
+
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+    networks:
+      - emp-net
+
+  # ── Observability: Kibana ─────────────────────────────────────────────────────
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.17.0
+    container_name: qa-kibana
+    restart: unless-stopped
+
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+
+    ports:
+      - "5601:5601"
+
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
+    networks:
+      - emp-net
+
+  # ── Observability: Kibana setup (one-shot, exits after creating data views) ────
+  kibana-setup:
+    image: curlimages/curl:latest
+    container_name: qa-kibana-setup
+    restart: "no"
+
+    depends_on:
+      kibana:
+        condition: service_healthy
+
+    command:
+      - sh
+      - -c
+      - |
+        echo "Creating Kibana data views..."
+        curl -s -X POST "http://kibana:5601/api/data_views/data_view" \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          -d '{"data_view":{"title":"qa-test-runs","timeFieldName":"@timestamp","name":"QA Test Runs"}}'
+        echo ""
+        curl -s -X POST "http://kibana:5601/api/data_views/data_view" \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          -d '{"data_view":{"title":"qa-failed-tests","timeFieldName":"@timestamp","name":"QA Failed Tests"}}'
+        echo ""
+        echo "Kibana setup complete. Open http://localhost:5601 to build dashboards."
+
+    networks:
+      - emp-net
+
 # ── Volumes & networks ──────────────────────────────────────────────────────────
 volumes:
   mongo_data:
     name: emp-mongo-data
+  es_data:
+    name: qa-es-data
 
 networks:
   emp-net:

@@ -20,8 +20,8 @@ export function EmployeeDrawer({
     : null;
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+    <div data-testid="drawer-overlay" className="overlay" onClick={onClose}>
+      <div data-testid="employee-drawer" className="drawer" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="drawer-header">
           {isEdit && employee ? (
@@ -44,7 +44,7 @@ export function EmployeeDrawer({
               <div className="drawer-subtitle">Fill in the details below</div>
             </div>
           )}
-          <button className="btn btn-ghost btn-icon" onClick={onClose} title="Close">
+          <button data-testid="close-drawer-btn" className="btn btn-ghost btn-icon" onClick={onClose} title="Close">
             ✕
           </button>
         </div>
@@ -52,7 +52,7 @@ export function EmployeeDrawer({
         {/* Error */}
         {error && (
           <div style={{ padding: "0 24px", paddingTop: 12, flexShrink: 0 }}>
-            <div className="error-banner">⚠ {error}</div>
+            <div data-testid="drawer-error" className="error-banner">⚠ {error}</div>
           </div>
         )}
 

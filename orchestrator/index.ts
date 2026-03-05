@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { runCodebaseAnalyst } from "../agents/01-codebase-analyst";
-import type { Scenario } from "../agents/01-codebase-analyst";
+import type { Scenario, TestType } from "../agents/01-codebase-analyst";
 import { runJiraValidator } from "../agents/02-jira-validator";
 import type { ValidatedScenario } from "../agents/02-jira-validator";
 import { runTestCaseDesigner } from "../agents/03-test-case-designer";
@@ -26,6 +26,9 @@ async function main(): Promise<void> {
   const singleAgent = parseInt(
     args.find((a: string) => a.startsWith("--agent="))?.split("=")[1] ?? "0"
   );
+  // --test-type=ui|api|both  (also reads TEST_TYPE env var as fallback inside AGT-01)
+  const testTypeArg = args.find((a: string) => a.startsWith("--test-type="))?.split("=")[1];
+  const testType = (testTypeArg ?? process.env.TEST_TYPE ?? "both") as TestType;
 
   log.banner();
   const config = await loadConfig();
@@ -44,9 +47,10 @@ async function main(): Promise<void> {
       log.info(`PR context: "${prTitle}" (${prBranch})`);
     }
 
-    const scenarios = await runCodebaseAnalyst(config.repoPath);
+    log.info(`Test type: ${testType}`);
+    const scenarios = await runCodebaseAnalyst(config.repoPath, testType);
     await state.save("scenarios", scenarios);
-    log.done(`Generated ${scenarios.length} PR-scoped scenarios`);
+    log.done(`Generated ${scenarios.length} regression scenarios (${testType})`);
     if (singleAgent === 1) {
       log.complete("Single-agent run complete");
       return;
@@ -214,6 +218,7 @@ async function main(): Promise<void> {
     const executionResult = await runTestExecutor("playwright-tests/specs", {
       baseURL: config.stagingUrl,
       headless: true,
+      testType,
     });
     await state.save("execution-result", executionResult);
     const passRate = ((executionResult.passed / executionResult.totalTests) * 100).toFixed(1);
@@ -221,6 +226,17 @@ async function main(): Promise<void> {
       `${executionResult.passed}/${executionResult.totalTests} passed (${passRate}%) ` +
         `in ${(executionResult.durationMs / 1000).toFixed(1)}s`
     );
+
+    // GUARDRAIL: enforce SLA pass rate — fail the pipeline if tests are below threshold
+    if (executionResult.totalTests > 0 && executionResult.passRate < config.sla.passRate) {
+      log.error(
+        `Pass rate ${(executionResult.passRate * 100).toFixed(1)}% is below SLA threshold ` +
+          `${(config.sla.passRate * 100).toFixed(1)}%. ` +
+          `${executionResult.failed} test(s) failed. Pipeline blocked.`
+      );
+      process.exit(1);
+    }
+
     if (singleAgent === 6) {
       log.complete("Single-agent run complete");
       return;

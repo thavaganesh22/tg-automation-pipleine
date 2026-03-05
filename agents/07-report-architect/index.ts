@@ -1,5 +1,16 @@
+/**
+ * AGT-07 — Report Architect
+ *
+ * Indexes each pipeline run into Elasticsearch (qa-test-runs + qa-failed-tests)
+ * and generates an HTML dashboard artifact. Kibana visualizes the indexed data.
+ *
+ * Env vars:
+ *   ELASTICSEARCH_URL  — default http://localhost:9200
+ *   STAKEHOLDER_EMAILS — comma-separated alert recipients
+ *   SLA_PASS_RATE      — decimal threshold (default 0.95)
+ */
+
 import Anthropic from "@anthropic-ai/sdk";
-import { Pool } from "pg";
 import * as fs from "fs/promises";
 import * as path from "path";
 import type { ExecutionResult } from "../06-test-executor";
@@ -7,12 +18,13 @@ import type { CoverageReport } from "../05-coverage-auditor";
 
 const client = new Anthropic();
 
-// ── DB Pool (read + write for run persistence) ─────────────────────────────
-const db = process.env.DATABASE_URL
-  ? new Pool({ connectionString: process.env.DATABASE_URL, max: 5 })
-  : null;
+// ── Elasticsearch config ────────────────────────────────────────────────────
 
-// ── Types ──────────────────────────────────────────────────────────────────
+const ES_URL = (process.env.ELASTICSEARCH_URL ?? "http://localhost:9200").replace(/\/$/, "");
+const ES_INDEX_RUNS = "qa-test-runs";
+const ES_INDEX_FAILURES = "qa-failed-tests";
+
+// ── Types ───────────────────────────────────────────────────────────────────
 
 export interface DashboardData {
   runHistory: RunRecord[];
@@ -52,7 +64,7 @@ interface RunSummary {
   slaBreached: boolean;
 }
 
-// ── Guardrails ─────────────────────────────────────────────────────────────
+// ── Guardrails ──────────────────────────────────────────────────────────────
 
 const STAKEHOLDER_EMAILS = (process.env.STAKEHOLDER_EMAILS ?? "")
   .split(",")
@@ -61,32 +73,30 @@ const STAKEHOLDER_EMAILS = (process.env.STAKEHOLDER_EMAILS ?? "")
 
 const SLA_PASS_RATE = parseFloat(process.env.SLA_PASS_RATE ?? "0.95");
 
-// ── Main Agent ─────────────────────────────────────────────────────────────
+// ── Main Agent ──────────────────────────────────────────────────────────────
 
 export async function runReportArchitect(
   executionResult: ExecutionResult,
   coverageReport: CoverageReport
 ): Promise<DashboardData> {
-  // 1. Persist run to DB (if configured)
-  if (db) {
-    await persistRunResult(executionResult, coverageReport);
-    console.log("  [AGT-07] Run persisted to database");
-  } else {
-    console.warn("  [AGT-07] DATABASE_URL not set — skipping DB persistence");
-  }
-
-  // 2. Fetch historical data
+  // 1. Fetch historical data from Elasticsearch (empty arrays if ES unavailable)
   const [runHistory, flakiness, coverageTrend] = await Promise.all([
-    db ? queryRunHistory() : [],
-    db ? queryFlakiness() : [],
-    db ? queryCoverageTrend() : [],
+    queryRunHistory(),
+    queryFlakiness(),
+    queryCoverageTrend(),
   ]);
 
-  // 3. AI narrative insights (no PII — guardrail enforced in system prompt)
+  // 2. Compute derived fields
+  const trend = computeTrend(runHistory);
+  const slaBreached = executionResult.passRate < SLA_PASS_RATE;
+
+  // 3. AI narrative insights
   const aiInsights = await generateInsights(runHistory, flakiness, executionResult);
 
-  // 4. SLA check
-  const slaBreached = executionResult.passRate < SLA_PASS_RATE;
+  // 4. Index current run to Elasticsearch
+  await indexRunToES(executionResult, coverageReport, trend, slaBreached, aiInsights);
+
+  // 5. SLA alert
   if (slaBreached) {
     await sendSLAAlert(executionResult);
   }
@@ -95,102 +105,217 @@ export async function runReportArchitect(
     runHistory,
     flakinessByTest: flakiness,
     coverageTrend,
-    currentRunSummary: {
-      passRate: executionResult.passRate,
-      trend: computeTrend(runHistory),
-      slaBreached,
-    },
+    currentRunSummary: { passRate: executionResult.passRate, trend, slaBreached },
     aiInsights,
     generatedAt: new Date().toISOString(),
   };
 
-  // 5. Generate HTML dashboard
+  // 6. Generate HTML dashboard artifact
   await generateDashboard(dashboard, executionResult, coverageReport);
+  console.log(`  [AGT-07] Kibana: ${ES_URL.replace("9200", "5601")} (qa-test-runs, qa-failed-tests)`);
 
   return dashboard;
 }
 
-// ── DB Operations ──────────────────────────────────────────────────────────
+// ── Elasticsearch helpers ───────────────────────────────────────────────────
 
-async function persistRunResult(result: ExecutionResult, coverage: CoverageReport): Promise<void> {
-  await db!.query(
-    `INSERT INTO test_runs
-       (run_id, started_at, finished_at, total, passed, failed, flaky, skipped, duration_ms, coverage_pct, p0_coverage_pct)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-     ON CONFLICT (run_id) DO NOTHING`,
-    [
-      result.runId,
-      result.startedAt,
-      result.finishedAt,
-      result.totalTests,
-      result.passed,
-      result.failed,
-      result.flaky,
-      result.skipped,
-      result.durationMs,
-      coverage.coveragePercent.toFixed(2),
-      coverage.p0CoveragePercent.toFixed(2),
-    ]
-  );
+async function esRequest<T>(
+  method: string,
+  urlPath: string,
+  body?: unknown
+): Promise<T> {
+  const response = await fetch(`${ES_URL}${urlPath}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body != null ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `[AGT-07] Elasticsearch ${method} ${urlPath} → ${response.status}: ${text.slice(0, 200)}`
+    );
+  }
+  return response.json() as Promise<T>;
+}
 
-  for (const failed of result.failedTests) {
-    await db!.query(
-      `INSERT INTO test_failures (run_id, test_name, error_msg, retried) VALUES ($1,$2,$3,$4)`,
-      [
-        result.runId,
-        failed.title,
-        failed.error.slice(0, 500), // GUARDRAIL: truncate — no PII in DB
-        failed.retried,
-      ]
+// ── Indexing ────────────────────────────────────────────────────────────────
+
+async function indexRunToES(
+  result: ExecutionResult,
+  coverage: CoverageReport,
+  trend: string,
+  slaBreached: boolean,
+  aiInsights: string
+): Promise<void> {
+  const runDoc = {
+    "@timestamp": result.finishedAt,
+    runId: result.runId,
+    startedAt: result.startedAt,
+    finishedAt: result.finishedAt,
+    testType: result.testType,
+    totalTests: result.totalTests,
+    passed: result.passed,
+    failed: result.failed,
+    flaky: result.flaky,
+    skipped: result.skipped,
+    durationMs: result.durationMs,
+    passRate: result.passRate,
+    // Overall coverage
+    coveragePercent: coverage.coveragePercent,
+    p0CoveragePercent: coverage.p0CoveragePercent,
+    p1CoveragePercent: coverage.p1CoveragePercent,
+    // UI coverage breakdown (flat fields — easier for Kibana field selectors)
+    uiTotalCases: coverage.ui.totalCases,
+    uiCoveredCases: coverage.ui.coveredCases,
+    uiCoveragePercent: coverage.ui.coveragePercent,
+    uiP0CoveragePercent: coverage.ui.p0CoveragePercent,
+    uiP1CoveragePercent: coverage.ui.p1CoveragePercent,
+    // API coverage breakdown
+    apiTotalCases: coverage.api.totalCases,
+    apiCoveredCases: coverage.api.coveredCases,
+    apiCoveragePercent: coverage.api.coveragePercent,
+    apiP0CoveragePercent: coverage.api.p0CoveragePercent,
+    apiP1CoveragePercent: coverage.api.p1CoveragePercent,
+    // Meta
+    trend,
+    slaBreached,
+    aiInsights,
+  };
+
+  try {
+    await esRequest("PUT", `/${ES_INDEX_RUNS}/_doc/${result.runId}`, runDoc);
+    console.log(`  [AGT-07] Run indexed → ${ES_INDEX_RUNS}/${result.runId}`);
+  } catch (err) {
+    console.warn(`  [AGT-07] Could not index run to Elasticsearch — ${(err as Error).message}`);
+  }
+
+  // Index each failed test as a separate document for per-test drill-down in Kibana
+  for (let i = 0; i < result.failedTests.length; i++) {
+    const failed = result.failedTests[i];
+    const failureDoc = {
+      "@timestamp": result.finishedAt,
+      runId: result.runId,
+      testName: failed.title,
+      file: failed.file,
+      // GUARDRAIL: truncate error — no PII in the index
+      error: failed.error.slice(0, 500),
+      retried: failed.retried,
+    };
+    try {
+      await esRequest(
+        "PUT",
+        `/${ES_INDEX_FAILURES}/_doc/${result.runId}-${i}`,
+        failureDoc
+      );
+    } catch {
+      // Suppress per-failure errors — run doc is more important
+    }
+  }
+
+  if (result.failedTests.length > 0) {
+    console.log(
+      `  [AGT-07] ${result.failedTests.length} failure(s) indexed → ${ES_INDEX_FAILURES}`
     );
   }
 }
 
+// ── Historical queries ──────────────────────────────────────────────────────
+
 async function queryRunHistory(): Promise<RunRecord[]> {
-  // GUARDRAIL: 90-day retention window
-  const { rows } = await db!.query(
-    `SELECT run_id, started_at::date::text as date, passed, failed, total, duration_ms, coverage_pct
-     FROM test_runs
-     WHERE started_at > NOW() - INTERVAL '90 days'
-     ORDER BY started_at DESC
-     LIMIT 50`
-  );
-  return rows as RunRecord[];
+  try {
+    const data = await esRequest<{
+      hits: { hits: Array<{ _source: Record<string, unknown> }> };
+    }>("POST", `/${ES_INDEX_RUNS}/_search`, {
+      sort: [{ "@timestamp": "desc" }],
+      size: 50,
+      query: { range: { "@timestamp": { gte: "now-90d/d" } } },
+      _source: ["runId", "finishedAt", "passed", "failed", "totalTests", "durationMs", "coveragePercent"],
+    });
+
+    return (data.hits?.hits ?? []).map((h) => {
+      const s = h._source;
+      return {
+        runId: String(s["runId"] ?? ""),
+        date: String(s["finishedAt"] ?? "").split("T")[0],
+        passed: Number(s["passed"] ?? 0),
+        failed: Number(s["failed"] ?? 0),
+        total: Number(s["totalTests"] ?? 0),
+        durationMs: Number(s["durationMs"] ?? 0),
+        coveragePct: Number(s["coveragePercent"] ?? 0),
+      };
+    });
+  } catch {
+    console.warn("  [AGT-07] Could not query run history from Elasticsearch — skipping");
+    return [];
+  }
 }
 
 async function queryFlakiness(): Promise<FlakinessRecord[]> {
-  const { rows } = await db!.query(
-    `SELECT
-       test_name,
-       COUNT(*) FILTER (WHERE retried = true)::int  AS "flakyCount",
-       COUNT(*)::int                                 AS "totalRuns",
-       ROUND(
-         COUNT(*) FILTER (WHERE retried = true)::numeric / COUNT(*) * 100, 1
-       )::float                                      AS "flakinessIndex"
-     FROM test_failures
-     WHERE created_at > NOW() - INTERVAL '90 days'
-     GROUP BY test_name
-     HAVING COUNT(*) > 2
-     ORDER BY "flakinessIndex" DESC
-     LIMIT 20`
-  );
-  return rows as FlakinessRecord[];
+  try {
+    const data = await esRequest<{
+      aggregations?: {
+        by_test?: {
+          buckets?: Array<{
+            key: string;
+            doc_count: number;
+            flaky_count: { doc_count: number };
+          }>;
+        };
+      };
+    }>("POST", `/${ES_INDEX_FAILURES}/_search`, {
+      size: 0,
+      query: { range: { "@timestamp": { gte: "now-90d/d" } } },
+      aggs: {
+        by_test: {
+          terms: { field: "testName.keyword", size: 20, min_doc_count: 3 },
+          aggs: {
+            flaky_count: { filter: { term: { retried: true } } },
+          },
+        },
+      },
+    });
+
+    return (data.aggregations?.by_test?.buckets ?? [])
+      .map((b) => ({
+        testName: b.key,
+        flakyCount: b.flaky_count.doc_count,
+        totalRuns: b.doc_count,
+        flakinessIndex: Math.round((b.flaky_count.doc_count / b.doc_count) * 1000) / 10,
+      }))
+      .filter((r) => r.flakyCount > 0)
+      .sort((a, b) => b.flakinessIndex - a.flakinessIndex);
+  } catch {
+    console.warn("  [AGT-07] Could not query flakiness from Elasticsearch — skipping");
+    return [];
+  }
 }
 
 async function queryCoverageTrend(): Promise<CoverageTrendRecord[]> {
-  const { rows } = await db!.query(
-    `SELECT
-       started_at::date::text AS date,
-       coverage_pct           AS "coveragePercent",
-       p0_coverage_pct        AS "p0Coverage"
-     FROM test_runs
-     WHERE started_at > NOW() - INTERVAL '90 days'
-     ORDER BY started_at ASC`
-  );
-  return rows as CoverageTrendRecord[];
+  try {
+    const data = await esRequest<{
+      hits: { hits: Array<{ _source: Record<string, unknown> }> };
+    }>("POST", `/${ES_INDEX_RUNS}/_search`, {
+      sort: [{ "@timestamp": "asc" }],
+      size: 90,
+      query: { range: { "@timestamp": { gte: "now-90d/d" } } },
+      _source: ["finishedAt", "coveragePercent", "p0CoveragePercent"],
+    });
+
+    return (data.hits?.hits ?? []).map((h) => {
+      const s = h._source;
+      return {
+        date: String(s["finishedAt"] ?? "").split("T")[0],
+        coveragePercent: Number(s["coveragePercent"] ?? 0),
+        p0Coverage: Number(s["p0CoveragePercent"] ?? 0),
+      };
+    });
+  } catch {
+    console.warn("  [AGT-07] Could not query coverage trend from Elasticsearch — skipping");
+    return [];
+  }
 }
 
-// ── AI Insights ────────────────────────────────────────────────────────────
+// ── AI Insights ─────────────────────────────────────────────────────────────
 
 async function generateInsights(
   history: RunRecord[],
@@ -225,7 +350,7 @@ STRICT GUARDRAIL: NEVER include personal data, usernames, email addresses, or PI
   return (response.content[0] as { text: string }).text;
 }
 
-// ── Dashboard Generation ───────────────────────────────────────────────────
+// ── Dashboard Generation ────────────────────────────────────────────────────
 
 async function generateDashboard(
   dashboard: DashboardData,
@@ -234,11 +359,9 @@ async function generateDashboard(
 ): Promise<void> {
   await fs.mkdir("reports", { recursive: true });
   const reportPath = path.join("reports", `dashboard-${execution.runId}.html`);
-
   const html = buildDashboardHTML(dashboard, execution, coverage);
   await fs.writeFile(reportPath, html, "utf-8");
-  console.log(`  [AGT-07] Dashboard written to ${reportPath}`);
-  // GUARDRAIL: in production, generate presigned URL with 7-day TTL here
+  console.log(`  [AGT-07] HTML dashboard written to ${reportPath}`);
 }
 
 function buildDashboardHTML(
@@ -253,6 +376,7 @@ function buildDashboardHTML(
       : data.currentRunSummary.trend === "degrading"
         ? "↓"
         : "→";
+  const kibanaUrl = ES_URL.replace(":9200", ":5601");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -281,11 +405,24 @@ function buildDashboardHTML(
     .badge-yellow { background: #78350F; color: #FCD34D; }
     .insights { background: #0D1117; border: 1px solid #1C2333; border-left: 3px solid #00FFA3; border-radius: 8px; padding: 20px; line-height: 1.7; font-size: 13px; color: #94A3B8; }
     .sla-alert { background: #7F1D1D; border: 1px solid #EF4444; border-radius: 8px; padding: 16px; margin-bottom: 16px; color: #FCA5A5; font-size: 13px; }
+    .kibana-link { background: #0D1117; border: 1px solid #1C2333; border-left: 3px solid #60A5FA; border-radius: 8px; padding: 12px 20px; margin-bottom: 24px; font-size: 12px; color: #94A3B8; }
+    .kibana-link a { color: #60A5FA; text-decoration: none; }
+    .coverage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+    .coverage-card { background: #0D1117; border: 1px solid #1C2333; border-radius: 8px; padding: 16px; }
+    .coverage-card h3 { font-size: 11px; letter-spacing: 2px; color: #4A5568; margin-bottom: 12px; }
+    .coverage-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 12px; }
+    .coverage-label { color: #4A5568; }
   </style>
 </head>
 <body>
   <h1>QA PIPELINE DASHBOARD</h1>
-  <div class="subtitle">RUN: ${execution.runId} | GENERATED: ${data.generatedAt}</div>
+  <div class="subtitle">RUN: ${execution.runId} | TYPE: ${execution.testType.toUpperCase()} | GENERATED: ${data.generatedAt}</div>
+
+  <div class="kibana-link">
+    Full interactive dashboards in Kibana:
+    <a href="${kibanaUrl}" target="_blank">${kibanaUrl}</a>
+    — indices: <strong>qa-test-runs</strong>, <strong>qa-failed-tests</strong>
+  </div>
 
   ${data.currentRunSummary.slaBreached ? `<div class="sla-alert">⚠ SLA BREACH: Pass rate ${passRate}% is below the ${(SLA_PASS_RATE * 100).toFixed(0)}% SLA threshold. Stakeholders have been notified.</div>` : ""}
 
@@ -303,16 +440,16 @@ function buildDashboardHTML(
       <div class="card-value red">${execution.failed}</div>
     </div>
     <div class="card">
-      <div class="card-label">P0 COVERAGE</div>
-      <div class="card-value ${coverage.p0CoveragePercent >= 80 ? "green" : "red"}">${coverage.p0CoveragePercent.toFixed(0)}%</div>
+      <div class="card-label">FLAKY TESTS</div>
+      <div class="card-value yellow">${execution.flaky}</div>
     </div>
     <div class="card">
       <div class="card-label">OVERALL COVERAGE</div>
       <div class="card-value blue">${coverage.coveragePercent.toFixed(0)}%</div>
     </div>
     <div class="card">
-      <div class="card-label">FLAKY TESTS</div>
-      <div class="card-value yellow">${execution.flaky}</div>
+      <div class="card-label">P0 COVERAGE</div>
+      <div class="card-value ${coverage.p0CoveragePercent >= 80 ? "green" : "red"}">${coverage.p0CoveragePercent.toFixed(0)}%</div>
     </div>
     <div class="card">
       <div class="card-label">DURATION</div>
@@ -321,6 +458,23 @@ function buildDashboardHTML(
     <div class="card">
       <div class="card-label">TREND</div>
       <div class="card-value ${data.currentRunSummary.trend === "improving" ? "green" : data.currentRunSummary.trend === "degrading" ? "red" : "yellow"}">${trendIcon}</div>
+    </div>
+  </div>
+
+  <div class="coverage-grid">
+    <div class="coverage-card">
+      <h3>UI COVERAGE</h3>
+      <div class="coverage-row"><span class="coverage-label">Cases covered</span><span class="blue">${coverage.ui.coveredCases} / ${coverage.ui.totalCases}</span></div>
+      <div class="coverage-row"><span class="coverage-label">Coverage</span><span class="${coverage.ui.coveragePercent >= 80 ? "green" : "red"}">${coverage.ui.coveragePercent.toFixed(1)}%</span></div>
+      <div class="coverage-row"><span class="coverage-label">P0 coverage</span><span class="${coverage.ui.p0CoveragePercent >= 80 ? "green" : "red"}">${coverage.ui.p0CoveragePercent.toFixed(1)}%</span></div>
+      <div class="coverage-row"><span class="coverage-label">P1 coverage</span><span class="${coverage.ui.p1CoveragePercent >= 80 ? "green" : "red"}">${coverage.ui.p1CoveragePercent.toFixed(1)}%</span></div>
+    </div>
+    <div class="coverage-card">
+      <h3>API COVERAGE</h3>
+      <div class="coverage-row"><span class="coverage-label">Cases covered</span><span class="blue">${coverage.api.coveredCases} / ${coverage.api.totalCases}</span></div>
+      <div class="coverage-row"><span class="coverage-label">Coverage</span><span class="${coverage.api.coveragePercent >= 80 ? "green" : "red"}">${coverage.api.coveragePercent.toFixed(1)}%</span></div>
+      <div class="coverage-row"><span class="coverage-label">P0 coverage</span><span class="${coverage.api.p0CoveragePercent >= 80 ? "green" : "red"}">${coverage.api.p0CoveragePercent.toFixed(1)}%</span></div>
+      <div class="coverage-row"><span class="coverage-label">P1 coverage</span><span class="${coverage.api.p1CoveragePercent >= 80 ? "green" : "red"}">${coverage.api.p1CoveragePercent.toFixed(1)}%</span></div>
     </div>
   </div>
 
@@ -382,7 +536,7 @@ function buildDashboardHTML(
 </html>`;
 }
 
-// ── Alerts ─────────────────────────────────────────────────────────────────
+// ── Alerts ──────────────────────────────────────────────────────────────────
 
 async function sendSLAAlert(result: ExecutionResult): Promise<void> {
   if (STAKEHOLDER_EMAILS.length === 0) {
@@ -396,7 +550,7 @@ async function sendSLAAlert(result: ExecutionResult): Promise<void> {
   // Wire up nodemailer or SendGrid here for production
 }
 
-// ── Utilities ──────────────────────────────────────────────────────────────
+// ── Utilities ────────────────────────────────────────────────────────────────
 
 function computeTrend(history: RunRecord[]): "improving" | "degrading" | "stable" {
   if (history.length < 4) return "stable";
