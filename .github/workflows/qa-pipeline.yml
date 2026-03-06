@@ -50,23 +50,6 @@ jobs:
       pull-requests: write
       contents: read
 
-    services:
-      # Elasticsearch for AGT-07 report indexing.
-      # Kibana is NOT started in CI — the pipeline only needs to index to ES.
-      # Kibana runs locally via docker compose for dashboard visualisation.
-      elasticsearch:
-        image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
-        env:
-          discovery.type: single-node
-          xpack.security.enabled: "false"
-          ES_JAVA_OPTS: -Xms512m -Xmx512m
-        ports: ["9200:9200"]
-        options: >-
-          --health-cmd "curl -sf http://localhost:9200/_cluster/health"
-          --health-interval 15s
-          --health-timeout 10s
-          --health-retries 10
-
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@v4
@@ -158,8 +141,6 @@ jobs:
               core.exportVariable('BOT_COMMENT_ID', String(resp.data.id));
             }
 
-      # Only start app services — ES runs as a GHA service above.
-      # Kibana is not needed in CI (pipeline indexes to ES; Kibana is for local dev).
       - name: Start employee-app (docker compose)
         run: |
           docker compose up -d --build --wait mongodb backend frontend
@@ -195,7 +176,7 @@ jobs:
           MIN_P1_COVERAGE: "80"
           MAX_GAP_PERCENT: "20"
           STAKEHOLDER_EMAILS: ${{ vars.STAKEHOLDER_EMAILS }}
-          ELASTICSEARCH_URL: http://localhost:9200
+          ELASTICSEARCH_URL: ${{ secrets.ELASTICSEARCH_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
@@ -441,20 +422,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    services:
-      elasticsearch:
-        image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
-        env:
-          discovery.type: single-node
-          xpack.security.enabled: "false"
-          ES_JAVA_OPTS: -Xms512m -Xmx512m
-        ports: ["9200:9200"]
-        options: >-
-          --health-cmd "curl -sf http://localhost:9200/_cluster/health"
-          --health-interval 15s
-          --health-timeout 10s
-          --health-retries 10
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -530,7 +497,7 @@ jobs:
           MIN_P1_COVERAGE: "80"
           MAX_GAP_PERCENT: "20"
           STAKEHOLDER_EMAILS: ${{ vars.STAKEHOLDER_EMAILS }}
-          ELASTICSEARCH_URL: http://localhost:9200
+          ELASTICSEARCH_URL: ${{ secrets.ELASTICSEARCH_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}

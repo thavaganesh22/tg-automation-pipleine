@@ -207,20 +207,42 @@ The pipeline blocks if **either** type's P0 or P1 coverage falls below the thres
 
 ## Kibana dashboards
 
-After the first pipeline run, open http://localhost:5601. Two data views are pre-created:
+After the first pipeline run, open Kibana:
+
+- **Local**: http://localhost:5601
+- **Azure VM (CI)**: http://cbts-elastic-vm.eastus.cloudapp.azure.com:5601 (login: `elastic`)
+
+Run the setup script once to create all data views, visualizations, and the dashboard:
+
+```bash
+# Local
+npm run kibana:setup
+
+# Azure VM
+npm run kibana:setup:azure
+```
+
+The script is idempotent — re-running it overwrites existing objects with stable IDs.
+
+Two data views are created:
 
 | Index | Time field | Contents |
 |-------|-----------|---------|
 | `qa-test-runs` | `@timestamp` | One doc per run: pass rate, coverage %, UI/API flat fields, trend, SLA status, AI insights |
 | `qa-failed-tests` | `@timestamp` | One doc per failed test: name, file, error (≤500 chars), `retried` flag |
 
-**Suggested visualisations:**
+**Dashboard panels (created automatically by `npm run kibana:setup`):**
 
-- **Line chart** — `passRate` over `@timestamp` → run-over-run trend
-- **Metric tiles** — latest `uiCoveragePercent`, `apiCoveragePercent`, `p0CoveragePercent`
-- **Bar chart** — `failed` count per `runId`
-- **Table** — `qa-failed-tests` terms aggregation on `testName.keyword`, sorted by count → flakiness leaderboard
-- **Pie chart** — `testType` breakdown across runs
+| Panel | Type | Source index |
+|-------|------|-------------|
+| Overall / P0 / UI / API Coverage | Metric tiles | `qa-test-runs` |
+| Pass Rate Trend | Line chart | `qa-test-runs` |
+| Test Type Distribution | Pie chart | `qa-test-runs` |
+| Passed vs Failed per Run | Stacked bar | `qa-test-runs` |
+| Run Duration Trend | Line chart | `qa-test-runs` |
+| Failures by Spec File | Horizontal bar | `qa-failed-tests` |
+| Flaky Tests Leaderboard | Table (retried=true) | `qa-failed-tests` |
+| SLA Breach History | Table (slaBreached=true) | `qa-test-runs` |
 
 Data is retained indefinitely (no automatic purge) — add an ILM policy if retention limits are required.
 
@@ -305,13 +327,17 @@ Triggered on every PR open/update targeting `main` or `develop`. Timeout: 60 min
 
 ### Infrastructure in CI
 
-Elasticsearch runs as a **GitHub Actions service** (port 9200). Kibana is skipped in CI — the pipeline only needs to index data; dashboards are for local development.
+Elasticsearch and Kibana run on a **persistent Azure VM** (`cbts-elastic-vm.eastus.cloudapp.azure.com`), provisioned once via `infra/azure/vm-setup.sh`. The pipeline indexes results directly to this VM — no observability containers are started in CI.
 
 `docker compose` starts only the app services:
-```yaml
+```bash
 docker compose up -d --build --wait mongodb backend frontend
 ```
-The observability stack (`elasticsearch`, `kibana`, `kibana-setup`) is excluded in CI to avoid the 90-second Kibana startup overhead.
+
+To provision or reprovision the Azure VM:
+```bash
+bash infra/azure/vm-setup.sh
+```
 
 ### Required GitHub Secrets
 
@@ -320,7 +346,7 @@ The observability stack (`elasticsearch`, `kibana`, `kibana-setup`) is excluded 
 | `ANTHROPIC_API_KEY` | Claude API key |
 | `JIRA_TOKEN` | JIRA API token (read-only) |
 | `MONGO_ROOT_PASSWORD` | MongoDB root password |
-| `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` | Optional — SLA alert emails |
+| `ELASTICSEARCH_URL` | Full ES URL with credentials — `http://elastic:<pass>@cbts-elastic-vm.eastus.cloudapp.azure.com:9200` |
 
 ### Required GitHub Variables
 
@@ -330,6 +356,7 @@ The observability stack (`elasticsearch`, `kibana`, `kibana-setup`) is excluded 
 | `JIRA_PROJECT_KEY` | `TGDEMO` |
 | `STAGING_URL` | `https://staging.yourapp.com` |
 | `STAKEHOLDER_EMAILS` | `qa@company.com,eng-lead@company.com` |
+| `AZ_ELASTIC_HOST` | `cbts-elastic-vm.eastus.cloudapp.azure.com` |
 
 ---
 
@@ -343,7 +370,7 @@ The observability stack (`elasticsearch`, `kibana`, `kibana-setup`) is excluded 
 | `JIRA_PROJECT_KEY` | Yes | e.g. `TGDEMO` |
 | `BASE_URL` | Yes | Staging app URL |
 | `ALLOWED_TEST_URLS` | Yes | Comma-separated allowed test targets |
-| `ELASTICSEARCH_URL` | No | Default `http://localhost:9200` |
+| `ELASTICSEARCH_URL` | Yes (in CI) | Azure VM URL with credentials; defaults to `http://localhost:9200` for local runs |
 | `TEST_TYPE` | No | `ui` \| `api` \| `both` (default `both`) |
 | `REPO_PATH` | No | Path to scan (default `./`) |
 | `MAX_TEST_CASES` | No | Total case cap (default 500) |

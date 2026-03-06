@@ -24,6 +24,7 @@ export default defineConfig({
   reporter: [
     ["line"],
     ["html", { outputFolder: "playwright-report", open: "never" }],
+    ["./reporters/elasticsearch.ts"],
   ],
 
   projects: [

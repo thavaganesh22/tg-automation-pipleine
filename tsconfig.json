@@ -30,7 +30,8 @@
     "guardrails/**/*.ts",
     "db/**/*.ts",
     "scripts/**/*.ts",
-    "playwright-tests/**/*.ts"
+    "playwright-tests/**/*.ts",
+    "reporters/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }
