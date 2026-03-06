@@ -84,18 +84,6 @@ const employeeListResponse: EmployeeListResponse = {
   },
 };
 
-const validationErrorResponse: ErrorResponse = {
-  message: 'Validation failed',
-  errors: {
-    firstName: 'First name is required',
-    lastName: 'Last name is required',
-    email: 'Email is required',
-    designation: 'Designation is required',
-    department: 'Department is required',
-    employmentType: 'Employment type is required',
-  },
-};
-
 export async function setupEmployeeFormMocks(page: Page): Promise<void> {
   // Mock GET employees list
   await page.route('**/api/employees**', async (route: Route) => {

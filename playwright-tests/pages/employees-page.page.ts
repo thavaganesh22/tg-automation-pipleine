@@ -61,7 +61,6 @@ export class EmployeesPagePage {
 
   // CONFIRM DIALOG selectors
   private readonly confirmDialog = '[data-testid="confirm-dialog"]';
-  private readonly modalOverlay = '[data-testid="modal-overlay"]';
   private readonly confirmCancelBtn = '[data-testid="confirm-cancel-btn"]';
   private readonly confirmDeleteBtn = '[data-testid="confirm-delete-btn"]';
 
@@ -96,8 +95,7 @@ export class EmployeesPagePage {
 
   public async getEmployeeRowCount(): Promise<number> {
     await this.page.waitForSelector(this.employeeTable, { state: 'visible' });
-    const locator = this.page.locator(this.employeeTable).locator('tbody tr').filter({ hasNot: this.page.locator(this.loadingRow) }).filter({ hasNot: this.page.locator(this.emptyState) });
-    // Use a more reliable approach: count rows that have employee-name cells
+    // Count rows that have employee-name cells
     const nameLocator = this.page.locator(this.employeeName);
     return nameLocator.count();
   }
