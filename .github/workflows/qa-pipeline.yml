@@ -163,7 +163,7 @@ jobs:
           JIRA_HOST: ${{ vars.JIRA_HOST }}
           JIRA_HOST_ALLOWLIST: ${{ vars.JIRA_HOST }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
-          REPO_PATH: "./"
+          REPO_PATH: "./employee-app"
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BRANCH: ${{ github.head_ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -485,7 +485,7 @@ jobs:
           JIRA_HOST: ${{ vars.JIRA_HOST }}
           JIRA_HOST_ALLOWLIST: ${{ vars.JIRA_HOST }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
-          REPO_PATH: "./"
+          REPO_PATH: "./employee-app"
           PR_TITLE: ${{ github.event.head_commit.message }}
           PR_BRANCH: ${{ github.ref_name }}
           PR_NUMBER: ${{ github.run_number }}
