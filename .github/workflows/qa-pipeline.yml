@@ -143,12 +143,18 @@ jobs:
 
       - name: Start employee-app (docker compose)
         run: |
-          docker compose up -d --build --wait mongodb backend frontend
-          echo "Employee app started — waiting for frontend on port 3000"
-          for i in $(seq 1 20); do
-            curl -sf http://localhost:3000 > /dev/null && echo "App reachable" && break
-            echo "Attempt $i/20 — waiting 3s..."
-            sleep 3
+          docker compose up -d --build mongodb backend frontend
+          echo "Waiting for frontend on http://localhost:3000 ..."
+          for i in $(seq 1 40); do
+            curl -sf http://localhost:3000 > /dev/null 2>&1 && echo "Frontend reachable after ${i} attempts" && break
+            echo "Attempt $i/40 — waiting 5s..."
+            sleep 5
+            if [ "$i" -eq 40 ]; then
+              echo "ERROR: Frontend not reachable after 200s"
+              docker compose logs frontend
+              docker compose logs backend
+              exit 1
+            fi
           done
         env:
           MONGO_ROOT_PASSWORD: ${{ secrets.MONGO_ROOT_PASSWORD || 'changeme' }}
@@ -459,12 +465,18 @@ jobs:
 
       - name: Start employee-app (docker compose)
         run: |
-          docker compose up -d --build --wait mongodb backend frontend
-          echo "Employee app started — waiting for frontend on port 3000"
-          for i in $(seq 1 20); do
-            curl -sf http://localhost:3000 > /dev/null && echo "App reachable" && break
-            echo "Attempt $i/20 — waiting 3s..."
-            sleep 3
+          docker compose up -d --build mongodb backend frontend
+          echo "Waiting for frontend on http://localhost:3000 ..."
+          for i in $(seq 1 40); do
+            curl -sf http://localhost:3000 > /dev/null 2>&1 && echo "Frontend reachable after ${i} attempts" && break
+            echo "Attempt $i/40 — waiting 5s..."
+            sleep 5
+            if [ "$i" -eq 40 ]; then
+              echo "ERROR: Frontend not reachable after 200s"
+              docker compose logs frontend
+              docker compose logs backend
+              exit 1
+            fi
           done
         env:
           MONGO_ROOT_PASSWORD: ${{ secrets.MONGO_ROOT_PASSWORD || 'changeme' }}
