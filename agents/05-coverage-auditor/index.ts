@@ -130,8 +130,8 @@ export async function runCoverageAuditor(
   const p0Pct = p0Total > 0 ? (p0Covered / p0Total) * 100 : 100;
   const p1Pct = p1Total > 0 ? (p1Covered / p1Total) * 100 : 100;
 
-  // GUARDRAIL: block if either type falls below its P0/P1 threshold
-  const blocked = uiBreakdown.blocked || apiBreakdown.blocked;
+  // GUARDRAIL: block if OVERALL (combined UI+API) P0/P1 coverage falls below threshold
+  const blocked = p0Pct < minP0 || p1Pct < minP1;
 
   // GUARDRAIL: escalate if overall gap percent exceeds threshold
   const gapPercent = testCases.length > 0 ? (gaps.length / testCases.length) * 100 : 0;
