@@ -29,6 +29,11 @@ async function main(): Promise<void> {
   // --test-type=ui|api|both  (also reads TEST_TYPE env var as fallback inside AGT-01)
   const testTypeArg = args.find((a: string) => a.startsWith("--test-type="))?.split("=")[1];
   const testType = (testTypeArg ?? process.env.TEST_TYPE ?? "both") as TestType;
+  // --regen-scenarios forces AGT-01 (and dependent agents) to regenerate even if state exists.
+  // Without this flag, agents 01-04 are skipped when their output state is already present.
+  const regenScenarios =
+    args.some((a: string) => a === "--regen" || a === "--regen-scenarios") ||
+    process.env.REGEN_SCENARIOS === "true";
 
   log.banner();
   const config = await loadConfig();
@@ -38,19 +43,29 @@ async function main(): Promise<void> {
   if (shouldRun(1, fromAgent, singleAgent)) {
     log.phase(1, "AGT-01", "Codebase Analysis");
 
-    // PR context is set by the CI workflow via environment variables:
-    //   PR_TITLE, PR_BRANCH, PR_NUMBER, GITHUB_BASE_REF, PR_CHANGED_FILES
-    // AGT-01 reads these directly from process.env — no explicit passing needed.
-    const prTitle = process.env.PR_TITLE ?? "";
-    const prBranch = process.env.PR_BRANCH ?? "";
-    if (prTitle || prBranch) {
-      log.info(`PR context: "${prTitle}" (${prBranch})`);
+    const scenariosExist = await state.exists("scenarios");
+    if (!regenScenarios && scenariosExist) {
+      const existing = await state.load<Scenario[]>("scenarios");
+      log.info(
+        `AGT-01 skipped — using ${existing.length} cached scenarios. ` +
+          `Pass --regen-scenarios (or REGEN_SCENARIOS=true) to regenerate.`
+      );
+    } else {
+      // PR context is set by the CI workflow via environment variables:
+      //   PR_TITLE, PR_BRANCH, PR_NUMBER, GITHUB_BASE_REF, PR_CHANGED_FILES
+      // AGT-01 reads these directly from process.env — no explicit passing needed.
+      const prTitle = process.env.PR_TITLE ?? "";
+      const prBranch = process.env.PR_BRANCH ?? "";
+      if (prTitle || prBranch) {
+        log.info(`PR context: "${prTitle}" (${prBranch})`);
+      }
+
+      log.info(`Test type: ${testType}`);
+      const scenarios = await runCodebaseAnalyst(config.repoPath, testType);
+      await state.save("scenarios", scenarios);
+      log.done(`Generated ${scenarios.length} regression scenarios (${testType})`);
     }
 
-    log.info(`Test type: ${testType}`);
-    const scenarios = await runCodebaseAnalyst(config.repoPath, testType);
-    await state.save("scenarios", scenarios);
-    log.done(`Generated ${scenarios.length} regression scenarios (${testType})`);
     if (singleAgent === 1) {
       log.complete("Single-agent run complete");
       return;
@@ -58,6 +73,8 @@ async function main(): Promise<void> {
   }
 
   // ── AGENT 02: JIRA Story Alignment Validation ─────────────────────────────
+  // Always runs — validates the PR against JIRA and generates new-feature scenarios
+  // from the code changes, even when regression scenarios are cached from AGT-01.
   if (shouldRun(2, fromAgent, singleAgent)) {
     log.phase(2, "AGT-02", "JIRA Story Alignment");
     const scenarios = await state.load<Scenario[]>("scenarios");
@@ -89,8 +106,11 @@ async function main(): Promise<void> {
   }
 
   // ── AGENT 03: Test Case Design ────────────────────────────────────────────
+  // Always runs — preserves the regression baseline and generates new test cases
+  // only for new-feature scenarios produced by AGT-02 from this PR's code changes.
   if (shouldRun(3, fromAgent, singleAgent)) {
     log.phase(3, "AGT-03", "Test Case Design");
+
     const validatedScenarios = await state.load<ValidatedScenario[]>("validated-scenarios");
 
     let testCases: TestCase[];
@@ -154,6 +174,8 @@ async function main(): Promise<void> {
   }
 
   // ── AGENT 04: Playwright Test Generation ──────────────────────────────────
+  // Always runs — skips existing regression spec files and only merges new-feature
+  // test cases generated for this PR's code changes (handled inside runPlaywrightEngineer).
   if (shouldRun(4, fromAgent, singleAgent)) {
     log.phase(4, "AGT-04", "Playwright Test Generation");
     const testCases = await state.load<TestCase[]>("test-cases");
@@ -270,7 +292,9 @@ async function loadApiSpecs(openApiPath?: string): Promise<Record<string, unknow
   }
 }
 
-main().catch((err) => {
-  console.error("\n[PIPELINE ERROR]", err.message);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error("\n[PIPELINE ERROR]", err.message);
+    process.exit(1);
+  });

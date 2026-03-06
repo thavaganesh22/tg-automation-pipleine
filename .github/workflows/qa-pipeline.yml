@@ -29,6 +29,10 @@ on:
         description: "Test types to generate and run (ui | api | both)"
         required: false
         default: "both"
+      regen_scenarios:
+        description: "Force AGT-01 to regenerate scenarios and rebuild all specs (true | false)"
+        required: false
+        default: "false"
 
 # =============================================================================
 # JOB 1 - PR Pipeline (AGT-01 through AGT-07)
@@ -67,6 +71,15 @@ jobs:
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Restore pipeline state cache
+        uses: actions/cache@v4
+        with:
+          path: pipeline-state/
+          key: pipeline-state-pr-${{ github.event.pull_request.head.ref }}-${{ github.run_id }}
+          restore-keys: |
+            pipeline-state-pr-${{ github.event.pull_request.head.ref }}-
+            pipeline-state-pr-${{ github.base_ref }}-
 
       - name: Resolve changed files
         run: |
@@ -183,6 +196,15 @@ jobs:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          # Not set on PR runs — AGT-01 through AGT-04 will use cached state when available
+          REGEN_SCENARIOS: ""
+
+      - name: Save pipeline state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: pipeline-state/
+          key: pipeline-state-pr-${{ github.event.pull_request.head.ref }}-${{ github.run_id }}
 
       - name: Post final report to PR
         if: always()
@@ -490,6 +512,7 @@ jobs:
           fi
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REGEN_SCENARIOS: ${{ github.event.inputs.regen_scenarios == 'true' && 'true' || '' }}
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
           JIRA_HOST: ${{ vars.JIRA_HOST }}
           JIRA_HOST_ALLOWLIST: ${{ vars.JIRA_HOST }}

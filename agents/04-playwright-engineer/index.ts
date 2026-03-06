@@ -674,6 +674,20 @@ async function mergeUISpec(
   module: string
 ): Promise<void> {
   const existing = await fs.readFile(specPath, "utf-8");
+
+  // Deduplicate: skip cases whose TC-IDs are already present in the spec
+  const existingIds = extractExistingTestIds(existing);
+  const dedupedCases = newCases.filter((c) => !existingIds.has(c.id.toLowerCase()));
+  if (dedupedCases.length === 0) {
+    console.log(`  [AGT-04] [ui] All ${newCases.length} cases already in spec — skipping append`);
+    return;
+  }
+  if (dedupedCases.length < newCases.length) {
+    console.log(
+      `  [AGT-04] [ui] Deduped: ${newCases.length - dedupedCases.length} cases already present, appending ${dedupedCases.length}`
+    );
+  }
+
   const pascal = toPascalCase(module);
   const pomPath = path.join(POM_DIR, `${module}.page.ts`);
 
@@ -713,16 +727,26 @@ RULES for each test():
     messages: [
       {
         role: "user",
-        content: `Generate test functions for these gap cases (${newCases.length} cases):
-${JSON.stringify(newCases, null, 2)}`,
+        content: `Generate test functions for these gap cases (${dedupedCases.length} cases):
+${JSON.stringify(dedupedCases, null, 2)}`,
       },
     ],
   });
 
-  const newBlock = extractTypeScriptCode((response.content[0] as { text: string }).text);
+  let newBlock = extractTypeScriptCode((response.content[0] as { text: string }).text);
+
+  // Guard: if the appended block has unbalanced braces, truncate to last complete inner describe
+  if (braceDepth(newBlock) !== 0) {
+    const truncated = truncateToBalanced(newBlock, 0);
+    console.warn(
+      `[AGT-04 GUARDRAIL] ${module}.spec UI merge block had unbalanced braces — truncated.`
+    );
+    newBlock = truncated;
+  }
+
   const merged = existing.trimEnd() + "\n\n" + newBlock.trim() + "\n";
   await fs.writeFile(specPath, merged, "utf-8");
-  console.log(`  [AGT-04] [ui] Appended ${newCases.length} gap tests → ${specPath}`);
+  console.log(`  [AGT-04] [ui] Appended ${dedupedCases.length} gap tests → ${specPath}`);
 }
 
 // ── API Spec Merger ─────────────────────────────────────────────────────────
@@ -733,6 +757,20 @@ async function mergeAPISpec(
   module: string
 ): Promise<void> {
   const existing = await fs.readFile(specPath, "utf-8");
+
+  // Deduplicate: skip cases whose TC-IDs are already present in the spec
+  const existingIds = extractExistingTestIds(existing);
+  const dedupedCases = newCases.filter((c) => !existingIds.has(c.id.toLowerCase()));
+  if (dedupedCases.length === 0) {
+    console.log(`  [AGT-04] [api] All ${newCases.length} cases already in spec — skipping append`);
+    return;
+  }
+  if (dedupedCases.length < newCases.length) {
+    console.log(
+      `  [AGT-04] [api] Deduped: ${newCases.length - dedupedCases.length} cases already present, appending ${dedupedCases.length}`
+    );
+  }
+
   const pascal = toPascalCase(module);
 
   // IMPORTANT: Never ask the LLM to reproduce the existing file — it will be truncated
@@ -765,18 +803,101 @@ RULES for each test():
     messages: [
       {
         role: "user",
-        content: `Generate test functions for these gap cases (${newCases.length} cases):
-${JSON.stringify(newCases, null, 2)}`,
+        content: `Generate test functions for these gap cases (${dedupedCases.length} cases):
+${JSON.stringify(dedupedCases, null, 2)}`,
       },
     ],
   });
 
-  const newBlock = extractTypeScriptCode((response.content[0] as { text: string }).text);
+  let newBlock = extractTypeScriptCode((response.content[0] as { text: string }).text);
+
+  // Guard: if the appended block has unbalanced braces, truncate to last complete inner describe
+  if (braceDepth(newBlock) !== 0) {
+    const truncated = truncateToBalanced(newBlock, 0);
+    console.warn(
+      `[AGT-04 GUARDRAIL] ${module}.api.spec API merge block had unbalanced braces — truncated.`
+    );
+    newBlock = truncated;
+  }
 
   // Ensure existing file ends cleanly, then append the new describe block
   const merged = existing.trimEnd() + "\n\n" + newBlock.trim() + "\n";
   await fs.writeFile(specPath, merged, "utf-8");
-  console.log(`  [AGT-04] [api] Appended ${newCases.length} gap tests → ${specPath}`);
+  console.log(`  [AGT-04] [api] Appended ${dedupedCases.length} gap tests → ${specPath}`);
+}
+
+// ── Code Integrity Helpers ───────────────────────────────────────────────────
+
+/** Returns all TC-UUIDs already referenced in a spec file (from traceability comments). */
+function extractExistingTestIds(content: string): Set<string> {
+  const ids = new Set<string>();
+  const re = /\/\/\s*TC-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    ids.add(m[1].toLowerCase());
+  }
+  return ids;
+}
+
+/**
+ * Checks whether a TypeScript snippet has balanced braces.
+ * Ignores braces inside string literals (single, double, or template).
+ * Returns the final brace depth (0 = balanced).
+ */
+function braceDepth(code: string): number {
+  let depth = 0;
+  let i = 0;
+  while (i < code.length) {
+    const ch = code[i];
+    if (ch === "'" || ch === '"' || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < code.length) {
+        if (code[i] === "\\") { i += 2; continue; }
+        if (code[i] === quote) { i++; break; }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") depth--;
+    i++;
+  }
+  return depth;
+}
+
+/**
+ * Truncates code to the last position where brace depth returns to `targetDepth`.
+ * Use targetDepth=0 for complete files, targetDepth=1 for append blocks
+ * (where the outer test.describe is depth 1).
+ * Returns the original string if already balanced at targetDepth.
+ */
+function truncateToBalanced(code: string, targetDepth = 0): string {
+  let depth = 0;
+  let lastPos = -1;
+  let i = 0;
+  while (i < code.length) {
+    const ch = code[i];
+    if (ch === "'" || ch === '"' || ch === "`") {
+      const quote = ch;
+      i++;
+      while (i < code.length) {
+        if (code[i] === "\\" ) { i += 2; continue; }
+        if (code[i] === quote) { i++; break; }
+        i++;
+      }
+      continue;
+    }
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === targetDepth) lastPos = i + 1;
+    }
+    i++;
+  }
+  if (depth === targetDepth) return code; // already balanced
+  if (lastPos === -1) return code;        // no balanced position found — return as-is
+  return code.slice(0, lastPos).trimEnd() + "\n";
 }
 
 // ── File Writer ─────────────────────────────────────────────────────────────
@@ -802,7 +923,20 @@ function extractTypeScriptCode(content: string): string {
 }
 
 async function writeChecked(filePath: string, content: string, label: string): Promise<void> {
-  const clean = extractTypeScriptCode(content);
+  let clean = extractTypeScriptCode(content);
+
+  // Guard against LLM hitting max_tokens mid-file — truncate to last balanced brace position
+  if (braceDepth(clean) !== 0) {
+    const truncated = truncateToBalanced(clean, 0);
+    const trimmedLines = truncated.split("\n").length;
+    const origLines = clean.split("\n").length;
+    console.warn(
+      `[AGT-04 GUARDRAIL] ${label}: output truncated (unbalanced braces). ` +
+        `Trimmed from ${origLines} to ${trimmedLines} lines.`
+    );
+    clean = truncated;
+  }
+
   const lines = clean.split("\n");
   if (lines.length > MAX_LINES_PER_FILE) {
     console.warn(
