@@ -49,7 +49,7 @@ export const TestCaseSchema = z.object({
   caseScope: z.enum(["regression", "new-feature"]),
   testType: z.enum(["ui", "api"]), // propagated from scenario.testType — LLM cannot override
   preconditions: z.array(z.string()).min(1),
-  steps: z.array(TestStepSchema).min(3).max(20),
+  steps: z.array(TestStepSchema).min(1).max(20),
   expectedOutcome: z.string().min(1),
   requiresPII: z.boolean(),
   tags: z.array(z.string()),

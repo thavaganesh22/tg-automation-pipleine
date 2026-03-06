@@ -68,7 +68,7 @@ const mockEmployees: Employee[] = [
     lastName: 'Chen',
     email: 'emily.chen@company.com',
     designation: 'Data Analyst',
-    department: 'Analytics',
+    department: 'Data',
     employmentType: 'Full-Time',
     employmentStatus: 'Terminated',
   },
@@ -85,10 +85,9 @@ const newlyCreatedEmployee: Employee = {
   employmentStatus: 'Active',
 };
 
-// Track employees created via POST so GET list reflects them
-const createdInDrawerTests: Employee[] = [];
-
 export async function setupEmployeeDrawerMocks(page: Page): Promise<void> {
+  // Track employees created via POST so GET list reflects them — local so state resets each test
+  const createdInDrawerTests: Employee[] = [];
   // ── GET /api/employees** — list employees ──
   await page.route('**/api/employees**', async (route: Route, request: Request) => {
     const method = request.method();
@@ -229,8 +228,8 @@ export async function setupEmployeeDrawerMocks(page: Page): Promise<void> {
     await route.fallback();
   });
 
-  // ── GET/PATCH/DELETE /api/employees/:id** — single employee operations ──
-  await page.route('**/api/employees/*/**', async (route: Route, request: Request) => {
+  // ── GET/PATCH/DELETE /api/employees/:id — single employee operations ──
+  await page.route('**/api/employees/*', async (route: Route, request: Request) => {
     const method = request.method();
     const url = request.url();
 

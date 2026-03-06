@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { execSync } from "child_process";
 import * as fs from "fs/promises";
 import * as net from "net";
@@ -12,6 +13,8 @@ export interface TestExecutorConfig {
   retries?: number;
   /** Which spec types to run. Defaults to "both". */
   testType?: "ui" | "api" | "both";
+  /** Whether to attempt LLM-driven spec repair on script errors. Default: AUTO_HEAL_ENABLED env. */
+  autoHeal?: boolean;
 }
 
 export interface FailedTest {
@@ -21,6 +24,7 @@ export interface FailedTest {
   screenshotPath: string | null;
   tracePath: string | null;
   retried: boolean;
+  failureType: "script" | "app";
 }
 
 export interface ExecutionResult {
@@ -37,6 +41,10 @@ export interface ExecutionResult {
   passRate: number;
   failedTests: FailedTest[];
   artifactsDir: string;
+  healAttempted: boolean;
+  healedSpecs: string[];
+  scriptErrors: number;
+  appErrors: number;
 }
 
 // ── Guardrail Constants ────────────────────────────────────────────────────
@@ -45,10 +53,40 @@ const ALLOWED_URLS = (process.env.ALLOWED_TEST_URLS ?? "")
   .split(",")
   .map((s: string) => s.trim())
   .filter(Boolean);
-const MAX_WORKERS = Math.min(parseInt(process.env.MAX_WORKERS ?? "8", 10), 8);
-const TEST_TIMEOUT_MS = 60_000;
-const SUITE_TIMEOUT_MS = 30 * 60 * 1000;
-const MAX_RETRIES = 2;
+const MAX_WORKERS = Math.min(parseInt(process.env.MAX_WORKERS ?? "4", 10), 8);
+const TEST_TIMEOUT_MS = 20_000;        // per-test wall-clock limit
+const ACTION_TIMEOUT_MS = 10_000;      // per-action (locator.waitFor, click, fill, etc.)
+const NAVIGATION_TIMEOUT_MS = 15_000; // page.goto / waitForURL
+const SUITE_TIMEOUT_MS = 15 * 60 * 1000; // overall suite cap (15 min)
+const MAX_RETRIES = 1;
+const MAX_FAILURES = 20;              // bail early if too many tests fail
+
+// ── Auto-Heal Constants ────────────────────────────────────────────────────
+
+const AUTO_HEAL_ENABLED = process.env.AUTO_HEAL_ENABLED !== "false";
+const MAX_HEAL_FAILURE_RATIO = 0.5; // skip heal if >50% of tests fail (app likely down)
+
+const SCRIPT_ERROR_PATTERNS: RegExp[] = [
+  /TimeoutError/i,
+  /locator\.(waitFor|click|fill|check|selectOption|hover|tap)/i,
+  /waiting for (locator|selector)/i,
+  /no element found for selector/i,
+  /strict mode violation/i,
+  /is not a function/i,
+  /cannot read propert/i,
+  /target page.*closed/i,
+  /expect.*toBeVisible.*failed/i,
+  /expect.*toHaveCount.*failed/i,
+  /expect.*toHaveText.*failed/i,
+];
+
+const APP_ERROR_PATTERNS: RegExp[] = [
+  /net::ERR_/i,
+  /ECONNREFUSED/i,
+  /connection refused/i,
+  /response status.*[45]\d\d/i,
+  /internal server error/i,
+];
 
 // ── Main Agent ─────────────────────────────────────────────────────────────
 
@@ -95,7 +133,7 @@ export async function runTestExecutor(
 
   const report = await parseReport(resultPath, artifactsDir);
 
-  return {
+  const baseResult: ExecutionResult = {
     runId,
     startedAt,
     finishedAt,
@@ -109,6 +147,253 @@ export async function runTestExecutor(
     flaky: report.flaky,
     skipped: report.skipped,
     failedTests: report.failedTests,
+    healAttempted: false,
+    healedSpecs: [],
+    scriptErrors: 0,
+    appErrors: 0,
+  };
+
+  const shouldHeal = (config.autoHeal ?? AUTO_HEAL_ENABLED) && report.failedTests.length > 0;
+  if (shouldHeal) {
+    return await runAutoHealCycle(specDir, config, baseResult, env);
+  }
+  return baseResult;
+}
+
+// ── Auto-Heal ──────────────────────────────────────────────────────────────
+
+function classifyFailure(error: string): "script" | "app" {
+  for (const pattern of APP_ERROR_PATTERNS) {
+    if (pattern.test(error)) return "app";
+  }
+  for (const pattern of SCRIPT_ERROR_PATTERNS) {
+    if (pattern.test(error)) return "script";
+  }
+  // Conservative default: attempt heal; if it can't fix the real cause, test stays failed
+  return "script";
+}
+
+async function healSpecFile(
+  specPath: string,
+  failures: FailedTest[]
+): Promise<boolean> {
+  let specContent: string;
+  try {
+    specContent = await fs.readFile(specPath, "utf-8");
+  } catch {
+    console.warn(`  [AGT-06] Heal skipped — cannot read spec: ${specPath}`);
+    return false;
+  }
+
+  const failureSummary = failures
+    .map((f) => `Test: "${f.title}"\nError: ${f.error}`)
+    .join("\n\n");
+
+  const client = new Anthropic();
+  let response: Awaited<ReturnType<typeof client.messages.create>>;
+  try {
+    response = await client.messages.create({
+      model: "claude-opus-4-6",
+      max_tokens: 8192,
+      system:
+        "You are a Playwright test repair specialist. " +
+        "Fix ONLY infrastructure problems: wrong selectors, bad route patterns, missing POM method calls, incorrect navigation paths. " +
+        "Do NOT weaken assertions. Do NOT change what a test is asserting — only fix HOW it finds elements or sets up routes. " +
+        "Do NOT fix application bugs. " +
+        "Return ONLY valid TypeScript — no markdown fences, no explanation.",
+      messages: [
+        {
+          role: "user",
+          content:
+            `The following tests in this spec file are failing due to script/infrastructure issues:\n\n` +
+            `${failureSummary}\n\n` +
+            `Here is the full spec file:\n\n${specContent}\n\n` +
+            `Return the complete repaired TypeScript spec file with only the infrastructure fixes applied.`,
+        },
+      ],
+    });
+  } catch (err) {
+    console.warn(`  [AGT-06] Heal LLM call failed for ${specPath}: ${(err as Error).message}`);
+    return false;
+  }
+
+  const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
+  if (!raw.trim()) {
+    console.warn(`  [AGT-06] Heal returned empty response for ${specPath}`);
+    return false;
+  }
+
+  const fixed = stripCodeFences(raw);
+  await fs.writeFile(specPath, fixed, "utf-8");
+  return true;
+}
+
+function stripCodeFences(code: string): string {
+  return code
+    .replace(/^```(?:typescript|ts)?\s*/i, "")
+    .replace(/\s*```\s*$/, "")
+    .trim();
+}
+
+async function runAutoHealCycle(
+  specDir: string,
+  config: TestExecutorConfig,
+  firstResult: ExecutionResult,
+  env: NodeJS.ProcessEnv
+): Promise<ExecutionResult> {
+  const total = firstResult.totalTests;
+  const failCount = firstResult.failed;
+
+  // Gate: skip if too many failures (app likely down)
+  if (total > 0 && failCount / total > MAX_HEAL_FAILURE_RATIO) {
+    console.log(
+      `  [AGT-06] Auto-heal skipped — ${failCount}/${total} tests failed (>${(MAX_HEAL_FAILURE_RATIO * 100).toFixed(0)}% threshold, app may be down)`
+    );
+    return firstResult;
+  }
+
+  // Classify each failure
+  const classified = firstResult.failedTests.map((f) => ({
+    ...f,
+    failureType: classifyFailure(f.error) as "script" | "app",
+  }));
+
+  const scriptFails = classified.filter((f) => f.failureType === "script");
+  const appFails = classified.filter((f) => f.failureType === "app");
+
+  // Group script failures by spec file
+  const byFile = new Map<string, FailedTest[]>();
+  for (const f of scriptFails) {
+    const key = f.file;
+    if (!byFile.has(key)) byFile.set(key, []);
+    byFile.get(key)!.push(f);
+  }
+
+  console.log(
+    `  [AGT-06] Auto-heal: ${scriptFails.length} script error(s) in ${byFile.size} file(s) | ` +
+      `${appFails.length} app error(s) (skipped)`
+  );
+
+  if (scriptFails.length === 0) {
+    return {
+      ...firstResult,
+      failedTests: classified,
+      healAttempted: false,
+      healedSpecs: [],
+      scriptErrors: 0,
+      appErrors: appFails.length,
+    };
+  }
+
+  // Heal each spec file
+  const healedSpecs: string[] = [];
+  for (const [filePath, failures] of byFile.entries()) {
+    // filePath from Playwright report is relative to testDir — resolve it
+    const absPath = path.isAbsolute(filePath)
+      ? filePath
+      : path.resolve(specDir, filePath);
+    console.log(`  [AGT-06] Healing ${absPath} ...`);
+    const healed = await healSpecFile(absPath, failures);
+    if (healed) healedSpecs.push(absPath);
+  }
+
+  if (healedSpecs.length === 0) {
+    console.log(`  [AGT-06] No files successfully healed — returning original results`);
+    return {
+      ...firstResult,
+      failedTests: classified,
+      healAttempted: true,
+      healedSpecs: [],
+      scriptErrors: scriptFails.length,
+      appErrors: appFails.length,
+    };
+  }
+
+  // Write a targeted Playwright config for only the healed files
+  const healRunId = `${firstResult.runId}-heal`;
+  const healArtifactsDir = path.resolve("test-results", healRunId);
+  await fs.mkdir(healArtifactsDir, { recursive: true });
+
+  const healConfigPath = path.resolve(`playwright-agt06-${healRunId}.config.js`);
+  const testMatchList = healedSpecs.map((p) => JSON.stringify(p)).join(", ");
+  const healConfig = `// Auto-generated by AGT-06 heal — deleted after run
+const { defineConfig } = require("@playwright/test");
+module.exports = defineConfig({
+  testDir: ${JSON.stringify(path.resolve(specDir))},
+  testMatch: [${testMatchList}],
+  outputDir: ${JSON.stringify(healArtifactsDir)},
+  use: {
+    baseURL: ${JSON.stringify(config.baseURL)},
+    headless: ${config.headless ?? true},
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+    trace: "on-first-retry",
+    actionTimeout: ${ACTION_TIMEOUT_MS},
+    navigationTimeout: ${NAVIGATION_TIMEOUT_MS},
+  },
+  retries: ${MAX_RETRIES},
+  workers: ${MAX_WORKERS},
+  timeout: ${TEST_TIMEOUT_MS},
+  maxFailures: ${MAX_FAILURES},
+  reporter: [["json", { outputFile: ${JSON.stringify(path.join(healArtifactsDir, "results.json"))} }], ["line"]],
+});
+`;
+  await fs.writeFile(healConfigPath, healConfig, "utf-8");
+
+  console.log(`  [AGT-06] Re-running ${healedSpecs.length} healed spec file(s)...`);
+
+  try {
+    await runWithTimeout(
+      () => executePlaywright(healConfigPath, env),
+      SUITE_TIMEOUT_MS
+    );
+  } catch {
+    // parse results regardless of exit code
+  } finally {
+    await fs.unlink(healConfigPath).catch(() => undefined);
+  }
+
+  const healReport = await parseReport(
+    path.join(healArtifactsDir, "results.json"),
+    healArtifactsDir
+  );
+
+  // Merge: keep run-1 results for non-healed files; replace with run-2 for healed files
+  // Passed/failed counts from run-1 minus the healed files
+  const run1NonHealedPassed = firstResult.passed - scriptFails.length; // rough: remove all script-fail tests
+  const run1NonHealedFailed = appFails.length;
+
+  const mergedPassed = run1NonHealedPassed + healReport.passed;
+  const mergedFailed = run1NonHealedFailed + healReport.failed;
+  const mergedTotal = firstResult.totalTests;
+
+  // Keep app-error failures; add any still-failing tests from heal run
+  const mergedFailedTests: FailedTest[] = [
+    ...appFails,
+    ...healReport.failedTests.map((f) => ({
+      ...f,
+      failureType: classifyFailure(f.error) as "script" | "app",
+    })),
+  ];
+
+  const mergedPassRate = mergedTotal > 0 ? mergedPassed / mergedTotal : 0;
+
+  const prevPct = ((firstResult.passed / firstResult.totalTests) * 100).toFixed(1);
+  const newPct = (mergedPassRate * 100).toFixed(1);
+  console.log(
+    `  [AGT-06] Post-heal: ${mergedPassed}/${mergedTotal} passed (${newPct}%) — was ${firstResult.passed}/${firstResult.totalTests} (${prevPct}%)`
+  );
+
+  return {
+    ...firstResult,
+    passed: mergedPassed,
+    failed: mergedFailed,
+    passRate: mergedPassRate,
+    failedTests: mergedFailedTests,
+    healAttempted: true,
+    healedSpecs,
+    scriptErrors: scriptFails.length,
+    appErrors: appFails.length,
   };
 }
 
@@ -231,14 +516,16 @@ async function parseReport(reportPath: string, artifactsDir: string): Promise<Pa
           else {
             failed++;
             const errorMsg = test.results?.[0]?.error?.message ?? "Unknown error";
+            const truncatedError = errorMsg.slice(0, 500);
             failedTests.push({
               title: spec.title,
               file: suite.file ?? "",
               // GUARDRAIL: truncate error to 500 chars to avoid PII leakage in DB
-              error: errorMsg.slice(0, 500),
+              error: truncatedError,
               screenshotPath: locateArtifact(artifactsDir, spec.title, "png"),
               tracePath: locateArtifact(artifactsDir, spec.title, "zip"),
               retried,
+              failureType: classifyFailure(truncatedError),
             });
           }
         }
@@ -294,10 +581,13 @@ module.exports = defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
     trace: "on-first-retry",
+    actionTimeout: ${ACTION_TIMEOUT_MS},
+    navigationTimeout: ${NAVIGATION_TIMEOUT_MS},
   },
   retries: ${MAX_RETRIES},
   workers: ${MAX_WORKERS},
   timeout: ${TEST_TIMEOUT_MS},
+  maxFailures: ${MAX_FAILURES},
   reporter: [["json", { outputFile: ${JSON.stringify(path.join(outputDir, "results.json"))} }], ["line"]],
 });
 `;

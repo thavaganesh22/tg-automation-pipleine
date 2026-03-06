@@ -219,6 +219,7 @@ async function main(): Promise<void> {
       baseURL: config.stagingUrl,
       headless: true,
       testType,
+      autoHeal: true,
     });
     await state.save("execution-result", executionResult);
     const passRate = ((executionResult.passed / executionResult.totalTests) * 100).toFixed(1);

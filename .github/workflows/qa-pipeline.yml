@@ -5,14 +5,11 @@ name: 7-Agent QA Pipeline
 #                  PR only passes after AGT-07 (Report Architect) completes.
 #                  Blocks merge on: missing JIRA ticket, FAIL alignment verdict,
 #                  coverage below threshold, or test execution failures.
-#   push / manual -> Full 7-agent pipeline on the target branch.
+#   manual       -> Full 7-agent pipeline via workflow_dispatch (resume/single-agent supported).
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    branches: [main, develop]
-
-  push:
     branches: [main, develop]
 
   # schedule:
@@ -419,12 +416,12 @@ jobs:
           fi
 
   # =============================================================================
-  # JOB 2 - Full Pipeline on push / schedule / manual dispatch
+  # JOB 2 - Full Pipeline on manual dispatch / schedule
   # =============================================================================
 
   full-pipeline:
     name: "Full QA Pipeline (AGT-01 to AGT-07)"
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 60
 

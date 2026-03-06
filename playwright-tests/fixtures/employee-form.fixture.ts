@@ -39,7 +39,7 @@ const mockEmployees: Employee[] = [
     email: 'thava.ganesh@company.com',
     designation: 'Tech Lead',
     department: 'Engineering',
-    employmentType: 'Full-time',
+    employmentType: 'Full-Time',
     employmentStatus: 'Active',
   },
   {
@@ -49,7 +49,7 @@ const mockEmployees: Employee[] = [
     email: 'sarah.mitchell@company.com',
     designation: 'Product Manager',
     department: 'Product',
-    employmentType: 'Full-time',
+    employmentType: 'Full-Time',
     employmentStatus: 'Active',
   },
   {
@@ -69,7 +69,7 @@ const mockEmployees: Employee[] = [
     email: 'priya.sharma@company.com',
     designation: 'QA Engineer',
     department: 'Engineering',
-    employmentType: 'Full-time',
+    employmentType: 'Full-Time',
     employmentStatus: 'Terminated',
   },
 ];
@@ -141,7 +141,7 @@ export async function setupEmployeeFormMocks(page: Page): Promise<void> {
         email: requestBody?.email ?? '',
         designation: requestBody?.designation ?? '',
         department: requestBody?.department ?? '',
-        employmentType: requestBody?.employmentType ?? 'Full-time',
+        employmentType: requestBody?.employmentType ?? 'Full-Time',
         employmentStatus: (requestBody?.employmentStatus as Employee['employmentStatus']) ?? 'Active',
       };
 
@@ -192,7 +192,7 @@ export async function setupEmployeeFormMocks(page: Page): Promise<void> {
       return;
     }
 
-    await route.continue();
+    await route.fallback();
   });
 
   // Mock GET single employee by ID
@@ -224,7 +224,7 @@ export async function setupEmployeeFormMocks(page: Page): Promise<void> {
       return;
     }
 
-    await route.continue();
+    await route.fallback();
   });
 
   // Mock departments endpoint (often used by form dropdowns)

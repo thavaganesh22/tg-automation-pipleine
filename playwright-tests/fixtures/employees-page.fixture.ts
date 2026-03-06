@@ -29,7 +29,7 @@ const allEmployees: Employee[] = [
     email: 'thava.ganesh@company.com',
     designation: 'Tech Lead',
     department: 'Engineering',
-    employmentType: 'Full-time',
+    employmentType: 'Full-Time',
     employmentStatus: 'Active',
   },
   {
@@ -39,7 +39,7 @@ const allEmployees: Employee[] = [
     email: 'sara.mitchell@company.com',
     designation: 'Product Manager',
     department: 'Product',
-    employmentType: 'Full-time',
+    employmentType: 'Full-Time',
     employmentStatus: 'Active',
   },
   {
@@ -59,7 +59,7 @@ const allEmployees: Employee[] = [
     email: 'linda.nguyen@company.com',
     designation: 'Backend Engineer',
     department: 'Engineering',
-    employmentType: 'Full-time',
+    employmentType: 'Full-Time',
     employmentStatus: 'Terminated',
   },
   {
@@ -69,7 +69,7 @@ const allEmployees: Employee[] = [
     email: 'carlos.rivera@company.com',
     designation: 'QA Engineer',
     department: 'Engineering',
-    employmentType: 'Part-time',
+    employmentType: 'Part-Time',
     employmentStatus: 'Active',
   },
 ];
@@ -199,7 +199,7 @@ export async function setupEmployeesPageMocks(page: Page): Promise<void> {
         email: body.email,
         designation: body.designation ?? 'Unknown',
         department: body.department ?? 'General',
-        employmentType: body.employmentType ?? 'Full-time',
+        employmentType: body.employmentType ?? 'Full-Time',
         employmentStatus: body.employmentStatus ?? 'Active',
       };
 
@@ -359,7 +359,7 @@ export async function setupSingleEmployeePageMocks(page: Page): Promise<void> {
     email: 'thava.ganesh@company.com',
     designation: 'Tech Lead',
     department: 'Engineering',
-    employmentType: 'Full-time',
+    employmentType: 'Full-Time',
     employmentStatus: 'Active',
   };
 
