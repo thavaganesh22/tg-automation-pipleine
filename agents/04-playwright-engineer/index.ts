@@ -745,11 +745,12 @@ ${JSON.stringify(dedupedCases, null, 2)}`,
   // Strip any import statements the LLM may have included despite being told not to
   newBlock = newBlock.replace(/^import\s+[^\n]*\n?/gm, "").trim();
 
-  // Guard: if the appended block has unbalanced braces, truncate to last complete inner describe
-  if (braceDepth(newBlock) !== 0) {
+  // Guard: if the appended block has unbalanced braces/parens, truncate to last complete describe
+  const { braces: uiBDepth, parens: uiPDepth } = syntaxDepth(newBlock);
+  if (uiBDepth !== 0 || uiPDepth !== 0) {
     const truncated = truncateToBalanced(newBlock, 0);
     console.warn(
-      `[AGT-04 GUARDRAIL] ${module}.spec UI merge block had unbalanced braces — truncated.`
+      `[AGT-04 GUARDRAIL] ${module}.spec UI merge block had unbalanced braces/parens — truncated.`
     );
     newBlock = truncated;
   }
@@ -831,11 +832,12 @@ ${JSON.stringify(dedupedCases, null, 2)}`,
   // Strip any import statements the LLM may have included despite being told not to
   newBlock = newBlock.replace(/^import\s+[^\n]*\n?/gm, "").trim();
 
-  // Guard: if the appended block has unbalanced braces, truncate to last complete inner describe
-  if (braceDepth(newBlock) !== 0) {
+  // Guard: if the appended block has unbalanced braces/parens, truncate to last complete describe
+  const { braces: apiBDepth, parens: apiPDepth } = syntaxDepth(newBlock);
+  if (apiBDepth !== 0 || apiPDepth !== 0) {
     const truncated = truncateToBalanced(newBlock, 0);
     console.warn(
-      `[AGT-04 GUARDRAIL] ${module}.api.spec API merge block had unbalanced braces — truncated.`
+      `[AGT-04 GUARDRAIL] ${module}.api.spec API merge block had unbalanced braces/parens — truncated.`
     );
     newBlock = truncated;
   }
@@ -885,12 +887,13 @@ function normalizeTitle(title: string): string {
 }
 
 /**
- * Checks whether a TypeScript snippet has balanced braces.
- * Ignores braces inside string literals (single, double, or template).
- * Returns the final brace depth (0 = balanced).
+ * Checks whether a TypeScript snippet has balanced braces AND parentheses.
+ * Ignores delimiters inside string literals (single, double, or template).
+ * Returns depths (0 = balanced for each).
  */
-function braceDepth(code: string): number {
-  let depth = 0;
+function syntaxDepth(code: string): { braces: number; parens: number } {
+  let braces = 0;
+  let parens = 0;
   let i = 0;
   while (i < code.length) {
     const ch = code[i];
@@ -904,56 +907,66 @@ function braceDepth(code: string): number {
       }
       continue;
     }
-    if (ch === "{") depth++;
-    else if (ch === "}") depth--;
+    if (ch === "{") braces++;
+    else if (ch === "}") braces--;
+    else if (ch === "(") parens++;
+    else if (ch === ")") parens--;
     i++;
   }
-  return depth;
+  return { braces, parens };
 }
 
 /**
- * Truncates code to the last position where brace depth returns to `targetDepth`.
- * Use targetDepth=0 for complete files, targetDepth=1 for append blocks
- * (where the outer test.describe is depth 1).
- * Returns the original string if already balanced at targetDepth.
+ * Truncates code to the last position where brace depth returns to `targetDepth`
+ * AND parenthesis depth returns to 0.
+ * Use targetDepth=0 for complete files, targetDepth=1 for append blocks.
+ *
+ * Playwright specs wrap every test in `test.describe('name', () => { ... });`
+ * so valid cut points are after `});` — when BOTH the closing `}` brings brace
+ * depth to target AND the following `)` brings paren depth to 0.
+ * Cutting at `}` alone (depth=0 but parens still open) would drop the `);` and
+ * produce a SyntaxError.
  */
 function truncateToBalanced(code: string, targetDepth = 0): string {
   let depth = 0;
+  let parens = 0;
   let lastPos = -1;
   let i = 0;
+
+  const tryRecord = (pos: number) => {
+    if (depth !== targetDepth || parens !== 0) return;
+    // Don't record if this is an import destructuring (`import { X } from '...'`).
+    // Cutting here would drop the `from 'path'` clause, producing a broken import.
+    let j = pos;
+    while (j < code.length && (code[j] === " " || code[j] === "\t")) j++;
+    const ahead = code.slice(j, j + 5);
+    const isImportDestructuring =
+      ahead.startsWith("from") && /[\s'"`]/.test(code[j + 4] ?? " ");
+    if (!isImportDestructuring) {
+      lastPos = pos;
+    }
+  };
+
   while (i < code.length) {
     const ch = code[i];
     if (ch === "'" || ch === '"' || ch === "`") {
       const quote = ch;
       i++;
       while (i < code.length) {
-        if (code[i] === "\\" ) { i += 2; continue; }
+        if (code[i] === "\\") { i += 2; continue; }
         if (code[i] === quote) { i++; break; }
         i++;
       }
       continue;
     }
     if (ch === "{") depth++;
-    else if (ch === "}") {
-      depth--;
-      if (depth === targetDepth) {
-        // Don't record this as a truncation point if it's part of an import
-        // destructuring (`import { X } from '...'`). Cutting here would drop
-        // the `from 'path'` clause, producing a broken import statement.
-        let j = i + 1;
-        while (j < code.length && (code[j] === " " || code[j] === "\t")) j++;
-        const ahead = code.slice(j, j + 5);
-        const isImportDestructuring =
-          ahead.startsWith("from") && /[\s'"`]/.test(code[j + 4] ?? " ");
-        if (!isImportDestructuring) {
-          lastPos = i + 1;
-        }
-      }
-    }
+    else if (ch === "}") { depth--; tryRecord(i + 1); }
+    else if (ch === "(") parens++;
+    else if (ch === ")") { parens--; tryRecord(i + 1); }
     i++;
   }
-  if (depth === targetDepth) return code; // already balanced
-  if (lastPos === -1) return code;        // no balanced position found — return as-is
+  if (depth === targetDepth && parens === 0) return code; // already balanced
+  if (lastPos === -1) return code;                        // no balanced position found — return as-is
   return code.slice(0, lastPos).trimEnd() + "\n";
 }
 
@@ -982,13 +995,16 @@ function extractTypeScriptCode(content: string): string {
 async function writeChecked(filePath: string, content: string, label: string): Promise<void> {
   let clean = extractTypeScriptCode(content);
 
-  // Guard against LLM hitting max_tokens mid-file — truncate to last balanced brace position
-  if (braceDepth(clean) !== 0) {
+  // Guard against LLM hitting max_tokens mid-file — truncate to last balanced position.
+  // Checks BOTH brace and paren depth: cutting at `}` alone (braces=0 but parens open)
+  // would leave Playwright's `test.describe(` calls unclosed → SyntaxError.
+  const { braces: bDepth, parens: pDepth } = syntaxDepth(clean);
+  if (bDepth !== 0 || pDepth !== 0) {
     const truncated = truncateToBalanced(clean, 0);
     const trimmedLines = truncated.split("\n").length;
     const origLines = clean.split("\n").length;
     console.warn(
-      `[AGT-04 GUARDRAIL] ${label}: output truncated (unbalanced braces). ` +
+      `[AGT-04 GUARDRAIL] ${label}: output truncated (unbalanced braces/parens). ` +
         `Trimmed from ${origLines} to ${trimmedLines} lines.`
     );
     clean = truncated;

@@ -175,6 +175,7 @@ jobs:
         run: npm run pipeline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
           JIRA_HOST: ${{ vars.JIRA_HOST }}
           JIRA_HOST_ALLOWLIST: ${{ vars.JIRA_HOST }}
@@ -513,6 +514,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           REGEN_SCENARIOS: ${{ github.event.inputs.regen_scenarios == 'true' && 'true' || '' }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
           JIRA_HOST: ${{ vars.JIRA_HOST }}
           JIRA_HOST_ALLOWLIST: ${{ vars.JIRA_HOST }}

@@ -6,6 +6,7 @@ const ConfigSchema = z.object({
   stagingUrl: z.string().url(),
   jira: z.object({
     host: z.string().url(),
+    email: z.string().email(),
     token: z.string().min(1),
     projectKey: z.string().min(1),
     sprintId: z.string().optional(),
@@ -32,6 +33,7 @@ export async function loadConfig(): Promise<PipelineConfig> {
     stagingUrl: process.env.BASE_URL,
     jira: {
       host: process.env.JIRA_HOST,
+      email: process.env.JIRA_EMAIL,
       token: process.env.JIRA_TOKEN,
       projectKey: process.env.JIRA_PROJECT_KEY,
       sprintId: process.env.JIRA_SPRINT_ID,

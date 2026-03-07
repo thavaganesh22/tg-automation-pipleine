@@ -105,6 +105,7 @@ export interface JiraValidationReport {
 
 export interface JiraConfig {
   host: string;
+  email: string;
   token: string;
   projectKey: string;
   sprintId?: string;
@@ -201,9 +202,11 @@ export async function runJiraValidator(
 
 async function fetchJiraStory(ticketKey: string, config: JiraConfig): Promise<JiraStory> {
   // GUARDRAIL: read-only — GET only, no POST/PUT/PATCH
+  // Atlassian Cloud uses Basic auth: base64(email:api_token)
+  const basicAuth = Buffer.from(`${config.email}:${config.token}`).toString("base64");
   const { data } = await axios.get(`${config.host}/rest/api/3/issue/${ticketKey}`, {
     headers: {
-      Authorization: `Bearer ${config.token}`,
+      Authorization: `Basic ${basicAuth}`,
       Accept: "application/json",
     },
     params: {
@@ -595,14 +598,14 @@ Cover each acceptance criterion with at least one UI or API scenario.
       results.push(scenario);
     } catch (err) {
       skipped++;
-      console.warn(
-        `  [AGT-02] Skipped JIRA scenario: ${(err as Error).message.slice(0, 120)}`
-      );
+      console.warn(`  [AGT-02] Skipped JIRA scenario: ${(err as Error).message.slice(0, 120)}`);
     }
   }
 
   if (skipped > 0) {
-    console.warn(`  [AGT-02] ${skipped}/${items.length} JIRA scenarios skipped (validation errors)`);
+    console.warn(
+      `  [AGT-02] ${skipped}/${items.length} JIRA scenarios skipped (validation errors)`
+    );
   }
 
   return results;
@@ -632,7 +635,9 @@ function extractJSONArray(text: string): unknown[] {
     try {
       const parsed = JSON.parse(trimmed);
       if (Array.isArray(parsed)) return parsed;
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   const inner = fenceMatch ? fenceMatch[1].trim() : text.trim();
@@ -641,13 +646,17 @@ function extractJSONArray(text: string): unknown[] {
   try {
     const parsed = JSON.parse(inner.slice(start));
     if (Array.isArray(parsed)) return parsed;
-  } catch { /* fall through */ }
+  } catch {
+    /* fall through */
+  }
   const lastBracket = inner.lastIndexOf("]");
   if (lastBracket > start) {
     try {
       const parsed = JSON.parse(inner.slice(start, lastBracket + 1));
       if (Array.isArray(parsed)) return parsed;
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
   return [];
 }
