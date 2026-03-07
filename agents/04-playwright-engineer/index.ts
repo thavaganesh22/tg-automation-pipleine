@@ -675,9 +675,16 @@ async function mergeUISpec(
 ): Promise<void> {
   const existing = await fs.readFile(specPath, "utf-8");
 
-  // Deduplicate: skip cases whose TC-IDs are already present in the spec
+  // Deduplicate by TC-UUID, exact title, and normalised title (catches LLM title drift)
   const existingIds = extractExistingTestIds(existing);
-  const dedupedCases = newCases.filter((c) => !existingIds.has(c.id.toLowerCase()));
+  const existingTitles = extractExistingTestTitles(existing);
+  const existingNormTitles = new Set([...existingTitles].map(normalizeTitle));
+  const dedupedCases = newCases.filter(
+    (c) =>
+      !existingIds.has(c.id.toLowerCase()) &&
+      !existingTitles.has(c.title) &&
+      !existingNormTitles.has(normalizeTitle(c.title))
+  );
   if (dedupedCases.length === 0) {
     console.log(`  [AGT-04] [ui] All ${newCases.length} cases already in spec — skipping append`);
     return;
@@ -735,6 +742,9 @@ ${JSON.stringify(dedupedCases, null, 2)}`,
 
   let newBlock = extractTypeScriptCode((response.content[0] as { text: string }).text);
 
+  // Strip any import statements the LLM may have included despite being told not to
+  newBlock = newBlock.replace(/^import\s+[^\n]*\n?/gm, "").trim();
+
   // Guard: if the appended block has unbalanced braces, truncate to last complete inner describe
   if (braceDepth(newBlock) !== 0) {
     const truncated = truncateToBalanced(newBlock, 0);
@@ -758,9 +768,16 @@ async function mergeAPISpec(
 ): Promise<void> {
   const existing = await fs.readFile(specPath, "utf-8");
 
-  // Deduplicate: skip cases whose TC-IDs are already present in the spec
+  // Deduplicate by TC-UUID, exact title, and normalised title (catches LLM title drift)
   const existingIds = extractExistingTestIds(existing);
-  const dedupedCases = newCases.filter((c) => !existingIds.has(c.id.toLowerCase()));
+  const existingTitles = extractExistingTestTitles(existing);
+  const existingNormTitles = new Set([...existingTitles].map(normalizeTitle));
+  const dedupedCases = newCases.filter(
+    (c) =>
+      !existingIds.has(c.id.toLowerCase()) &&
+      !existingTitles.has(c.title) &&
+      !existingNormTitles.has(normalizeTitle(c.title))
+  );
   if (dedupedCases.length === 0) {
     console.log(`  [AGT-04] [api] All ${newCases.length} cases already in spec — skipping append`);
     return;
@@ -811,6 +828,9 @@ ${JSON.stringify(dedupedCases, null, 2)}`,
 
   let newBlock = extractTypeScriptCode((response.content[0] as { text: string }).text);
 
+  // Strip any import statements the LLM may have included despite being told not to
+  newBlock = newBlock.replace(/^import\s+[^\n]*\n?/gm, "").trim();
+
   // Guard: if the appended block has unbalanced braces, truncate to last complete inner describe
   if (braceDepth(newBlock) !== 0) {
     const truncated = truncateToBalanced(newBlock, 0);
@@ -837,6 +857,31 @@ function extractExistingTestIds(content: string): Set<string> {
     ids.add(m[1].toLowerCase());
   }
   return ids;
+}
+
+/** Returns all test() titles already declared in a spec file. */
+function extractExistingTestTitles(content: string): Set<string> {
+  const titles = new Set<string>();
+  const re = /test\s*\(\s*['"`](.*?)['"`]\s*,\s*async/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    titles.add(m[1].trim());
+  }
+  return titles;
+}
+
+/**
+ * Normalises a test title for fuzzy deduplication: lowercase, strip non-alphanumeric,
+ * collapse spaces. Matches the same normalisation used by AGT-05's fallback matcher,
+ * so title drift between LLM runs (e.g. "special characters" vs "special chars") is caught.
+ */
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
 }
 
 /**
@@ -891,7 +936,19 @@ function truncateToBalanced(code: string, targetDepth = 0): string {
     if (ch === "{") depth++;
     else if (ch === "}") {
       depth--;
-      if (depth === targetDepth) lastPos = i + 1;
+      if (depth === targetDepth) {
+        // Don't record this as a truncation point if it's part of an import
+        // destructuring (`import { X } from '...'`). Cutting here would drop
+        // the `from 'path'` clause, producing a broken import statement.
+        let j = i + 1;
+        while (j < code.length && (code[j] === " " || code[j] === "\t")) j++;
+        const ahead = code.slice(j, j + 5);
+        const isImportDestructuring =
+          ahead.startsWith("from") && /[\s'"`]/.test(code[j + 4] ?? " ");
+        if (!isImportDestructuring) {
+          lastPos = i + 1;
+        }
+      }
     }
     i++;
   }

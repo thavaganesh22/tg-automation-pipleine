@@ -15,6 +15,7 @@ import { loadConfig } from "./config";
 import { PipelineLogger } from "./logger";
 import { PipelineStateManager } from "./state";
 import * as fs from "fs/promises";
+import * as path from "path";
 
 const log = new PipelineLogger();
 
@@ -152,7 +153,41 @@ async function main(): Promise<void> {
       }
 
       const freshNewFeature = freshCases.filter((tc) => tc.caseScope === "new-feature");
-      testCases = [...baselineCases, ...freshRegression, ...freshNewFeature];
+
+      // Stabilise new-feature UUIDs across runs so AGT-05 can match them back to
+      // spec files. Two sources: (1) previous test-cases.json by exact title,
+      // (2) spec files themselves by TC-UUID comment + normalised title — catches
+      // cases where the LLM generates slightly different titles between runs.
+      const prevTestCases = (await state.exists("test-cases"))
+        ? await state.load<TestCase[]>("test-cases")
+        : [];
+      const prevNFTitleToId = new Map<string, string>(
+        prevTestCases
+          .filter((tc) => tc.caseScope === "new-feature")
+          .map((tc) => [tc.title, tc.id])
+      );
+      // Also build a normalised-title → UUID map from spec files so that minor
+      // title drift between LLM runs doesn't break UUID stability.
+      const specNormTitleToId = await buildSpecTitleUUIDMap("playwright-tests/specs");
+
+      const normTitle = (t: string) =>
+        t.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+
+      const stableNewFeature = freshNewFeature.map((tc) => ({
+        ...tc,
+        id:
+          prevNFTitleToId.get(tc.title) ??
+          specNormTitleToId.get(normTitle(tc.title)) ??
+          tc.id,
+      }));
+      const reusedCount = stableNewFeature.filter((tc) => tc.id !== freshNewFeature.find((f) => f.title === tc.title)?.id).length;
+      if (reusedCount > 0) {
+        log.info(
+          `UUID stabilised: ${reusedCount}/${stableNewFeature.length} new-feature case(s) reused IDs from previous run`
+        );
+      }
+
+      testCases = [...baselineCases, ...freshRegression, ...stableNewFeature];
     } else {
       // ── First run: generate all test cases and save regression baseline ──
       log.info("No regression baseline found — running full test case design");
@@ -244,14 +279,27 @@ async function main(): Promise<void> {
       autoHeal: true,
     });
     await state.save("execution-result", executionResult);
-    const passRate = ((executionResult.passed / executionResult.totalTests) * 100).toFixed(1);
+    const passRate =
+      executionResult.totalTests > 0
+        ? ((executionResult.passed / executionResult.totalTests) * 100).toFixed(1)
+        : "NaN";
     log.done(
       `${executionResult.passed}/${executionResult.totalTests} passed (${passRate}%) ` +
         `in ${(executionResult.durationMs / 1000).toFixed(1)}s`
     );
 
+    // GUARDRAIL: 0 tests collected is always a hard failure — Playwright couldn't parse
+    // the spec files (syntax error) or no specs matched the filter.
+    if (executionResult.totalTests === 0) {
+      log.error(
+        `No tests ran (0/${executionResult.totalTests} collected). ` +
+          `Spec files likely have syntax errors or no specs matched the test filter. Pipeline blocked.`
+      );
+      process.exit(1);
+    }
+
     // GUARDRAIL: enforce SLA pass rate — fail the pipeline if tests are below threshold
-    if (executionResult.totalTests > 0 && executionResult.passRate < config.sla.passRate) {
+    if (executionResult.passRate < config.sla.passRate) {
       log.error(
         `Pass rate ${(executionResult.passRate * 100).toFixed(1)}% is below SLA threshold ` +
           `${(config.sla.passRate * 100).toFixed(1)}%. ` +
@@ -276,6 +324,61 @@ async function main(): Promise<void> {
   }
 
   log.complete("Pipeline finished successfully ✓");
+}
+
+/**
+ * Scans spec files for `// TC-<uuid>` comments immediately before `test('title', ...)` lines.
+ * Returns a map of normalised-title → UUID so the orchestrator can stabilise new-feature
+ * UUIDs even when AGT-03 generates slightly different titles between LLM runs.
+ */
+async function buildSpecTitleUUIDMap(specDir: string): Promise<Map<string, string>> {
+  const normTitle = (t: string) =>
+    t.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+
+  const map = new Map<string, string>();
+  try {
+    await fs.access(specDir);
+  } catch {
+    return map;
+  }
+
+  let entries: { name: string }[];
+  try {
+    entries = (
+      await fs.readdir(specDir, { recursive: true, withFileTypes: true })
+    ).filter((e: { isFile(): boolean; name: string }) => e.isFile() && e.name.endsWith(".spec.ts"));
+  } catch {
+    return map;
+  }
+
+  for (const entry of entries) {
+    const fullPath = path.join(specDir, entry.name);
+    let content: string;
+    try {
+      content = await fs.readFile(fullPath, "utf-8");
+    } catch {
+      continue;
+    }
+
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length - 1; i++) {
+      const uuidMatch = lines[i].match(
+        /\/\/\s*TC-([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i
+      );
+      if (!uuidMatch) continue;
+      const uuid = uuidMatch[1].toLowerCase();
+      // Look ahead up to 3 lines for the test() declaration
+      for (let j = i + 1; j <= Math.min(i + 3, lines.length - 1); j++) {
+        const titleMatch = lines[j].match(/test\s*\(\s*['"`](.*?)['"`]\s*,\s*async/);
+        if (titleMatch) {
+          map.set(normTitle(titleMatch[1]), uuid);
+          break;
+        }
+      }
+    }
+  }
+
+  return map;
 }
 
 function shouldRun(agentId: number, from: number, single: number): boolean {

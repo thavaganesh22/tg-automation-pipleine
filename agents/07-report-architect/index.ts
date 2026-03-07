@@ -20,7 +20,31 @@ const client = new Anthropic();
 
 // ── Elasticsearch config ────────────────────────────────────────────────────
 
-const ES_URL = (process.env.ELASTICSEARCH_URL ?? "http://localhost:9200").replace(/\/$/, "");
+/**
+ * Node.js native fetch (v18+) throws "Request cannot be constructed from a URL
+ * that includes credentials" when the URL contains user:password@host.
+ * Strip credentials from the URL and return them as a Basic Auth header instead.
+ */
+function parseEsUrl(raw: string): { baseUrl: string; authHeader: string | null } {
+  const cleaned = raw.replace(/\/$/, "");
+  try {
+    const u = new URL(cleaned);
+    if (u.username || u.password) {
+      const creds = `${decodeURIComponent(u.username)}:${decodeURIComponent(u.password)}`;
+      const auth = Buffer.from(creds).toString("base64");
+      u.username = "";
+      u.password = "";
+      return { baseUrl: u.toString().replace(/\/$/, ""), authHeader: `Basic ${auth}` };
+    }
+  } catch {
+    // malformed URL — use as-is and let fetch surface the error
+  }
+  return { baseUrl: cleaned, authHeader: null };
+}
+
+const { baseUrl: ES_URL, authHeader: ES_AUTH_HEADER } = parseEsUrl(
+  process.env.ELASTICSEARCH_URL ?? "http://localhost:9200"
+);
 const ES_INDEX_RUNS = "qa-test-runs";
 const ES_INDEX_FAILURES = "qa-failed-tests";
 
@@ -124,9 +148,11 @@ async function esRequest<T>(
   urlPath: string,
   body?: unknown
 ): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (ES_AUTH_HEADER) headers["Authorization"] = ES_AUTH_HEADER;
   const response = await fetch(`${ES_URL}${urlPath}`, {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: body != null ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
