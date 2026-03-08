@@ -28,6 +28,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { execSync } from "child_process";
+import { chromium } from "@playwright/test";
+import ts from "typescript";
 import type { TestCase } from "../03-test-case-designer";
 
 const client = new Anthropic();
@@ -112,6 +114,89 @@ CONFIRM DIALOG:
   [data-testid="confirm-delete-btn"]
 `.trim();
 
+// ── Live App Structure (discovered by Playwright browser inspection) ─────────
+
+interface AppStructure {
+  discoveredSelectors: string[];   // data-testid values actually present in the DOM
+  accessibilitySnapshot: string;   // trimmed accessibility tree text for prompt context
+}
+
+/**
+ * Browses the live app with a headless Chromium browser to discover:
+ *  - All [data-testid] attributes on the main page
+ *  - The drawer's [data-testid] attributes (by clicking Add Employee)
+ *  - A trimmed accessibility snapshot for richer context
+ *
+ * Falls back to null (gracefully) if the app is unreachable or inspection fails.
+ * When null is returned, all prompts fall back to the static DATA_TESTID_REFERENCE.
+ */
+async function inspectAppStructure(baseUrl: string): Promise<AppStructure | null> {
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    await page.goto(baseUrl, { timeout: 15_000, waitUntil: "networkidle" });
+
+    // Collect data-testid values from the main page
+    const pageSelectors = await page.evaluate<string[]>(() =>
+      Array.from(document.querySelectorAll("[data-testid]"))
+        .map((el) => el.getAttribute("data-testid") as string)
+        .filter(Boolean)
+    );
+
+    // Open the drawer to also capture form element data-testid values
+    const drawerSelectors: string[] = [];
+    try {
+      const addBtn = page.locator('[data-testid="add-employee-btn"]');
+      if (await addBtn.isVisible({ timeout: 3_000 })) {
+        await addBtn.click();
+        await page.waitForSelector('[data-testid="employee-drawer"]', { timeout: 4_000 });
+        const all = await page.evaluate<string[]>(() =>
+          Array.from(document.querySelectorAll("[data-testid]"))
+            .map((el) => el.getAttribute("data-testid") as string)
+            .filter(Boolean)
+        );
+        drawerSelectors.push(...all.filter((s) => !pageSelectors.includes(s)));
+      }
+    } catch { /* drawer inspection is best-effort */ }
+
+    const discoveredSelectors = [...new Set([...pageSelectors, ...drawerSelectors])];
+
+    // Accessibility snapshot via ARIA (Playwright 1.41+) — trimmed for prompt size
+    let accessibilitySnapshot = "";
+    try {
+      accessibilitySnapshot = (await page.locator("body").ariaSnapshot()).slice(0, 4_000);
+    } catch { /* snapshot is best-effort */ }
+
+    await browser.close();
+
+    console.log(
+      `  [AGT-04] App inspection: ${discoveredSelectors.length} data-testid attributes discovered`
+    );
+    return { discoveredSelectors, accessibilitySnapshot };
+  } catch (err) {
+    await browser?.close().catch(() => undefined);
+    console.warn(
+      `  [AGT-04] App inspection skipped (${(err as Error).message.slice(0, 80)}) — ` +
+        `using static selector reference`
+    );
+    return null;
+  }
+}
+
+/** Formats AppStructure as a prompt section, or returns empty string when null. */
+function appStructurePrompt(appStructure: AppStructure | null): string {
+  if (!appStructure) return "";
+  return `
+LIVE APP INSPECTION (verified from running app at ${process.env.BASE_URL ?? "http://localhost:3000"}):
+Discovered data-testid attributes: ${appStructure.discoveredSelectors.map((s) => `"${s}"`).join(", ")}
+
+${appStructure.accessibilitySnapshot ? `Accessibility tree (trimmed):\n${appStructure.accessibilitySnapshot}` : ""}
+`.trim();
+}
+
 // ── Main Agent ─────────────────────────────────────────────────────────────
 
 export async function runPlaywrightEngineer(
@@ -120,6 +205,12 @@ export async function runPlaywrightEngineer(
   options: PlaywrightEngineerOptions = {}
 ): Promise<void> {
   await ensureDirs();
+
+  // Inspect the live app once before generating any files.
+  // This discovers real [data-testid] selectors and page structure, making
+  // generated POMs and specs far more accurate than static references alone.
+  const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
+  const appStructure = await inspectAppStructure(baseUrl);
 
   const moduleGroups = groupByModule(testCases);
 
@@ -133,11 +224,11 @@ export async function runPlaywrightEngineer(
     );
 
     if (uiCases.length > 0) {
-      await processUIModule(module, uiCases, apiSpecs, options);
+      await processUIModule(module, uiCases, apiSpecs, options, appStructure);
     }
 
     if (apiCases.length > 0) {
-      await processAPIModule(module, apiCases, apiSpecs, options);
+      await processAPIModule(module, apiCases, apiSpecs, options, appStructure);
     }
   }
 }
@@ -148,7 +239,8 @@ async function processUIModule(
   module: string,
   uiCases: TestCase[],
   apiSpecs: Record<string, unknown>,
-  options: PlaywrightEngineerOptions
+  options: PlaywrightEngineerOptions,
+  appStructure: AppStructure | null = null
 ): Promise<void> {
   const specPath = path.join(SPEC_DIR, `${module}.spec.ts`);
   const pomPath = path.join(POM_DIR, `${module}.page.ts`);
@@ -181,13 +273,13 @@ async function processUIModule(
 
     // POM generated first — spec receives method list to prevent name invention
     const [pomCode, fixtureCode] = await Promise.all([
-      generatePOM(module, allCases),
+      generatePOM(module, allCases, appStructure),
       generateFixtures(module, allCases, apiSpecs),
     ]);
 
     const cappedRegression = regressionCases.slice(0, Math.ceil(MAX_CASES_PER_SPEC * 0.7));
     const cappedNewFeature = newFeatureCases.slice(0, Math.floor(MAX_CASES_PER_SPEC * 0.3));
-    const specCode = await generateUISpec(module, cappedRegression, cappedNewFeature, pomCode);
+    const specCode = await generateUISpec(module, cappedRegression, cappedNewFeature, pomCode, appStructure);
 
     await writeChecked(pomPath, pomCode, `${module}.page`);
     await writeChecked(fixturePath, fixtureCode, `${module}.fixture`);
@@ -202,7 +294,8 @@ async function processAPIModule(
   module: string,
   apiCases: TestCase[],
   apiSpecs: Record<string, unknown>,
-  options: PlaywrightEngineerOptions
+  options: PlaywrightEngineerOptions,
+  _appStructure: AppStructure | null = null  // reserved for future API spec enrichment
 ): Promise<void> {
   const apiSpecPath = path.join(SPEC_DIR, `${module}.api.spec.ts`);
   const fixturePath = path.join(FIXTURE_DIR, `${module}.fixture.ts`);
@@ -250,7 +343,11 @@ async function processAPIModule(
 
 // ── POM Generator ───────────────────────────────────────────────────────────
 
-async function generatePOM(module: string, cases: TestCase[]): Promise<string> {
+async function generatePOM(
+  module: string,
+  cases: TestCase[],
+  appStructure: AppStructure | null = null
+): Promise<string> {
   const pascal = toPascalCase(module);
 
   const response = await client.messages.create({
@@ -312,6 +409,8 @@ ${DATA_TESTID_REFERENCE}`,
       {
         role: "user",
         content: `Generate the ${pascal}Page class for module "${module}".
+
+${appStructurePrompt(appStructure)}
 
 Test cases that this POM must support:
 ${JSON.stringify(
@@ -422,7 +521,8 @@ async function generateUISpec(
   module: string,
   regressionCases: TestCase[],
   newFeatureCases: TestCase[],
-  pomCode: string
+  pomCode: string,
+  appStructure: AppStructure | null = null
 ): Promise<string> {
   const pascal = toPascalCase(module);
   const pomMethods = extractPomMethods(pomCode);
@@ -480,6 +580,8 @@ ${pomMethods.map((m) => `   po.${m}()`).join("\n")}
       {
         role: "user",
         content: `Generate the complete UI spec for module "${module}".
+
+${appStructurePrompt(appStructure)}
 
 AVAILABLE POM METHODS (use ONLY these — do not invent new names):
 ${pomMethods.map((m) => `  po.${m}()`).join("\n")}
@@ -992,22 +1094,68 @@ function extractTypeScriptCode(content: string): string {
   return code.trim();
 }
 
+/**
+ * Checks TypeScript syntax using the compiler's transpileModule API.
+ * Works without resolving imports — catches syntax errors only (not type errors).
+ * Returns the first error message, or null if the code is syntactically valid.
+ */
+function checkTypeScriptSyntax(code: string): string | null {
+  try {
+    const result = ts.transpileModule(code, {
+      reportDiagnostics: true,
+      compilerOptions: {
+        strict: false,
+        target: ts.ScriptTarget.ESNext,
+        module: ts.ModuleKind.ESNext,
+      },
+    });
+    const errors = (result.diagnostics ?? []).filter(
+      (d) => d.category === ts.DiagnosticCategory.Error
+    );
+    if (errors.length === 0) return null;
+    return errors
+      .map((d) => ts.flattenDiagnosticMessageText(d.messageText, " "))
+      .join("; ")
+      .slice(0, 300);
+  } catch (err) {
+    return (err as Error).message.slice(0, 200);
+  }
+}
+
 async function writeChecked(filePath: string, content: string, label: string): Promise<void> {
   let clean = extractTypeScriptCode(content);
 
-  // Guard against LLM hitting max_tokens mid-file — truncate to last balanced position.
-  // Checks BOTH brace and paren depth: cutting at `}` alone (braces=0 but parens open)
-  // would leave Playwright's `test.describe(` calls unclosed → SyntaxError.
+  // Pass 1: brace + paren balance check — handles LLM max_tokens truncation mid-describe.
+  // Cutting at `}` alone (braces=0 but parens open) leaves `test.describe(` unclosed → SyntaxError.
   const { braces: bDepth, parens: pDepth } = syntaxDepth(clean);
   if (bDepth !== 0 || pDepth !== 0) {
     const truncated = truncateToBalanced(clean, 0);
-    const trimmedLines = truncated.split("\n").length;
-    const origLines = clean.split("\n").length;
     console.warn(
       `[AGT-04 GUARDRAIL] ${label}: output truncated (unbalanced braces/parens). ` +
-        `Trimmed from ${origLines} to ${trimmedLines} lines.`
+        `${clean.split("\n").length} → ${truncated.split("\n").length} lines.`
     );
     clean = truncated;
+  }
+
+  // Pass 2: TypeScript syntax check using ts.transpileModule() (no import resolution needed).
+  // If a syntax error remains after balance truncation, apply truncateToBalanced as a second
+  // pass with a fresh balance scan on the already-trimmed code, then re-check.
+  const syntaxErr = checkTypeScriptSyntax(clean);
+  if (syntaxErr) {
+    const truncated = truncateToBalanced(clean, 0);
+    const truncErr = checkTypeScriptSyntax(truncated);
+    if (!truncErr && truncated !== clean) {
+      console.warn(
+        `[AGT-04 GUARDRAIL] ${label}: syntax error fixed by second truncation pass. ` +
+          `${clean.split("\n").length} → ${truncated.split("\n").length} lines. Error was: ${syntaxErr}`
+      );
+      clean = truncated;
+    } else {
+      // Could not auto-fix — warn but write anyway so the pipeline can continue
+      console.warn(
+        `[AGT-04 GUARDRAIL] ${label}: syntax error could not be auto-fixed: ${syntaxErr}`
+      );
+    }
   }
 
   const lines = clean.split("\n");
@@ -1025,7 +1173,7 @@ function validateTypeScript(filePath: string): void {
   } catch (e) {
     const out = (e as { stdout?: Buffer }).stdout?.toString() ?? "";
     console.warn(`[AGT-04 GUARDRAIL] TypeScript issues in ${filePath}:\n${out.slice(0, 500)}`);
-    // Warn but don't throw — minor LLM-generated issues are acceptable
+    // Warn but don't throw — type errors are acceptable; syntax errors are caught by writeChecked
   }
 }
 

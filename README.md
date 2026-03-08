@@ -43,9 +43,14 @@
            │  test-cases.json  (testType on every case)
            ▼
   ┌─────────────────┐
-  │     AGT-04      │  TWO INDEPENDENT PIPELINES per module:
-  │  Playwright     │  UI  → POM ({module}.page.ts)
-  │  Engineer       │      + fixture ({module}.fixture.ts)
+  │     AGT-04      │  LIVE APP INSPECTION: headless Chromium browses
+  │  Playwright     │  BASE_URL and discovers real [data-testid] attributes
+  │  Engineer       │  before any code generation. Falls back to static
+  │                 │  selector reference if app is unreachable.
+  │                 │
+  │                 │  TWO INDEPENDENT PIPELINES per module:
+  │                 │  UI  → POM ({module}.page.ts)
+  │                 │      + fixture ({module}.fixture.ts)
   │                 │      + spec ({module}.spec.ts)
   │                 │  API → shared fixture
   │                 │      + api spec ({module}.api.spec.ts, no POM)
@@ -95,7 +100,7 @@ A live PR comment is posted when the pipeline starts and updated with the full r
 | AGT-01 | Codebase Analyst     | claude-opus-4-6   | Full codebase scan → regression scenarios; cached across PR commits; `--regen-scenarios` to refresh |
 | AGT-02 | JIRA Story Validator | claude-opus-4-6   | Alignment analysis + generates new-feature UI + API scenarios from JIRA story; always runs |
 | AGT-03 | Test Case Designer   | claude-opus-4-6   | Loads regression baseline; generates new test cases only for new-feature scenarios; always runs |
-| AGT-04 | Playwright Engineer  | claude-opus-4-6   | UI pipeline: POM + fixture + spec; API pipeline: shared fixture + api.spec; merges new tests into existing specs |
+| AGT-04 | Playwright Engineer  | claude-opus-4-6   | Inspects live app with headless Chromium to discover real `[data-testid]` selectors; UI pipeline: POM + fixture + spec; API pipeline: shared fixture + api.spec; merges new tests into existing specs |
 | AGT-05 | Coverage Auditor     | —                 | Separate UI + API traceability matrices; blocks if either type fails P0/P1 threshold |
 | AGT-06 | Test Executor        | claude-opus-4-6   | Playwright runner; auto-heal for script errors; classifies failures as script vs app |
 | AGT-07 | Report Architect     | claude-sonnet-4-6 | Elasticsearch indexing; HTML report artifact; SLA alerting |
@@ -122,7 +127,7 @@ npm install
 
 # 2. Configure environment
 cp .env.example .env
-# Fill in: ANTHROPIC_API_KEY, JIRA_TOKEN, JIRA_HOST, JIRA_PROJECT_KEY,
+# Fill in: ANTHROPIC_API_KEY, JIRA_EMAIL, JIRA_TOKEN, JIRA_HOST, JIRA_PROJECT_KEY,
 #          BASE_URL, ALLOWED_TEST_URLS
 
 # 3. Start the target app + observability stack
@@ -244,6 +249,8 @@ playwright-tests/
   specs/        {module}.spec.ts           — UI specs  (call POM methods only)
                 {module}.api.spec.ts       — API specs (page.evaluate fetch, no POM)
 ```
+
+**Live app inspection** — AGT-04 browses `BASE_URL` with headless Chromium before any generation to verify real `[data-testid]` selectors. The discovered list is injected into every POM and spec prompt alongside the static selector reference. If the app is unreachable, generation continues using the static reference only.
 
 **UI spec rules** — enforced by AGT-04 prompt:
 - Import and instantiate the POM; call its methods only — never `page.click/fill/goto` directly in a test
@@ -422,7 +429,8 @@ bash infra/azure/vm-setup.sh
 | Secret | Description |
 |--------|-------------|
 | `ANTHROPIC_API_KEY` | Claude API key |
-| `JIRA_TOKEN` | JIRA API token (read-only) |
+| `JIRA_EMAIL` | Atlassian account email (used for Basic auth alongside `JIRA_TOKEN`) |
+| `JIRA_TOKEN` | JIRA API token — paired with `JIRA_EMAIL` for `Basic base64(email:token)` auth |
 | `MONGO_ROOT_PASSWORD` | MongoDB root password |
 | `ELASTICSEARCH_URL` | Full ES URL with credentials — `http://elastic:<pass>@cbts-elastic-vm.eastus.cloudapp.azure.com:9200` |
 | `SMTP_HOST` | SMTP server for SLA alert emails |
@@ -446,10 +454,11 @@ bash infra/azure/vm-setup.sh
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `ANTHROPIC_API_KEY` | Yes | Claude API key |
-| `JIRA_TOKEN` | Yes | Atlassian API token |
+| `JIRA_EMAIL` | Yes | Atlassian account email — used with `JIRA_TOKEN` for Basic auth |
+| `JIRA_TOKEN` | Yes | Atlassian API token — paired with `JIRA_EMAIL` |
 | `JIRA_HOST` | Yes | e.g. `https://yourco.atlassian.net` |
 | `JIRA_PROJECT_KEY` | Yes | e.g. `TGDEMO` |
-| `BASE_URL` | Yes | Staging app URL |
+| `BASE_URL` | Yes | Staging app URL — also used by AGT-04 for live app inspection |
 | `ALLOWED_TEST_URLS` | Yes | Comma-separated allowed test targets (guardrail) |
 | `ELASTICSEARCH_URL` | Yes (in CI) | Azure VM URL with credentials; defaults to `http://localhost:9200` for local runs |
 | `TEST_TYPE` | No | `ui` \| `api` \| `both` (default `both`) |
@@ -536,8 +545,9 @@ The pipeline is **restartable at any agent**. Fix the issue and run `--from=6` t
 - AGT-05 triggers a targeted AGT-04 gap remediation pass before blocking
 - API calls in test files must use `page.evaluate(fetch)` — `page.request.*` bypasses `page.route()` mocks
 - URL pattern `**/api/foo**` (trailing `**`) required for paginated/filterable endpoints
-- AGT-04 validates brace balance before writing generated TypeScript — truncates to last complete test if LLM output was cut off
+- AGT-04 validates generated TypeScript in three passes: (1) brace + paren depth — valid cut points are after `});` not just `}`, (2) `ts.transpileModule()` syntax check without import resolution, (3) second truncation pass if errors remain
 - AGT-04 deduplicates by test-case UUID before appending to existing specs — prevents duplicate test titles
+- AGT-02 uses `Authorization: Basic base64(email:token)` for Atlassian Cloud — Bearer tokens are rejected; if JIRA is unreachable the pipeline continues with a WARN verdict
 
 ### Operational
 
