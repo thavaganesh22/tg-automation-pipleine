@@ -72,6 +72,10 @@ export class EmployeeTablePage {
     return this.page.locator(this.emptyState).isVisible();
   }
 
+  async waitForEmptyState(): Promise<void> {
+    await this.page.waitForSelector(this.emptyState, { state: 'visible' });
+  }
+
   async getEmptyStateText(): Promise<string> {
     await this.page.waitForSelector(this.emptyState, { state: 'visible' });
     return (await this.page.locator(this.emptyState).textContent()) ?? '';

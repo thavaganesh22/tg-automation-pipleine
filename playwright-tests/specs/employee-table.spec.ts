@@ -16,7 +16,7 @@ test.describe('employee-table — UI Regression Suite', () => {
 
       // Search for something that returns zero results to simulate empty state
       await po.searchEmployees('zzznonexistent99999');
-      await po.waitForTableStable();
+      await po.waitForEmptyState();
 
       const emptyVisible = await po.isEmptyStateVisible();
       expect(emptyVisible).toBe(true);
@@ -189,7 +189,7 @@ test.describe('employee-table — UI Regression Suite', () => {
       expect(initialRowCount).toBeGreaterThan(0);
 
       await po.searchEmployees('zzznonexistent99999');
-      await po.waitForTableStable();
+      await po.waitForEmptyState();
 
       const emptyVisible = await po.isEmptyStateVisible();
       expect(emptyVisible).toBe(true);
