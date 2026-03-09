@@ -49,7 +49,7 @@ jobs:
 
     permissions:
       pull-requests: write
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout PR branch
@@ -199,6 +199,18 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           # Not set on PR runs — AGT-01 through AGT-04 will use cached state when available
           REGEN_SCENARIOS: ""
+
+      - name: Commit updated baseline and generated specs
+        if: steps.pipeline.outcome == 'success' || steps.pipeline.outcome == 'failure'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pipeline-state/regression-baseline.json || true
+          git add playwright-tests/specs/ || true
+          git add playwright-tests/pages/ || true
+          git add playwright-tests/fixtures/ || true
+          git diff --cached --quiet || git commit -m "chore: update regression baseline and generated specs [skip ci]"
+          git push || true
 
       - name: Save pipeline state cache
         if: always()
@@ -535,6 +547,17 @@ jobs:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+
+      - name: Commit updated baseline and generated specs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pipeline-state/regression-baseline.json || true
+          git add playwright-tests/specs/ || true
+          git add playwright-tests/pages/ || true
+          git add playwright-tests/fixtures/ || true
+          git diff --cached --quiet || git commit -m "chore: update regression baseline and generated specs [skip ci]"
+          git push || true
 
       - name: Stop employee-app
         if: always()
