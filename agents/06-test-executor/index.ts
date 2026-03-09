@@ -58,7 +58,7 @@ const TEST_TIMEOUT_MS = 20_000;        // per-test wall-clock limit
 const ACTION_TIMEOUT_MS = 10_000;      // per-action (locator.waitFor, click, fill, etc.)
 const NAVIGATION_TIMEOUT_MS = 15_000; // page.goto / waitForURL
 const SUITE_TIMEOUT_MS = 15 * 60 * 1000; // overall suite cap (15 min)
-const MAX_RETRIES = process.env.CI ? 1 : 0;
+const MAX_RETRIES = process.env.CI ? 2 : 0;
 const MAX_FAILURES = 0;              // 0 = run all tests regardless of failures (no bail-out)
 
 // ── Auto-Heal Constants ────────────────────────────────────────────────────
