@@ -1,31 +1,16 @@
 import { Page } from '@playwright/test';
 
 export class ConfirmDialogPage {
-  private readonly addEmployeeBtn = '[data-testid="add-employee-btn"]';
-  private readonly searchInput = '[data-testid="search-input"]';
-  private readonly departmentFilter = '[data-testid="department-filter"]';
-  private readonly statusFilter = '[data-testid="status-filter"]';
   private readonly employeeTable = '[data-testid="employee-table"]';
   private readonly employeeRow = '[data-testid^="employee-row-"]';
   private readonly employeeName = '[data-testid="employee-name"]';
-  private readonly employeeEmail = '[data-testid="employee-email"]';
-  private readonly employeeDepartment = '[data-testid="employee-department"]';
-  private readonly loadingRow = '[data-testid="loading-row"]';
   private readonly emptyState = '[data-testid="empty-state"]';
   private readonly errorBanner = '[data-testid="error-banner"]';
   private readonly successToast = '[data-testid="success-toast"]';
-  private readonly pagination = '[data-testid="pagination"]';
   private readonly paginationSummary = '[data-testid="pagination-summary"]';
-  private readonly prevPageBtn = '[data-testid="prev-page-btn"]';
-  private readonly nextPageBtn = '[data-testid="next-page-btn"]';
-  private readonly paginationCurrent = '[data-testid="pagination-current"]';
   private readonly employeeDrawer = '[data-testid="employee-drawer"]';
-  private readonly drawerOverlay = '[data-testid="drawer-overlay"]';
-  private readonly closeDrawerBtn = '[data-testid="close-drawer-btn"]';
   private readonly drawerError = '[data-testid="drawer-error"]';
   private readonly deleteBtn = '[data-testid="delete-btn"]';
-  private readonly cancelBtn = '[data-testid="cancel-btn"]';
-  private readonly submitBtn = '[data-testid="submit-btn"]';
   private readonly confirmDialog = '[data-testid="confirm-dialog"]';
   private readonly modalOverlay = '[data-testid="modal-overlay"]';
   private readonly confirmCancelBtn = '[data-testid="confirm-cancel-btn"]';
