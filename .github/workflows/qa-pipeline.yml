@@ -191,7 +191,7 @@ jobs:
           MAX_FILES_SCAN: "500"
           ALLOWED_TEST_URLS: ${{ vars.STAGING_URL }}
           BASE_URL: ${{ vars.STAGING_URL }}
-          SLA_PASS_RATE: "0.95"
+          SLA_PASS_RATE: "1"
           MIN_P0_COVERAGE: "80"
           MIN_P1_COVERAGE: "80"
           MAX_GAP_PERCENT: "20"
@@ -541,7 +541,7 @@ jobs:
           GITHUB_BASE_REF: "main"
           ALLOWED_TEST_URLS: ${{ vars.STAGING_URL }}
           BASE_URL: ${{ vars.STAGING_URL }}
-          SLA_PASS_RATE: "0.95"
+          SLA_PASS_RATE: "1"
           MIN_P0_COVERAGE: "80"
           MIN_P1_COVERAGE: "80"
           MAX_GAP_PERCENT: "20"
