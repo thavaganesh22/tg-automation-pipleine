@@ -81,6 +81,9 @@ jobs:
             pipeline-state-pr-${{ github.event.pull_request.head.ref }}-
             pipeline-state-pr-${{ github.base_ref }}-
 
+      - name: Use committed regression baseline (overrides cache)
+        run: git checkout HEAD -- pipeline-state/regression-baseline.json 2>/dev/null || true
+
       - name: Resolve changed files
         run: |
           FILES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
