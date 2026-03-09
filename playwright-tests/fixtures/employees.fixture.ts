@@ -1,4 +1,4 @@
-import { Page, Route, Request } from '@playwright/test';
+import { Page } from '@playwright/test';
 
 interface Employee {
   _id: string;
@@ -7,594 +7,133 @@ interface Employee {
   email: string;
   designation: string;
   department: string;
-  employmentType: string;
+  employmentType: 'Full-Time' | 'Part-Time' | 'Contract';
   employmentStatus: 'Active' | 'On Leave' | 'Terminated';
 }
 
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  pages: number;
-}
+const depts = ['Engineering', 'Product', 'Design', 'QA', 'HR'];
+const types: Employee['employmentType'][] = ['Full-Time', 'Part-Time', 'Contract'];
+const statuses: Employee['employmentStatus'][] = ['Active', 'On Leave', 'Terminated'];
+const titles = ['Engineer', 'Manager', 'Designer', 'Analyst', 'Lead', 'Director', 'Intern', 'Coordinator'];
+const firstNames = ['Alice', 'Bob', 'Carol', 'Dan', 'Eve', 'Frank', 'Grace', 'Hank', 'Ivy', 'Jack',
+  'Karen', 'Leo', 'Mia', 'Nick', 'Olivia', 'Pat', 'Quinn', 'Ray', 'Sara', 'Tom',
+  'Uma', 'Vince', 'Wendy', 'Xander', 'Thava'];
+const lastNames = ['Smith', 'Jones', 'Brown', 'Davis', 'Wilson', 'Moore', 'Taylor', 'Anderson', 'Thomas',
+  'Jackson', 'White', 'Harris', 'Martin', 'Garcia', 'Clark', 'Lewis', 'Hall', 'Allen', 'Young', 'King',
+  'Wright', 'Lopez', 'Hill', 'Scott', 'Green'];
 
-interface EmployeeListResponse {
-  data: Employee[];
-  pagination: PaginationMeta;
-}
-
-interface ErrorResponse {
-  error: string;
-  message: string;
-  details?: { field: string; message: string }[];
-}
-
-const mockEmployees: Employee[] = [
-  {
-    _id: '507f1f77bcf86cd799439011',
-    firstName: 'Thava',
-    lastName: 'Ganesh',
-    email: 'thava.ganesh@company.com',
-    designation: 'Tech Lead',
-    department: 'Engineering',
-    employmentType: 'Full-Time',
-    employmentStatus: 'Active',
-  },
-  {
-    _id: '507f1f77bcf86cd799439012',
-    firstName: 'Sarah',
-    lastName: 'Johnson',
-    email: 'sarah.johnson@company.com',
-    designation: 'Product Manager',
-    department: 'Product',
-    employmentType: 'Full-Time',
-    employmentStatus: 'On Leave',
-  },
-  {
-    _id: '507f1f77bcf86cd799439013',
-    firstName: 'Marcus',
-    lastName: 'Chen',
-    email: 'marcus.chen@company.com',
-    designation: 'Senior Developer',
-    department: 'Engineering',
-    employmentType: 'Contract',
-    employmentStatus: 'Active',
-  },
-  {
-    _id: '507f1f77bcf86cd799439014',
-    firstName: 'Olivia',
-    lastName: 'Martinez',
-    email: 'olivia.martinez@company.com',
-    designation: 'HR Specialist',
-    department: 'Human Resources',
-    employmentType: 'Full-Time',
-    employmentStatus: 'Terminated',
-  },
-  {
-    _id: '507f1f77bcf86cd799439015',
-    firstName: 'James',
-    lastName: 'Wilson',
-    email: 'james.wilson@company.com',
-    designation: 'DevOps Engineer',
-    department: 'Engineering',
-    employmentType: 'Full-Time',
-    employmentStatus: 'Active',
-  },
-];
-
-const VALID_DEPARTMENTS = ['Engineering', 'Product', 'Human Resources', 'Finance', 'Marketing'];
-const VALID_STATUSES: string[] = ['Active', 'On Leave', 'Terminated'];
-
-function isValidObjectId(id: string): boolean {
-  return /^[0-9a-fA-F]{24}$/.test(id);
-}
-
-function parseQueryParams(url: string): URLSearchParams {
-  try {
-    const urlObj = new URL(url, 'http://localhost');
-    return urlObj.searchParams;
-  } catch {
-    return new URLSearchParams();
-  }
-}
-
-// Track created employees and deleted employee IDs for stateful mocking
-const createdEmployees: Employee[] = [];
-const deletedEmployeeIds: Set<string> = new Set();
+const BASE_EMPLOYEES: Employee[] = Array.from({ length: 25 }, (_, i) => ({
+  _id: `665a000000000000000000${(i + 1).toString(16).padStart(2, '0')}`,
+  firstName: firstNames[i],
+  lastName: lastNames[i],
+  email: `${firstNames[i].toLowerCase()}.${lastNames[i].toLowerCase()}@example.com`,
+  designation: titles[i % titles.length],
+  department: depts[i % depts.length],
+  employmentType: types[i % types.length],
+  employmentStatus: statuses[i % statuses.length],
+}));
 
 export async function setupEmployeesMocks(page: Page): Promise<void> {
-  // ─── LIST / SEARCH / FILTER: GET /api/employees ───
-  await page.route('**/api/employees**', async (route: Route, request: Request) => {
-    const method = request.method();
-    const url = request.url();
+  // Local copy so DELETE mutations don't bleed between tests
+  const employees: Employee[] = [...BASE_EMPLOYEES];
 
-    // ── Distinguish single-resource routes like /api/employees/:id ──
-    const singleResourceMatch = url.match(/\/api\/employees\/([^?/]+)/);
+  // Route registration order matters: Playwright uses LIFO (last-in = first-matched).
+  // Register the LESS-SPECIFIC pattern first so the MORE-SPECIFIC one registered last takes priority.
 
-    if (singleResourceMatch) {
-      const id = decodeURIComponent(singleResourceMatch[1]);
+  // 1st registered (lower priority): handles list + create — '**/api/employees**' also matches /:id URLs
+  //    but the single-employee handler below (registered last) wins for /:id requests via LIFO.
+  await page.route('**/api/employees**', async (route) => {
+    const method = route.request().method();
+    const url = new URL(route.request().url());
 
-      // ── GET /api/employees/:id ──
-      if (method === 'GET') {
-        // Check for special characters or malformed IDs
-        if (/[^0-9a-fA-F]/.test(id) || id.length !== 24) {
-          await route.fulfill({
-            status: 400,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'INVALID_ID',
-              message: `Invalid employee ID format: "${id}"`,
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        if (!isValidObjectId(id)) {
-          await route.fulfill({
-            status: 400,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'INVALID_ID',
-              message: `Invalid employee ID format: "${id}"`,
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        // Check if deleted
-        if (deletedEmployeeIds.has(id)) {
-          await route.fulfill({
-            status: 404,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'NOT_FOUND',
-              message: `Employee with ID "${id}" not found`,
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        // Find in mock data or created employees
-        const allEmployees = [...mockEmployees, ...createdEmployees];
-        const employee = allEmployees.find((e) => e._id === id);
-
-        if (employee) {
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify(employee),
-          });
-        } else {
-          await route.fulfill({
-            status: 404,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'NOT_FOUND',
-              message: `Employee with ID "${id}" not found`,
-            } satisfies ErrorResponse),
-          });
-        }
-        return;
-      }
-
-      // ── PATCH /api/employees/:id ──
-      if (method === 'PATCH') {
-        if (!isValidObjectId(id)) {
-          await route.fulfill({
-            status: 400,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'INVALID_ID',
-              message: `Invalid employee ID format: "${id}"`,
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        if (deletedEmployeeIds.has(id)) {
-          await route.fulfill({
-            status: 404,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'NOT_FOUND',
-              message: `Employee with ID "${id}" not found`,
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        const allEmployees = [...mockEmployees, ...createdEmployees];
-        const existingEmployee = allEmployees.find((e) => e._id === id);
-
-        if (!existingEmployee) {
-          await route.fulfill({
-            status: 404,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'NOT_FOUND',
-              message: `Employee with ID "${id}" not found`,
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        let body: Record<string, unknown>;
-        try {
-          body = JSON.parse(request.postData() || '{}');
-        } catch {
-          await route.fulfill({
-            status: 400,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'INVALID_JSON',
-              message: 'Request body must be valid JSON',
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        // Validate fields if provided
-        const validationErrors: { field: string; message: string }[] = [];
-
-        if ('email' in body && typeof body.email === 'string') {
-          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-          if (!emailRegex.test(body.email)) {
-            validationErrors.push({ field: 'email', message: 'Invalid email format' });
-          }
-        }
-
-        if ('employmentStatus' in body && !VALID_STATUSES.includes(body.employmentStatus as string)) {
-          validationErrors.push({
-            field: 'employmentStatus',
-            message: `Must be one of: ${VALID_STATUSES.join(', ')}`,
-          });
-        }
-
-        if ('firstName' in body && (typeof body.firstName !== 'string' || body.firstName.trim() === '')) {
-          validationErrors.push({ field: 'firstName', message: 'firstName must be a non-empty string' });
-        }
-
-        if ('lastName' in body && (typeof body.lastName !== 'string' || body.lastName.trim() === '')) {
-          validationErrors.push({ field: 'lastName', message: 'lastName must be a non-empty string' });
-        }
-
-        if (validationErrors.length > 0) {
-          await route.fulfill({
-            status: 400,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'VALIDATION_ERROR',
-              message: 'Validation failed',
-              details: validationErrors,
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        const updatedEmployee: Employee = {
-          ...existingEmployee,
-          ...(body as Partial<Employee>),
-          _id: existingEmployee._id, // prevent _id overwrite
-        };
-
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify(updatedEmployee),
-        });
-        return;
-      }
-
-      // ── DELETE /api/employees/:id ──
-      if (method === 'DELETE') {
-        if (!isValidObjectId(id)) {
-          await route.fulfill({
-            status: 400,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'INVALID_ID',
-              message: `Invalid employee ID format: "${id}"`,
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        if (deletedEmployeeIds.has(id)) {
-          await route.fulfill({
-            status: 404,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'NOT_FOUND',
-              message: `Employee with ID "${id}" not found`,
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        const allEmployees = [...mockEmployees, ...createdEmployees];
-        const employeeToDelete = allEmployees.find((e) => e._id === id);
-
-        if (!employeeToDelete) {
-          await route.fulfill({
-            status: 404,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              error: 'NOT_FOUND',
-              message: `Employee with ID "${id}" not found`,
-            } satisfies ErrorResponse),
-          });
-          return;
-        }
-
-        deletedEmployeeIds.add(id);
-
-        await route.fulfill({
-          status: 204,
-          body: '',
-        });
-        return;
-      }
-
-      // Fallback for unsupported methods on single resource
-      await route.fulfill({
-        status: 405,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          error: 'METHOD_NOT_ALLOWED',
-          message: `Method ${method} not allowed on this resource`,
-        }),
-      });
-      return;
-    }
-
-    // ── POST /api/employees ──
-    if (method === 'POST') {
-      let body: Record<string, unknown>;
-      try {
-        body = JSON.parse(request.postData() || '{}');
-      } catch {
-        await route.fulfill({
-          status: 400,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            error: 'INVALID_JSON',
-            message: 'Request body must be valid JSON',
-          } satisfies ErrorResponse),
-        });
-        return;
-      }
-
-      // Check empty body
-      if (Object.keys(body).length === 0) {
-        await route.fulfill({
-          status: 400,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            error: 'VALIDATION_ERROR',
-            message: 'Validation failed',
-            details: [
-              { field: 'firstName', message: 'firstName is required' },
-              { field: 'lastName', message: 'lastName is required' },
-              { field: 'email', message: 'email is required' },
-              { field: 'designation', message: 'designation is required' },
-              { field: 'department', message: 'department is required' },
-              { field: 'employmentType', message: 'employmentType is required' },
-            ],
-          } satisfies ErrorResponse),
-        });
-        return;
-      }
-
-      // Validate required fields
-      const requiredFields = ['firstName', 'lastName', 'email', 'designation', 'department', 'employmentType'];
-      const missingFields = requiredFields.filter(
-        (field) => !(field in body) || body[field] === '' || body[field] === null || body[field] === undefined
-      );
-
-      if (missingFields.length > 0) {
-        await route.fulfill({
-          status: 400,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            error: 'VALIDATION_ERROR',
-            message: 'Validation failed',
-            details: missingFields.map((field) => ({
-              field,
-              message: `${field} is required`,
-            })),
-          } satisfies ErrorResponse),
-        });
-        return;
-      }
-
-      // Check duplicate email (case-insensitive)
-      const allEmployees = [...mockEmployees, ...createdEmployees];
-      const emailLower = (body.email as string).toLowerCase();
-      const duplicate = allEmployees.find(
-        (e) => e.email.toLowerCase() === emailLower && !deletedEmployeeIds.has(e._id)
-      );
-
-      if (duplicate) {
-        await route.fulfill({
-          status: 409,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            error: 'DUPLICATE_EMAIL',
-            message: `An employee with email "${body.email}" already exists`,
-          } satisfies ErrorResponse),
-        });
-        return;
-      }
-
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (typeof body.email !== 'string' || !emailRegex.test(body.email)) {
-        await route.fulfill({
-          status: 400,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            error: 'VALIDATION_ERROR',
-            message: 'Validation failed',
-            details: [{ field: 'email', message: 'Invalid email format' }],
-          } satisfies ErrorResponse),
-        });
-        return;
-      }
-
-      // Create employee
-      const newId =
-        '507f1f77bcf86cd799439' +
-        (100 + createdEmployees.length).toString().padStart(3, '0');
-      const newEmployee: Employee = {
-        _id: newId,
-        firstName: body.firstName as string,
-        lastName: body.lastName as string,
-        email: body.email as string,
-        designation: body.designation as string,
-        department: body.department as string,
-        employmentType: body.employmentType as string,
-        employmentStatus: (body.employmentStatus as Employee['employmentStatus']) || 'Active',
-      };
-
-      createdEmployees.push(newEmployee);
-
-      await route.fulfill({
-        status: 201,
-        contentType: 'application/json',
-        body: JSON.stringify(newEmployee),
-      });
-      return;
-    }
-
-    // ── GET /api/employees (list, search, filter) ──
     if (method === 'GET') {
-      const params = parseQueryParams(url);
-      const pageParam = params.get('page');
-      const limitParam = params.get('limit');
-      const department = params.get('department');
-      const status = params.get('status');
-      const search = params.get('search') || params.get('q') || params.get('name');
-
-      // Validate pagination parameters
-      const pageNum = pageParam ? parseInt(pageParam, 10) : 1;
-      const limitNum = limitParam ? parseInt(limitParam, 10) : 20;
-
-      if (
-        (pageParam !== null && (isNaN(pageNum) || pageNum < 1)) ||
-        (limitParam !== null && (isNaN(limitNum) || limitNum < 1 || limitNum > 100))
-      ) {
-        await route.fulfill({
-          status: 400,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            error: 'INVALID_PAGINATION',
-            message: 'page must be >= 1 and limit must be between 1 and 100',
-          } satisfies ErrorResponse),
-        });
-        return;
+      const rawPg = parseInt(url.searchParams.get('page') ?? '1', 10);
+      const rawLim = parseInt(url.searchParams.get('limit') ?? '20', 10);
+      if ((url.searchParams.has('page') && (isNaN(rawPg) || rawPg < 1)) || (url.searchParams.has('limit') && (isNaN(rawLim) || rawLim < 1))) {
+        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'VALIDATION_ERROR', message: 'Invalid pagination parameters' }) });
       }
+      const pg = rawPg;
+      const lim = rawLim;
+      const search = (url.searchParams.get('search') ?? '').toLowerCase();
+      const dept = url.searchParams.get('department') ?? '';
+      const status = url.searchParams.get('status') ?? '';
 
-      // Build pool of active (non-deleted) employees
-      let pool = [...mockEmployees, ...createdEmployees].filter(
-        (e) => !deletedEmployeeIds.has(e._id)
-      );
+      let filtered = employees;
+      if (search) filtered = filtered.filter((e) => `${e.firstName} ${e.lastName} ${e.email} ${e.designation}`.toLowerCase().includes(search));
+      if (dept) filtered = filtered.filter((e) => e.department === dept);
+      if (status) filtered = filtered.filter((e) => e.employmentStatus === status);
 
-      // Validate and apply department filter
-      if (department !== null) {
-        // Check for SQL injection patterns as boundary test
-        const sqlInjectionPattern = /('|--|;|DROP|SELECT|INSERT|UPDATE|DELETE)/i;
-        if (sqlInjectionPattern.test(department)) {
-          // Safely return empty results for injection attempts
-          const emptyResponse: EmployeeListResponse = {
-            data: [],
-            pagination: { total: 0, page: pageNum, limit: limitNum, pages: 0 },
-          };
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify(emptyResponse),
-          });
-          return;
-        }
-
-        if (!VALID_DEPARTMENTS.includes(department)) {
-          // Return empty result for invalid department
-          const emptyResponse: EmployeeListResponse = {
-            data: [],
-            pagination: { total: 0, page: pageNum, limit: limitNum, pages: 0 },
-          };
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify(emptyResponse),
-          });
-          return;
-        }
-
-        pool = pool.filter((e) => e.department === department);
-      }
-
-      // Validate and apply status filter
-      if (status !== null) {
-        if (!VALID_STATUSES.includes(status)) {
-          const emptyResponse: EmployeeListResponse = {
-            data: [],
-            pagination: { total: 0, page: pageNum, limit: limitNum, pages: 0 },
-          };
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify(emptyResponse),
-          });
-          return;
-        }
-
-        pool = pool.filter((e) => e.employmentStatus === status);
-      }
-
-      // Apply search
-      if (search !== null && search.trim() !== '') {
-        const searchLower = search.toLowerCase();
-        pool = pool.filter(
-          (e) =>
-            e.firstName.toLowerCase().includes(searchLower) ||
-            e.lastName.toLowerCase().includes(searchLower) ||
-            `${e.firstName} ${e.lastName}`.toLowerCase().includes(searchLower) ||
-            e.email.toLowerCase().includes(searchLower)
-        );
-      }
-
-      const total = pool.length;
-      const pages = Math.ceil(total / limitNum) || 0;
-      const start = (pageNum - 1) * limitNum;
-      const pageData = pool.slice(start, start + limitNum);
-
-      const response: EmployeeListResponse = {
-        data: pageData,
-        pagination: {
-          total,
-          page: pageNum,
-          limit: limitNum,
-          pages,
-        },
-      };
-
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(response),
-      });
-      return;
+      const total = filtered.length;
+      const pages = Math.max(1, Math.ceil(total / lim));
+      const data = filtered.slice((pg - 1) * lim, pg * lim);
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data, pagination: { total, page: pg, limit: lim, pages } }) });
     }
 
-    // Fallback
-    await route.fulfill({
-      status: 405,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        error: 'METHOD_NOT_ALLOWED',
-        message: `Method ${method} not allowed`,
-      }),
-    });
+    if (method === 'POST') {
+      const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+      if (!body.firstName || !body.email) {
+        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'VALIDATION_ERROR', message: 'Required fields missing' }) });
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email as string)) {
+        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'VALIDATION_ERROR', message: 'Invalid email format' }) });
+      }
+      if (employees.some((e) => e.email === body.email)) {
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'DUPLICATE_EMAIL', message: 'An employee with this email already exists' }) });
+      }
+      const created: Employee = {
+        _id: `665a00000000000000000f${(employees.length).toString(16).padStart(2, '0')}`,
+        firstName: body.firstName as string,
+        lastName: (body.lastName as string) ?? 'Employee',
+        email: body.email as string,
+        designation: (body.designation as string) ?? 'Engineer',
+        department: (body.department as string) ?? 'Engineering',
+        employmentType: (body.employmentType as Employee['employmentType']) ?? 'Full-Time',
+        employmentStatus: (body.employmentStatus as Employee['employmentStatus']) ?? 'Active',
+      };
+      employees.push(created);
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(created) });
+    }
+
+    return route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ error: 'METHOD_NOT_ALLOWED' }) });
+  });
+
+  // 2nd registered (higher priority via LIFO): handles single employee by ID
+  await page.route('**/api/employees/*', async (route) => {
+    const method = route.request().method();
+    const id = new URL(route.request().url()).pathname.split('/').pop() ?? '';
+
+    // Validate MongoDB ObjectId format (24 hex chars)
+    if (!/^[0-9a-fA-F]{24}$/.test(id)) {
+      return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'INVALID_ID', message: `"${id}" is not a valid employee id` }) });
+    }
+
+    const idx = employees.findIndex((e) => e._id === id);
+
+    if (method === 'GET') {
+      if (idx === -1) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'NOT_FOUND', message: `Employee with id ${id} not found` }) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(employees[idx]) });
+    }
+    if (method === 'PATCH') {
+      if (idx === -1) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'NOT_FOUND', message: `Employee with id ${id} not found` }) });
+      const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>;
+      if ('email' in body && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email as string)) {
+        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'VALIDATION_ERROR', message: 'Invalid email format' }) });
+      }
+      if ('firstName' in body && !body.firstName) {
+        return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'VALIDATION_ERROR', message: 'firstName cannot be empty' }) });
+      }
+      if (body.email && employees.some((e, i) => i !== idx && e.email === body.email)) {
+        return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'DUPLICATE_EMAIL', message: 'An employee with this email already exists' }) });
+      }
+      employees[idx] = { ...employees[idx], ...body as Partial<Employee> };
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(employees[idx]) });
+    }
+    if (method === 'DELETE') {
+      if (idx === -1) return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'NOT_FOUND', message: `Employee with id ${id} not found` }) });
+      employees.splice(idx, 1);
+      return route.fulfill({ status: 204, body: '' });
+    }
+
+    return route.fulfill({ status: 405, contentType: 'application/json', body: JSON.stringify({ error: 'METHOD_NOT_ALLOWED' }) });
   });
 }

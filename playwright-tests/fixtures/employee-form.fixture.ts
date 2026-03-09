@@ -184,11 +184,7 @@ export async function setupEmployeeFormMocks(page: Page): Promise<void> {
     }
 
     if (method === 'DELETE') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ message: 'Employee deleted successfully' }),
-      });
+      await route.fulfill({ status: 204, body: '' });
       return;
     }
 

@@ -260,11 +260,7 @@ export async function setupEmployeesPageMocks(page: Page): Promise<void> {
         return;
       }
 
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ data: existing, message: 'Employee deleted successfully.' }),
-      });
+      await route.fulfill({ status: 204, body: '' });
       return;
     }
 

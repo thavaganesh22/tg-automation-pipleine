@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+
 interface Props {
   name:      string;
   onConfirm: () => void;
@@ -6,6 +8,12 @@ interface Props {
 }
 
 export function ConfirmDialog({ name, onConfirm, onCancel, loading }: Props) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && !loading) onCancel(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onCancel, loading]);
+
   return (
     <div data-testid="modal-overlay" className="modal-overlay" onClick={onCancel}>
       <div data-testid="confirm-dialog" className="modal" onClick={(e) => e.stopPropagation()}>

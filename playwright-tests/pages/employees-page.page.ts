@@ -107,14 +107,8 @@ export class EmployeesPagePage {
 
   public async getTableHeaderTexts(): Promise<string[]> {
     await this.page.waitForSelector(this.employeeTable, { state: 'visible' });
-    const headers = this.page.locator(this.employeeTable).locator('th');
-    const count = await headers.count();
-    const texts: string[] = [];
-    for (let i = 0; i < count; i++) {
-      const text = await headers.nth(i).innerText();
-      texts.push(text.trim());
-    }
-    return texts;
+    const texts = await this.page.locator(`${this.employeeTable} thead th`).allTextContents();
+    return texts.map((t) => t.trim()).filter(Boolean);
   }
 
   // ─── EMPLOYEE ROW DATA ────────────────────────────────────────────────────────

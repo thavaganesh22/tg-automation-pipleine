@@ -117,18 +117,59 @@ CONFIRM DIALOG:
 // ── Live App Structure (discovered by Playwright browser inspection) ─────────
 
 interface AppStructure {
-  discoveredSelectors: string[];   // data-testid values actually present in the DOM
-  accessibilitySnapshot: string;   // trimmed accessibility tree text for prompt context
+  // All [data-testid] values found across all inspected states
+  discoveredSelectors: string[];
+
+  // Snapshots keyed by UI state — each trimmed for prompt budget
+  snapshots: {
+    mainPage: string;          // ARIA snapshot of employee list
+    addDrawer: string;         // ARIA snapshot of blank Add Employee drawer
+    editDrawer: string;        // ARIA snapshot of Edit drawer prefilled with real data
+    confirmDialog: string;     // ARIA snapshot of delete confirmation dialog
+  };
+
+  // Real data observed from the live app
+  observations: {
+    tableColumns: string[];               // column headers visible in the table
+    firstRowValues: Record<string, string>; // cell text of the first employee row
+    addDrawerFields: string[];            // form field data-testids inside add drawer
+    editDrawerPrefill: Record<string, string>; // actual prefilled values in edit form
+    confirmDialogText: string;            // dialog message text observed
+    apiListSample: string;                // JSON of real GET /api/employees response (truncated)
+    apiEmployeeSample: string;            // JSON of real GET /api/employees/:id response
+  };
+}
+
+/** Collects all data-testid values currently in the DOM. */
+async function collectSelectors(page: import("@playwright/test").Page): Promise<string[]> {
+  return page.evaluate<string[]>(() =>
+    Array.from(document.querySelectorAll("[data-testid]"))
+      .map((el) => el.getAttribute("data-testid") as string)
+      .filter(Boolean)
+  );
+}
+
+/** Takes an ARIA snapshot of the body, trimmed to maxChars. */
+async function ariaSnap(
+  page: import("@playwright/test").Page,
+  maxChars = 3_000
+): Promise<string> {
+  try {
+    return (await page.locator("body").ariaSnapshot()).slice(0, maxChars);
+  } catch {
+    return "";
+  }
 }
 
 /**
- * Browses the live app with a headless Chromium browser to discover:
- *  - All [data-testid] attributes on the main page
- *  - The drawer's [data-testid] attributes (by clicking Add Employee)
- *  - A trimmed accessibility snapshot for richer context
+ * Browses the live app with headless Chromium and performs a realistic walkthrough:
+ *   1. Main page  — collect selectors, column headers, first employee row values, API response
+ *   2. Add drawer — click "Add Employee", capture blank form fields + ARIA
+ *   3. Edit drawer — close add drawer, click first employee row, capture prefilled values + ARIA
+ *   4. Confirm dialog — click Delete inside edit drawer, capture dialog text + ARIA
  *
- * Falls back to null (gracefully) if the app is unreachable or inspection fails.
- * When null is returned, all prompts fall back to the static DATA_TESTID_REFERENCE.
+ * Every interaction step is wrapped individually so a failure in one step does not
+ * abort later steps. Falls back to null if the app is unreachable.
  */
 async function inspectAppStructure(baseUrl: string): Promise<AppStructure | null> {
   let browser;
@@ -137,45 +178,166 @@ async function inspectAppStructure(baseUrl: string): Promise<AppStructure | null
     const context = await browser.newContext();
     const page = await context.newPage();
 
+    // ── Capture real API responses passively ──────────────────────────────
+    let apiListSample = "";
+    let apiEmployeeSample = "";
+    page.on("response", async (resp) => {
+      try {
+        const url = resp.url();
+        if (/\/api\/employees(\?|$)/.test(url) && resp.status() === 200 && !apiListSample) {
+          const json = await resp.json().catch(() => null);
+          if (json) apiListSample = JSON.stringify(json).slice(0, 1_500);
+        }
+        if (/\/api\/employees\/[^/?]+$/.test(url) && resp.status() === 200 && !apiEmployeeSample) {
+          const json = await resp.json().catch(() => null);
+          if (json) apiEmployeeSample = JSON.stringify(json).slice(0, 800);
+        }
+      } catch { /* best-effort */ }
+    });
+
+    // ── 1. Main page ───────────────────────────────────────────────────────
     await page.goto(baseUrl, { timeout: 15_000, waitUntil: "networkidle" });
+    await page.waitForSelector('[data-testid="employee-table"]', { timeout: 8_000 }).catch(() => {});
 
-    // Collect data-testid values from the main page
-    const pageSelectors = await page.evaluate<string[]>(() =>
-      Array.from(document.querySelectorAll("[data-testid]"))
-        .map((el) => el.getAttribute("data-testid") as string)
-        .filter(Boolean)
-    );
+    const pageSelectors = await collectSelectors(page);
+    const mainPageSnap = await ariaSnap(page);
 
-    // Open the drawer to also capture form element data-testid values
-    const drawerSelectors: string[] = [];
+    // Column headers
+    const tableColumns: string[] = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("th")).map((th) => th.textContent?.trim() ?? "").filter(Boolean)
+    ).catch(() => []);
+
+    // First row cell values
+    const firstRowValues: Record<string, string> = {};
+    try {
+      const firstRow = page.locator('[data-testid^="employee-row-"]').first();
+      if (await firstRow.isVisible({ timeout: 3_000 })) {
+        const cells = firstRow.locator("td");
+        const count = await cells.count();
+        for (let i = 0; i < Math.min(count, tableColumns.length); i++) {
+          const col = tableColumns[i] ?? `col${i}`;
+          firstRowValues[col] = (await cells.nth(i).textContent())?.trim() ?? "";
+        }
+      }
+    } catch { /* best-effort */ }
+
+    // ── 2. Add Employee drawer ──────────────────────────────────────────────
+    let addDrawerSnap = "";
+    const addDrawerFields: string[] = [];
     try {
       const addBtn = page.locator('[data-testid="add-employee-btn"]');
       if (await addBtn.isVisible({ timeout: 3_000 })) {
         await addBtn.click();
-        await page.waitForSelector('[data-testid="employee-drawer"]', { timeout: 4_000 });
-        const all = await page.evaluate<string[]>(() =>
-          Array.from(document.querySelectorAll("[data-testid]"))
-            .map((el) => el.getAttribute("data-testid") as string)
-            .filter(Boolean)
-        );
-        drawerSelectors.push(...all.filter((s) => !pageSelectors.includes(s)));
+        await page.waitForSelector('[data-testid="employee-drawer"]', { timeout: 5_000 });
+        const allSelectors = await collectSelectors(page);
+        addDrawerFields.push(...allSelectors.filter((s) => !pageSelectors.includes(s)));
+        addDrawerSnap = await ariaSnap(page);
+        // Close drawer before next step
+        const closeBtn = page.locator('[data-testid="close-drawer-btn"]');
+        if (await closeBtn.isVisible({ timeout: 2_000 })) await closeBtn.click();
+        else await page.keyboard.press("Escape");
+        await page.waitForSelector('[data-testid="employee-drawer"]', { state: "hidden", timeout: 3_000 }).catch(() => {});
       }
-    } catch { /* drawer inspection is best-effort */ }
+    } catch { /* best-effort */ }
 
-    const discoveredSelectors = [...new Set([...pageSelectors, ...drawerSelectors])];
-
-    // Accessibility snapshot via ARIA (Playwright 1.41+) — trimmed for prompt size
-    let accessibilitySnapshot = "";
+    // ── 3. Edit drawer (click first employee row) ──────────────────────────
+    let editDrawerSnap = "";
+    const editDrawerPrefill: Record<string, string> = {};
+    let editDrawerEmployeeId = "";
     try {
-      accessibilitySnapshot = (await page.locator("body").ariaSnapshot()).slice(0, 4_000);
-    } catch { /* snapshot is best-effort */ }
+      const firstRow = page.locator('[data-testid^="employee-row-"]').first();
+      if (await firstRow.isVisible({ timeout: 3_000 })) {
+        // Capture the employee ID from data-testid for API sample later
+        editDrawerEmployeeId = (await firstRow.getAttribute("data-testid") ?? "").replace("employee-row-", "");
+        await firstRow.click();
+        await page.waitForSelector('[data-testid="employee-drawer"]', { timeout: 5_000 });
 
+        // Wait for form to populate (edit drawer fetches employee data async)
+        try {
+          await page.waitForFunction(
+            () => {
+              const el = document.querySelector('[data-testid="firstName-input"]') as HTMLInputElement | null;
+              return el && el.value.trim().length > 0;
+            },
+            { timeout: 5_000 }
+          );
+        } catch { /* may not populate in time — continue anyway */ }
+
+        // Capture prefilled input values
+        const inputIds = [
+          "firstName-input", "lastName-input", "email-input", "phone-input",
+          "designation-input", "department-select", "employmentType-select",
+          "employmentStatus-select", "startDate-input",
+        ];
+        for (const id of inputIds) {
+          try {
+            const el = page.locator(`[data-testid="${id}"]`);
+            if (await el.isVisible({ timeout: 1_000 })) {
+              const val = await el.inputValue().catch(() => "") || await el.textContent().catch(() => "") || "";
+              if (val.trim()) editDrawerPrefill[id] = val.trim();
+            }
+          } catch { /* individual field best-effort */ }
+        }
+        editDrawerSnap = await ariaSnap(page);
+
+        // ── 4. Confirm dialog (click Delete inside edit drawer) ────────────
+      }
+    } catch { /* best-effort */ }
+
+    let confirmDialogSnap = "";
+    let confirmDialogText = "";
+    try {
+      const deleteBtn = page.locator('[data-testid="delete-btn"]');
+      if (await deleteBtn.isVisible({ timeout: 2_000 })) {
+        await deleteBtn.click();
+        await page.waitForSelector('[data-testid="confirm-dialog"]', { timeout: 4_000 });
+        confirmDialogText = (await page.locator('[data-testid="confirm-dialog"]').textContent())?.trim().slice(0, 300) ?? "";
+        confirmDialogSnap = await ariaSnap(page);
+        // Cancel to leave app in clean state
+        const cancelBtn = page.locator('[data-testid="confirm-cancel-btn"]');
+        if (await cancelBtn.isVisible({ timeout: 2_000 })) await cancelBtn.click();
+      }
+    } catch { /* best-effort */ }
+
+    // Fetch single employee via API if we have an ID
+    if (editDrawerEmployeeId && !apiEmployeeSample) {
+      try {
+        const resp = await page.evaluate(async (id: string) => {
+          const r = await fetch(`/api/employees/${id}`);
+          return r.ok ? r.text() : null;
+        }, editDrawerEmployeeId);
+        if (resp) apiEmployeeSample = resp.slice(0, 800);
+      } catch { /* best-effort */ }
+    }
+
+    const discoveredSelectors = [...new Set([...pageSelectors, ...addDrawerFields])];
     await browser.close();
 
     console.log(
-      `  [AGT-04] App inspection: ${discoveredSelectors.length} data-testid attributes discovered`
+      `  [AGT-04] App inspection complete: ${discoveredSelectors.length} selectors | ` +
+      `columns: [${tableColumns.join(", ")}] | ` +
+      `edit prefill: ${Object.keys(editDrawerPrefill).length} fields | ` +
+      `API list: ${apiListSample ? "captured" : "none"}`
     );
-    return { discoveredSelectors, accessibilitySnapshot };
+
+    return {
+      discoveredSelectors,
+      snapshots: {
+        mainPage: mainPageSnap,
+        addDrawer: addDrawerSnap,
+        editDrawer: editDrawerSnap,
+        confirmDialog: confirmDialogSnap,
+      },
+      observations: {
+        tableColumns,
+        firstRowValues,
+        addDrawerFields,
+        editDrawerPrefill,
+        confirmDialogText,
+        apiListSample,
+        apiEmployeeSample,
+      },
+    };
   } catch (err) {
     await browser?.close().catch(() => undefined);
     console.warn(
@@ -186,15 +348,62 @@ async function inspectAppStructure(baseUrl: string): Promise<AppStructure | null
   }
 }
 
-/** Formats AppStructure as a prompt section, or returns empty string when null. */
+/** Formats AppStructure as a rich prompt section for LLM context. */
 function appStructurePrompt(appStructure: AppStructure | null): string {
   if (!appStructure) return "";
-  return `
-LIVE APP INSPECTION (verified from running app at ${process.env.BASE_URL ?? "http://localhost:3000"}):
-Discovered data-testid attributes: ${appStructure.discoveredSelectors.map((s) => `"${s}"`).join(", ")}
 
-${appStructure.accessibilitySnapshot ? `Accessibility tree (trimmed):\n${appStructure.accessibilitySnapshot}` : ""}
-`.trim();
+  const { discoveredSelectors, snapshots, observations } = appStructure;
+
+  // Strip dynamic IDs (employee-row-{objectId}) — replace with generic pattern note
+  const staticSelectors = discoveredSelectors.filter((s) => !/^employee-row-[a-f0-9]{24}$/.test(s));
+  const hasDynamicRows = discoveredSelectors.some((s) => /^employee-row-[a-f0-9]{24}$/.test(s));
+
+  const parts: string[] = [
+    `LIVE APP INSPECTION (verified from running app at ${process.env.BASE_URL ?? "http://localhost:3000"}):`,
+    ``,
+    `## Confirmed data-testid selectors`,
+    staticSelectors.map((s) => `  [data-testid="${s}"]`).join("\n"),
+    ...(hasDynamicRows ? [`  [data-testid^="employee-row-"]  ← dynamic rows (use .first(), .nth(n), not a specific ID)`] : []),
+  ];
+
+  if (observations.tableColumns.length > 0) {
+    parts.push(`\n## Table columns\n${observations.tableColumns.join(" | ")}`);
+  }
+  if (Object.keys(observations.firstRowValues).length > 0) {
+    // Strip specific DB IDs — never embed real ObjectIds in the prompt (they don't exist in fixtures)
+    const sanitizedRow = Object.fromEntries(
+      Object.entries(observations.firstRowValues).filter(([k]) => k !== "rowId" && !k.includes("_id") && !k.includes("id"))
+    );
+    if (Object.keys(sanitizedRow).length > 0) {
+      parts.push(`\n## First employee row (real field values — do NOT use these IDs in selectors)\n${JSON.stringify(sanitizedRow, null, 2)}`);
+    }
+  }
+  if (observations.addDrawerFields.length > 0) {
+    parts.push(`\n## Add drawer form fields\n${observations.addDrawerFields.map((s) => `  [data-testid="${s}"]`).join("\n")}`);
+  }
+  if (Object.keys(observations.editDrawerPrefill).length > 0) {
+    const sanitizedPrefill = Object.fromEntries(
+      Object.entries(observations.editDrawerPrefill).filter(([k]) => !k.includes("_id") && !k.includes("id") && k !== "rowId")
+    );
+    if (Object.keys(sanitizedPrefill).length > 0) {
+      parts.push(`\n## Edit drawer prefilled values (real employee data — do NOT use these in selectors)\n${JSON.stringify(sanitizedPrefill, null, 2)}`);
+    }
+  }
+  if (observations.confirmDialogText) {
+    parts.push(`\n## Delete confirm dialog text\n  "${observations.confirmDialogText}"`);
+  }
+  if (observations.apiListSample) {
+    parts.push(`\n## Real GET /api/employees response shape\n${observations.apiListSample}`);
+  }
+  if (observations.apiEmployeeSample) {
+    parts.push(`\n## Real GET /api/employees/:id response shape\n${observations.apiEmployeeSample}`);
+  }
+  // ARIA snapshots intentionally omitted — they contain real DB ObjectIds that don't exist in fixtures
+  if (snapshots.confirmDialog) {
+    parts.push(`\n## Delete confirm dialog ARIA snapshot\n${snapshots.confirmDialog}`);
+  }
+
+  return parts.join("\n");
 }
 
 // ── Main Agent ─────────────────────────────────────────────────────────────
@@ -266,25 +475,39 @@ async function processUIModule(
     console.log(`  [AGT-04] [ui] Remediation: merging ${uiCases.length} gap cases → ${specPath}`);
     await mergeUISpec(specPath, uiCases, module);
   } else {
-    const allCases = [...regressionCases, ...newFeatureCases].slice(0, MAX_CASES_PER_SPEC);
-    if (allCases.length === 0) return;
+    // Initial generation: first batch only (POM + fixture + first MAX_CASES_PER_SPEC tests).
+    // Remaining cases are covered by remediation batches — avoids LLM token overflow on large modules.
+    const firstBatchReg = regressionCases.slice(0, Math.ceil(MAX_CASES_PER_SPEC * 0.7));
+    const firstBatchNew = newFeatureCases.slice(0, Math.floor(MAX_CASES_PER_SPEC * 0.3));
+    const firstBatch = [...firstBatchReg, ...firstBatchNew];
+    if (firstBatch.length === 0) return;
 
-    console.log(`  [AGT-04] [ui] Generating full UI suite for ${module} (${allCases.length} cases)`);
+    console.log(`  [AGT-04] [ui] Generating full UI suite for ${module} (${firstBatch.length} cases)`);
 
-    // POM generated first — spec receives method list to prevent name invention
+    // POM generated first — spec receives method signatures to prevent argument mismatches
     const [pomCode, fixtureCode] = await Promise.all([
-      generatePOM(module, allCases, appStructure),
-      generateFixtures(module, allCases, apiSpecs),
+      generatePOM(module, firstBatch, appStructure),
+      generateFixtures(module, firstBatch, apiSpecs),
     ]);
 
-    const cappedRegression = regressionCases.slice(0, Math.ceil(MAX_CASES_PER_SPEC * 0.7));
-    const cappedNewFeature = newFeatureCases.slice(0, Math.floor(MAX_CASES_PER_SPEC * 0.3));
-    const specCode = await generateUISpec(module, cappedRegression, cappedNewFeature, pomCode, appStructure);
+    const specCode = await generateUISpec(module, firstBatchReg, firstBatchNew, pomCode, appStructure);
 
     await writeChecked(pomPath, pomCode, `${module}.page`);
     await writeChecked(fixturePath, fixtureCode, `${module}.fixture`);
     await writeChecked(specPath, specCode, `${module}.spec`);
     validateTypeScript(specPath);
+
+    // Append remaining cases in batches (same path as remediation)
+    const remainingReg = regressionCases.slice(Math.ceil(MAX_CASES_PER_SPEC * 0.7));
+    const remainingNew = newFeatureCases.slice(Math.floor(MAX_CASES_PER_SPEC * 0.3));
+    const remaining = [...remainingReg, ...remainingNew];
+    if (remaining.length > 0) {
+      console.log(`  [AGT-04] [ui] Appending ${remaining.length} additional cases for ${module} in batches`);
+      for (let i = 0; i < remaining.length; i += MAX_CASES_PER_SPEC) {
+        const batch = remaining.slice(i, i + MAX_CASES_PER_SPEC);
+        await mergeUISpec(specPath, batch, module);
+      }
+    }
   }
 }
 
@@ -295,7 +518,7 @@ async function processAPIModule(
   apiCases: TestCase[],
   apiSpecs: Record<string, unknown>,
   options: PlaywrightEngineerOptions,
-  _appStructure: AppStructure | null = null  // reserved for future API spec enrichment
+  _appStructure: AppStructure | null = null
 ): Promise<void> {
   const apiSpecPath = path.join(SPEC_DIR, `${module}.api.spec.ts`);
   const fixturePath = path.join(FIXTURE_DIR, `${module}.fixture.ts`);
@@ -327,17 +550,28 @@ async function processAPIModule(
       await mergeAPISpec(apiSpecPath, batch, module);
     }
   } else {
-    const maxReg = Math.ceil(MAX_CASES_PER_SPEC * 0.7);
-    const maxNew = Math.floor(MAX_CASES_PER_SPEC * 0.3);
-    const cappedRegression = regressionCases.slice(0, maxReg);
-    const cappedNewFeature = newFeatureCases.slice(0, maxNew);
-    const allCases = [...cappedRegression, ...cappedNewFeature];
-    if (allCases.length === 0) return;
+    // Initial generation: first batch only; remaining cases appended in batches below.
+    const firstBatchReg = regressionCases.slice(0, Math.ceil(MAX_CASES_PER_SPEC * 0.7));
+    const firstBatchNew = newFeatureCases.slice(0, Math.floor(MAX_CASES_PER_SPEC * 0.3));
+    const firstBatch = [...firstBatchReg, ...firstBatchNew];
+    if (firstBatch.length === 0) return;
 
-    console.log(`  [AGT-04] [api] Generating API spec for ${module} (${allCases.length} cases)`);
-    const specCode = await generateAPISpec(module, cappedRegression, cappedNewFeature);
+    console.log(`  [AGT-04] [api] Generating API spec for ${module} (${firstBatch.length} cases)`);
+    const specCode = await generateAPISpec(module, firstBatchReg, firstBatchNew);
     await writeChecked(apiSpecPath, specCode, `${module}.api.spec`);
     validateTypeScript(apiSpecPath);
+
+    // Append remaining cases in batches immediately (no need to wait for remediation pass)
+    const remainingReg = regressionCases.slice(Math.ceil(MAX_CASES_PER_SPEC * 0.7));
+    const remainingNew = newFeatureCases.slice(Math.floor(MAX_CASES_PER_SPEC * 0.3));
+    const remaining = [...remainingReg, ...remainingNew];
+    if (remaining.length > 0) {
+      console.log(`  [AGT-04] [api] Appending ${remaining.length} additional cases for ${module} in batches`);
+      for (let i = 0; i < remaining.length; i += MAX_CASES_PER_SPEC) {
+        const batch = remaining.slice(i, i + MAX_CASES_PER_SPEC);
+        await mergeAPISpec(apiSpecPath, batch, module);
+      }
+    }
   }
 }
 
@@ -399,7 +633,14 @@ STRICT PAGE OBJECT MODEL RULES — follow every rule exactly:
    - Navigate only to '/' unless a specific route is in the test step description
    - After goto('/'), wait for the main page element to appear before returning
 
-6. OUTPUT
+6. BREVITY — CRITICAL
+   - The ENTIRE class file MUST be under 300 lines
+   - Keep method bodies SHORT: 3–5 lines max per method
+   - Use single-line locator returns: return this.page.locator(this.mySelector);
+   - Do NOT add JSDoc comments or inline explanations
+   - Combine similar actions (e.g. fill all form fields in one fillForm() method)
+
+7. OUTPUT
    - Return ONLY the TypeScript class — no markdown fences, no imports other than Page from @playwright/test
    - TypeScript strict mode — no 'any' types
    - Start with: import { Page } from '@playwright/test';
@@ -455,6 +696,12 @@ RULES — follow every rule exactly:
        INCORRECT: '**/api/employees'
      The trailing ** is required so ?page=1&limit=20 variants are intercepted
    - Always check route.request().method() to distinguish GET/POST/PATCH/DELETE on the same pattern
+   - ROUTE REGISTRATION ORDER: Playwright matches in LIFO (last-in-first-out) order.
+     Register LESS-SPECIFIC patterns first and MORE-SPECIFIC patterns last:
+       CORRECT:   page.route('**/api/employees**', listHandler);   // first → lower priority
+                  page.route('**/api/employees/*', singleHandler); // last  → higher priority (wins)
+       INCORRECT: page.route('**/api/employees/*', singleHandler); // first → lower priority (never reached!)
+                  page.route('**/api/employees**', listHandler);   // last  → intercepts everything
 
 2. LIST RESPONSE FORMAT — EXACTLY this shape (never omit pagination):
    {
@@ -464,16 +711,25 @@ RULES — follow every rule exactly:
    Never use flat fields like 'total', 'pageSize', 'totalPages' at the top level.
 
 3. MOCK DATA
-   - Provide at least 3 realistic employee objects in mock data
-   - Include "Thava Ganesh" (Engineering / Tech Lead) as one employee for search tests
-   - Employee fields: _id, firstName, lastName, email, designation, department,
-     employmentType, employmentStatus ('Active'|'On Leave'|'Terminated')
+   - Provide AT LEAST 25 realistic employee objects in mockEmployees[] — needed for pagination tests (default limit=20, so 25 gives 2 pages)
+   - Use 24-hex MongoDB ObjectId format for _id values, e.g. '665a000000000000000000001' through '665a000000000000000000019'
+   - Include employees from multiple departments (Engineering, Product, Design, QA, HR) and statuses (Active, On Leave, Terminated)
+   - Employee fields: _id, firstName, lastName, email, designation, department, employmentType ('Full-Time'|'Part-Time'|'Contract'), employmentStatus ('Active'|'On Leave'|'Terminated')
+   - For the single-employee route (/api/employees/:id): validate that the ID is a 24-hex string; return 400 INVALID_ID if malformed, 404 if not found
+   - POST /api/employees returns 201 (not 200) with the created employee object
+   - DELETE /api/employees/:id returns 204 with empty body (no JSON)
 
 4. ERROR RESPONSES
-   - Provide success (2xx) AND error (4xx/5xx) mock responses for every endpoint
-   - Pattern: check a query param or request body field to decide which mock to return
+   - Provide ONE generic error mock per endpoint (e.g. return 500 when request body contains "error": true)
+   - Do NOT generate per-test-case mocks — one shared setup function handles ALL tests in the module
 
-5. EXPORT
+5. BREVITY — CRITICAL
+   - The entire fixture file MUST be under 150 lines
+   - Generate exactly ONE setup${pascal}Mocks(page: Page) function
+   - Use the SIMPLEST mock that satisfies each endpoint — no per-test conditionals
+   - Do NOT add helper functions beyond the single export
+
+6. EXPORT
    - Export one named async function: setup${pascal}Mocks(page: Page): Promise<void>
    - TypeScript strict mode — no 'any'
    - Return ONLY TypeScript code, no markdown fences`,
@@ -482,18 +738,18 @@ RULES — follow every rule exactly:
         role: "user",
         content: `Generate fixtures for module "${module}".
 
-Endpoints needed by the test cases:
+Endpoints needed (unique routes only):
 ${JSON.stringify(
   [...new Set(cases.flatMap((c) => c.tags.filter((t: string) => t.startsWith("/"))))],
   null,
   2
 )}
 
-API Specs (for reference): ${JSON.stringify(apiSpecs).slice(0, 2000)}
+API Specs (for reference): ${JSON.stringify(apiSpecs).slice(0, 1000)}
 
-Test cases summary:
+Test cases (sample — first 10 only, for context):
 ${JSON.stringify(
-  cases.map((c) => ({ title: c.title, scope: c.caseScope, type: c.type })),
+  cases.slice(0, 10).map((c) => ({ title: c.title, scope: c.caseScope })),
   null,
   2
 )}`,
@@ -506,13 +762,18 @@ ${JSON.stringify(
 
 // ── UI Spec Generator ───────────────────────────────────────────────────────
 
+/**
+ * Extracts full method signatures from POM code.
+ * Returns strings like "methodName(param: Type, param2: Type): ReturnType"
+ * so the spec generator knows the parameter shape.
+ */
 function extractPomMethods(pomCode: string): string[] {
   const methods: string[] = [];
-  // Match both `async methodName(` and `public async methodName(` patterns
-  const re = /^\s+(?:public\s+)?async\s+(\w+)\s*\(/gm;
+  // Match full signature: `async methodName(params): ReturnType {`
+  const re = /^\s+(?:public\s+)?async\s+(\w+\s*\([^)]*\)\s*(?::\s*[^{]+?)?)\s*\{/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(pomCode)) !== null) {
-    methods.push(m[1]);
+    methods.push(m[1].trim());
   }
   return [...new Set(methods)];
 }
@@ -556,8 +817,11 @@ RULES — follow every rule exactly:
    d. End with clear expect() assertions using POM query methods
    e. Have a traceability comment above it: // TC-<id>  SCOPE:<caseScope>
 
-4. ALLOWED POM METHODS — call ONLY these exact method names (no others):
-${pomMethods.map((m) => `   po.${m}()`).join("\n")}
+4. ALLOWED POM METHODS — call ONLY these exact method signatures (no others):
+${pomMethods.map((m) => `   po.${m}`).join("\n")}
+
+   Pass the correct arguments as shown. If a method takes a parameter (e.g. fillForm(data: {...})),
+   you MUST pass a matching object. Never call a parameterized method with 0 arguments.
 
 5. ASSERTIONS
    - Use expect(value).toBe() / toContain() / toBeGreaterThan() / toBeGreaterThanOrEqual()
@@ -568,6 +832,8 @@ ${pomMethods.map((m) => `   po.${m}()`).join("\n")}
    - Use realistic values: firstName='John', lastName='Doe', email='john.doe@test.com'
    - For select options, use exact values from fixtures: 'Engineering', 'Full-Time', 'Active'
    - Never use empty strings as test input values
+   - NEVER hardcode specific employee IDs (like '665a000...') — interact by row position (first, second, etc.)
+   - NEVER assert specific IDs or DB ObjectIds in test expectations
 
 7. NAVIGATION
    - Never navigate to invented routes — the app only has '/' as its frontend URL
@@ -695,7 +961,13 @@ RULES — follow every rule exactly:
    - Use 'Engineering', 'Full-Time', 'Active' as valid enum values
    - For negative tests, deliberately omit required fields or use wrong types
 
-8. OUTPUT
+8. APP BEHAVIOUR CONSTRAINTS
+   - This API has NO authentication — do NOT write any test expecting 401 or 403
+   - POST /api/employees returns 200 or 201 on success — accept either
+   - DELETE /api/employees/:id returns 204 (no body)
+   - All endpoints are publicly accessible — no auth headers needed
+
+9. OUTPUT
    - Return ONLY the TypeScript file contents — no markdown fences, no prose
    - TypeScript strict mode — no 'any' — use Record<string, unknown> for untyped objects`,
     messages: [
@@ -831,6 +1103,7 @@ RULES for each test():
 - Use ONLY these POM methods (do not invent names):
   ${pomMethods.length > 0 ? pomMethods.map((m) => `po.${m}()`).join(", ") : "methods already in the spec file"}
 - Navigate only to '/' — the app has no other frontend routes
+- NEVER hardcode specific employee IDs — interact by row position (first, second, etc.)
 - TypeScript strict mode — no 'any'
 - No markdown fences — raw TypeScript only`,
     messages: [
@@ -919,7 +1192,9 @@ RULES for each test():
 - Assert response.status then specific body fields
 - Keep each test body ≤15 lines
 - TypeScript strict mode — no 'any' — use Record<string, unknown>
-- No markdown fences — raw TypeScript only`,
+- No markdown fences — raw TypeScript only
+- APP HAS NO AUTH: never assert 401 or 403 — skip any auth test case you receive
+- DELETE returns 204 (no body) — use: expect(r.status).toBe(204)`,
     messages: [
       {
         role: "user",
@@ -1122,6 +1397,55 @@ function checkTypeScriptSyntax(code: string): string | null {
   }
 }
 
+/**
+ * Fallback repair for TypeScript files where truncateToBalanced(code, 0) returns lastPos=-1.
+ * This happens in class files where the brace depth never returns to 0 inside the class body.
+ * Strategy: strip trailing lines one at a time, then close open braces/parens/strings.
+ * Validates each candidate with checkTypeScriptSyntax() and returns the first valid result.
+ *
+ * Handles template literal truncation: if a line contains an unclosed backtick (odd number of
+ * unescaped backticks), that line is always stripped — it can't be closed safely.
+ */
+function repairTruncated(code: string): string {
+  const lines = code.split("\n");
+  // Higher limit — truncation inside a long method body may require stripping many lines
+  const maxStrip = Math.min(60, lines.length);
+
+  for (let stripCount = 1; stripCount <= maxStrip; stripCount++) {
+    const trimmedLines = lines.slice(0, lines.length - stripCount);
+    const trimmed = trimmedLines.join("\n");
+
+    // Skip if the new last line has an unclosed string literal (odd number of unescaped quotes)
+    const lastLine = trimmedLines[trimmedLines.length - 1] ?? "";
+    if (hasUnclosedString(lastLine)) continue;
+
+    const { braces, parens } = syntaxDepth(trimmed);
+    // Skip candidates with negative depth (over-closed)
+    if (braces < 0 || parens < 0) continue;
+    // Build closers: close parens before braces
+    const closers = ")".repeat(Math.max(0, parens)) + "}".repeat(Math.max(0, braces));
+    const candidate = trimmed.trimEnd() + (closers ? "\n" + closers : "") + "\n";
+    if (!checkTypeScriptSyntax(candidate)) return candidate;
+  }
+  return code; // all attempts failed — return original
+}
+
+/**
+ * Returns true if the line contains an unclosed string literal (backtick, single, or double quote).
+ * Used to skip lines that would confuse syntaxDepth() after truncation.
+ */
+function hasUnclosedString(line: string): boolean {
+  let inSingle = false, inDouble = false, inTemplate = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === "\\") { i++; continue; } // skip escaped char
+    if (ch === "'" && !inDouble && !inTemplate) { inSingle = !inSingle; continue; }
+    if (ch === '"' && !inSingle && !inTemplate) { inDouble = !inDouble; continue; }
+    if (ch === "`" && !inSingle && !inDouble) { inTemplate = !inTemplate; continue; }
+  }
+  return inSingle || inDouble || inTemplate;
+}
+
 async function writeChecked(filePath: string, content: string, label: string): Promise<void> {
   let clean = extractTypeScriptCode(content);
 
@@ -1151,10 +1475,23 @@ async function writeChecked(filePath: string, content: string, label: string): P
       );
       clean = truncated;
     } else {
-      // Could not auto-fix — warn but write anyway so the pipeline can continue
-      console.warn(
-        `[AGT-04 GUARDRAIL] ${label}: syntax error could not be auto-fixed: ${syntaxErr}`
-      );
+      // Pass 3: repairTruncated() — handles TypeScript class files where truncateToBalanced
+      // finds no valid cut point (lastPos=-1) because class body depth never returns to 0.
+      // Strips partial lines and closes open braces/parens until syntax is valid.
+      const repaired = repairTruncated(clean);
+      const repairErr = checkTypeScriptSyntax(repaired);
+      if (!repairErr && repaired !== clean) {
+        console.warn(
+          `[AGT-04 GUARDRAIL] ${label}: syntax error fixed by repairTruncated(). ` +
+            `${clean.split("\n").length} → ${repaired.split("\n").length} lines. Error was: ${syntaxErr}`
+        );
+        clean = repaired;
+      } else {
+        // Could not auto-fix — warn but write anyway so the pipeline can continue
+        console.warn(
+          `[AGT-04 GUARDRAIL] ${label}: syntax error could not be auto-fixed: ${syntaxErr}`
+        );
+      }
     }
   }
 

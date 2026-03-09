@@ -308,11 +308,7 @@ export async function setupEmployeeDrawerMocks(page: Page): Promise<void> {
         return;
       }
 
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ data: { acknowledged: true, deletedCount: 1 } }),
-      });
+      await route.fulfill({ status: 204, body: '' });
       return;
     }
 

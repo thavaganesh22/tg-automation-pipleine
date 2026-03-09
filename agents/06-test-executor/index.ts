@@ -58,12 +58,12 @@ const TEST_TIMEOUT_MS = 20_000;        // per-test wall-clock limit
 const ACTION_TIMEOUT_MS = 10_000;      // per-action (locator.waitFor, click, fill, etc.)
 const NAVIGATION_TIMEOUT_MS = 15_000; // page.goto / waitForURL
 const SUITE_TIMEOUT_MS = 15 * 60 * 1000; // overall suite cap (15 min)
-const MAX_RETRIES = 1;
-const MAX_FAILURES = 20;              // bail early if too many tests fail
+const MAX_RETRIES = process.env.CI ? 1 : 0;
+const MAX_FAILURES = 0;              // 0 = run all tests regardless of failures (no bail-out)
 
 // ── Auto-Heal Constants ────────────────────────────────────────────────────
 
-const AUTO_HEAL_ENABLED = process.env.AUTO_HEAL_ENABLED !== "false";
+const AUTO_HEAL_ENABLED = process.env.AUTO_HEAL_ENABLED === "true";
 const MAX_HEAL_FAILURE_RATIO = 0.5; // skip heal if >50% of tests fail (app likely down)
 
 const SCRIPT_ERROR_PATTERNS: RegExp[] = [
@@ -224,11 +224,28 @@ async function healSpecFile(
   }
 
   const fixed = stripCodeFences(raw);
+
+  // Guard: reject prose output — LLM sometimes returns analysis text instead of TypeScript.
+  // A valid TypeScript spec file must start with an import, comment, or known TS keyword.
+  if (!looksLikeTypeScript(fixed)) {
+    console.warn(`  [AGT-06] Heal rejected for ${specPath} — response looks like prose, not TypeScript.`);
+    return false;
+  }
+
   await fs.writeFile(specPath, fixed, "utf-8");
   return true;
 }
 
+/** Returns true if the string starts with a TypeScript statement, not natural language prose. */
+function looksLikeTypeScript(code: string): boolean {
+  const firstLine = code.trimStart().split("\n")[0] ?? "";
+  return /^(import |export |\/\/|\/\*|const |let |var |type |interface |class |async |function |test\(|test\.describe|describe\()/.test(firstLine);
+}
+
 function stripCodeFences(code: string): string {
+  // Strip outer code fences if present
+  const fenceMatch = code.match(/^```(?:typescript|ts|javascript|js)?\s*\n([\s\S]*?)\n?```\s*$/);
+  if (fenceMatch) return fenceMatch[1].trim();
   return code
     .replace(/^```(?:typescript|ts)?\s*/i, "")
     .replace(/\s*```\s*$/, "")
@@ -490,7 +507,7 @@ async function parseReport(reportPath: string, artifactsDir: string): Promise<Pa
         title: string;
         tests?: Array<{
           status: string;
-          results?: Array<{ error?: { message?: string }; retry?: number }>;
+          results?: Array<{ status?: string; error?: { message?: string }; retry?: number }>;
         }>;
       }>;
     }>;
@@ -507,12 +524,17 @@ async function parseReport(reportPath: string, artifactsDir: string): Promise<Pa
     for (const suite of suites) {
       for (const spec of suite.specs ?? []) {
         for (const test of spec.tests ?? []) {
+          // Playwright JSON report uses test.status = "expected"|"unexpected"|"flaky"|"skipped"
+          // NOT "passed"/"failed". Check test.status first, fall back to last result.status.
           const retried = (test.results?.length ?? 0) > 1;
-          if (test.status === "passed") passed++;
-          else if (test.status === "flaky") {
-            flaky++;
-            passed++;
-          } else if (test.status === "skipped") skipped++;
+          const lastResultStatus = test.results?.[test.results.length - 1]?.status ?? "";
+          const isPassed = test.status === "expected" || test.status === "passed" || lastResultStatus === "passed";
+          const isFlaky = test.status === "flaky";
+          const isSkipped = test.status === "skipped";
+
+          if (isPassed) passed++;
+          else if (isFlaky) { flaky++; passed++; }
+          else if (isSkipped) skipped++;
           else {
             failed++;
             const errorMsg = test.results?.[0]?.error?.message ?? "Unknown error";
