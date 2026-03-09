@@ -30,7 +30,7 @@ async function apiCall(
 
 test.describe("employees — API Regression Suite", () => {
   test.describe("positive", () => {
-    // TC-eb0049f1-b43d-489f-a9fc-95655b0cef0c  SCOPE:regression
+    // TC-bcdbec17-6acd-49a7-91d1-381006635bbd  SCOPE:regression
     test("List employees with default pagination returns data array and pagination metadata", async ({
       page,
     }) => {
@@ -52,7 +52,7 @@ test.describe("employees — API Regression Suite", () => {
       expect(firstEmployee.firstName).toBeDefined();
     });
 
-    // TC-b8fd88eb-07d6-41f5-9687-5900d9a6b103  SCOPE:regression
+    // TC-9136bc16-75ae-4818-93a9-3e0f0f208131  SCOPE:regression
     test("Filter by department and status returns matching employees", async ({ page }) => {
       await setupEmployeesMocks(page);
       await page.goto("/");
@@ -75,7 +75,7 @@ test.describe("employees — API Regression Suite", () => {
       expect(r3.status).toBe(200);
     });
 
-    // TC-d6220631-e72f-47eb-aacd-9d416cdf8eba  SCOPE:regression
+    // TC-64ff39d4-5406-421c-beee-791db2a8d2e0  SCOPE:regression
     test("Search employees by name returns matching results", async ({ page }) => {
       await setupEmployeesMocks(page);
       await page.goto("/");
@@ -90,7 +90,7 @@ test.describe("employees — API Regression Suite", () => {
       expect(rLower.status).toBe(200);
     });
 
-    // TC-7070072e-849f-4cf1-a2a0-237fd86c7d11  SCOPE:regression
+    // TC-1c0adc38-cb61-4d0b-958e-8ed2c5d47c71  SCOPE:regression
     test("Create employee with full valid payload returns 201 and created record", async ({
       page,
     }) => {
@@ -118,7 +118,7 @@ test.describe("employees — API Regression Suite", () => {
       expect([200, 204]).toContain(rDel.status);
     });
 
-    // TC-5b99fe2c-0987-4cbc-99ef-c4c3f476ab03  SCOPE:regression
+    // TC-bf78984b-2e2f-4928-bcf7-24607873bc9f  SCOPE:regression
     test("POST with valid complete payload returns 201 and created employee", async ({ page }) => {
       await setupEmployeesMocks(page);
       await page.goto("/");
@@ -144,7 +144,7 @@ test.describe("employees — API Regression Suite", () => {
   });
 
   test.describe("negative", () => {
-    // TC-db89e583-2e11-40a7-aef5-44fe78b66dd3  SCOPE:regression
+    // TC-71df89aa-34e1-43b0-83cb-e1569804df38  SCOPE:regression
     test("Request with invalid pagination parameters returns 400 or safely handled response", async ({
       page,
     }) => {
@@ -161,7 +161,7 @@ test.describe("employees — API Regression Suite", () => {
       expect(r3.body.message || r3.body.error).toBeTruthy();
     });
 
-    // TC-8c6d5209-104d-4399-9890-ac7bae9856b7  SCOPE:regression
+    // TC-fac32009-316c-429a-874e-79486a7dd370  SCOPE:regression
     test("Filter with invalid department or status returns empty result or 400", async ({
       page,
     }) => {
@@ -184,7 +184,7 @@ test.describe("employees — API Regression Suite", () => {
       expect([200, 400, 422]).toContain(r3.status);
     });
 
-    // TC-ad0a3e9c-267f-4857-a0f2-238157b71dfb  SCOPE:regression
+    // TC-05b4722f-b2f1-4cea-9366-090b46e70737  SCOPE:regression
     test("Search with non-matching text returns empty results", async ({ page }) => {
       await setupEmployeesMocks(page);
       await page.goto("/");
@@ -195,7 +195,7 @@ test.describe("employees — API Regression Suite", () => {
       expect(data.length).toBe(0);
     });
 
-    // TC-84fd361d-2de1-4ede-9702-151d4298505e  SCOPE:regression
+    // TC-cf4addee-ef01-4b04-a8c1-03e151ff0356  SCOPE:regression
     test("Create employee with missing required fields returns 400/422 validation error", async ({
       page,
     }) => {
@@ -220,7 +220,7 @@ test.describe("employees — API Regression Suite", () => {
       expect(r3.body.message || r3.body.error || r3.body.errors).toBeTruthy();
     });
 
-    // TC-3fbf5da4-732b-44f4-95df-51e01cafab7a  SCOPE:regression
+    // TC-e2477326-6bc0-4db8-a0ce-734cfca3d2d4  SCOPE:regression
     test("POST with empty body returns 400 with validation error details", async ({ page }) => {
       await setupEmployeesMocks(page);
       await page.goto("/");
@@ -233,7 +233,7 @@ test.describe("employees — API Regression Suite", () => {
   });
 
   test.describe("edge", () => {
-    // TC-b951f9c7-db01-472d-b97d-df8aa08cc77c  SCOPE:regression
+    // TC-5db59b81-ba42-4ac7-bc6c-edf46a7dc9e1  SCOPE:regression
     test("Requesting a page beyond total pages returns empty data array with correct pagination", async ({
       page,
     }) => {
@@ -258,7 +258,7 @@ test.describe("employees — API Regression Suite", () => {
       expect([200, 400]).toContain(r5.status);
     });
 
-    // TC-7142303b-6267-4b36-a47f-64977583b578  SCOPE:regression
+    // TC-ead42ce3-2010-45d5-910c-f64b0cbafbaa  SCOPE:regression
     test("Filter with only one query param (partial filter) and SQL injection boundary", async ({
       page,
     }) => {
@@ -287,7 +287,7 @@ test.describe("employees — API Regression Suite", () => {
       expect(r5.status).not.toBe(500);
     });
 
-    // TC-8b28251c-155c-4206-baf2-e2215ec50950  SCOPE:regression
+    // TC-e11370d9-0f1b-4681-8769-960a9eb2c060  SCOPE:regression
     test("Search with empty and special character boundary inputs", async ({ page }) => {
       await setupEmployeesMocks(page);
       await page.goto("/");
@@ -308,7 +308,7 @@ test.describe("employees — API Regression Suite", () => {
       expect(r5.status).toBe(200);
     });
 
-    // TC-88bc516d-b902-42c6-9606-15e7f847c374  SCOPE:regression
+    // TC-45b2dc70-c339-445a-b3d4-e33dff8f3b9a  SCOPE:regression
     test("Create employee with boundary and edge-case field values", async ({ page }) => {
       await setupEmployeesMocks(page);
       await page.goto("/");
@@ -373,23 +373,9 @@ test.describe("employees — API Regression Suite", () => {
   });
 });
 
-test.describe("employees — API New Feature", () => {
-  test.describe("positive", () => {
-    test("No new feature positive cases defined", async () => {});
-  });
-
-  test.describe("negative", () => {
-    test("No new feature negative cases defined", async () => {});
-  });
-
-  test.describe("edge", () => {
-    test("No new feature edge cases defined", async () => {});
-  });
-});
-
 test.describe("employees — API Gap Cases", () => {
   test.describe("positive", () => {
-    // TC-806c0b04-7f9d-4f3b-8f31-76ead3bf5b2a  SCOPE:regression
+    // TC-5936f917-613f-41bf-bdf8-aa8a7ed68904  SCOPE:regression
     test("[API] employees: Successful employee creation with unique email returns 201", async ({
       page,
     }) => {
@@ -414,7 +400,7 @@ test.describe("employees — API Gap Cases", () => {
       expect([200, 204]).toContain(deleteRes.status);
     });
 
-    // TC-f9c38cbe-f8fa-47d6-ba74-8659cd68db0b  SCOPE:regression
+    // TC-86d49b4a-542b-4dd9-a800-c341e20e57e2  SCOPE:regression
     test("[API] employees: GET /api/employees/:id returns full employee object for valid ObjectId", async ({
       page,
     }) => {
@@ -439,7 +425,7 @@ test.describe("employees — API Gap Cases", () => {
       expect(emp).not.toHaveProperty("internalNotes");
     });
 
-    // TC-b71ef521-7f3c-49a2-bb40-72ac79a69227  SCOPE:regression
+    // TC-0d577924-4b10-4065-954f-2e1100dae1a6  SCOPE:regression
     test("[API] employees: GET with valid ID returns 200 employee object", async ({ page }) => {
       await setupEmployeesMocks(page);
       await page.goto("/");
@@ -459,7 +445,7 @@ test.describe("employees — API Gap Cases", () => {
       expect(typeof emp.email).toBe("string");
     });
 
-    // TC-a3aaa347-3a2f-4c4c-9d83-44008a3c4b42  SCOPE:regression
+    // TC-c3aa04e4-c63e-483d-a637-9cfa665b389d  SCOPE:regression
     test("[API] employees: PATCH /api/employees/:id successfully updates employee with partial data", async ({
       page,
     }) => {
@@ -486,7 +472,7 @@ test.describe("employees — API Gap Cases", () => {
       await apiCall(page, `/api/employees/${id}`, "DELETE");
     });
 
-    // TC-24230b87-ef39-4c64-8fb3-49488b8d0778  SCOPE:regression
+    // TC-916e6df8-f620-498a-9762-ddda196f97dd  SCOPE:regression
     test("[API] employees: DELETE /api/employees/:id returns 204 and removes employee", async ({
       page,
     }) => {
@@ -513,7 +499,7 @@ test.describe("employees — API Gap Cases", () => {
   });
 
   test.describe("negative", () => {
-    // TC-de3c5090-e8c9-4907-92d7-37589646f9c9  SCOPE:regression
+    // TC-cc1de388-9566-4e11-a63a-19f3a8e96550  SCOPE:regression
     test("[API] employees: Duplicate email returns 409 conflict with DUPLICATE_EMAIL error", async ({
       page,
     }) => {
@@ -544,7 +530,7 @@ test.describe("employees — API Gap Cases", () => {
       await apiCall(page, `/api/employees/${id}`, "DELETE");
     });
 
-    // TC-ea335d93-2773-4caa-ac2b-f90a203c3a55  SCOPE:regression
+    // TC-4c9888c2-e06d-43d8-9b43-d5e1c1089182  SCOPE:regression
     test("[API] employees: GET /api/employees/:id returns 404 for non-existent but valid ObjectId", async ({
       page,
     }) => {
@@ -559,7 +545,7 @@ test.describe("employees — API Gap Cases", () => {
       expect(msg).not.toContain("/node_modules/");
     });
 
-    // TC-b9c5bcc0-75cd-47aa-9de4-1406edcf1eac  SCOPE:regression
+    // TC-cbbbd860-a65e-4f63-b351-995ea4ec388b  SCOPE:regression
     test("[API] employees: GET with malformed string ID returns 400 INVALID_ID", async ({
       page,
     }) => {
@@ -574,7 +560,7 @@ test.describe("employees — API Gap Cases", () => {
       expect(msg.length).toBeGreaterThan(0);
     });
 
-    // TC-0f0016f0-d6bc-4f74-b54c-1b2cef54c042  SCOPE:regression
+    // TC-c4a93433-89c9-424f-91d1-75ee19b0ff14  SCOPE:regression
     test("[API] employees: PATCH /api/employees/:id with invalid data returns validation error", async ({
       page,
     }) => {
@@ -599,7 +585,7 @@ test.describe("employees — API Gap Cases", () => {
       expect(notFound.status).toBe(404);
     });
 
-    // TC-99861b4a-b5a7-4fc0-bf28-1817d0568dd1  SCOPE:regression
+    // TC-afcc4e93-7f72-4d1a-be43-175f6cb35d09  SCOPE:regression
     test("[API] employees: DELETE /api/employees/:id with non-existent ID returns 404", async ({
       page,
     }) => {
@@ -614,7 +600,7 @@ test.describe("employees — API Gap Cases", () => {
   });
 
   test.describe("edge", () => {
-    // TC-a42a3014-8f13-4dd6-8fe2-f114fb52ab78  SCOPE:regression
+    // TC-fd8c2529-47e2-4645-a177-a3266b9bcc6b  SCOPE:regression
     test("[API] employees: POST with partial required fields returns 400 listing only the missing fields", async ({
       page,
     }) => {
@@ -644,7 +630,7 @@ test.describe("employees — API Gap Cases", () => {
       expect(emptyFields.status).toBe(400);
     });
 
-    // TC-dc7f3fee-2da5-4f41-9c59-934472f1212d  SCOPE:regression
+    // TC-e1bf042b-d0d7-4c0b-9cb5-f750f3061a22  SCOPE:regression
     test("[API] employees: Duplicate email check is case-insensitive", async ({ page }) => {
       await setupEmployeesMocks(page);
       await page.goto("/");
@@ -682,7 +668,7 @@ test.describe("employees — API Gap Cases", () => {
       }
     });
 
-    // TC-35317e75-ca2c-41b8-b273-d847298f0ab9  SCOPE:regression
+    // TC-1765685b-dac6-49bc-83c0-adf0c3caf851  SCOPE:regression
     test("[API] employees: GET /api/employees/:id returns 400 or 404 for malformed non-ObjectId string", async ({
       page,
     }) => {
@@ -702,7 +688,7 @@ test.describe("employees — API Gap Cases", () => {
       expect(oversized.status).not.toBe(500);
     });
 
-    // TC-551b1a8f-96e7-48d9-8c3f-236b761a9b73  SCOPE:regression
+    // TC-66c347d5-3b7a-4ed7-ab23-95e0f2674480  SCOPE:regression
     test("[API] employees: GET with special characters in ID returns 400 INVALID_ID", async ({
       page,
     }) => {
@@ -725,7 +711,7 @@ test.describe("employees — API Gap Cases", () => {
       expect(overflow.status).toBe(400);
     });
 
-    // TC-943492cb-7d70-4386-8133-041c83b3051d  SCOPE:regression
+    // TC-e05279eb-e3fe-4823-88d8-1b9156fa1668  SCOPE:regression
     test("[API] employees: PATCH /api/employees/:id with empty body and boundary payloads", async ({
       page,
     }) => {
@@ -772,7 +758,7 @@ test.describe("employees — API Gap Cases", () => {
     /* no negative cases in this batch */
   });
   test.describe("edge", () => {
-    // TC-76597de2-cb60-4b23-bee8-331e20dc1d96  SCOPE:regression
+    // TC-c99e94c8-6115-4e1c-a117-756cb3f68edc  SCOPE:regression
     test("[API] employees: DELETE /api/employees/:id with invalid ID format returns 400 or 404", async ({
       page,
     }) => {

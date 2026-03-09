@@ -6,7 +6,7 @@ test.describe('employee-drawer — UI Regression Suite', () => {
 
   test.describe('positive', () => {
 
-    // TC-c526eaf6-d57d-4b78-9fdd-2424f0951d37  SCOPE:regression
+    // TC-70049b09-d192-40ef-99b1-a4903024eb63  SCOPE:regression
     test('[UI] employee-drawer: Successfully add a new employee via drawer form', async ({ page }) => {
       await setupEmployeeDrawerMocks(page);
       const po = new EmployeeDrawerPage(page);
@@ -79,7 +79,7 @@ test.describe('employee-drawer — UI Regression Suite', () => {
 
   test.describe('negative', () => {
 
-    // TC-76cbb4f9-9cbe-492e-b3ce-c586dcc81a89  SCOPE:regression
+    // TC-0d8c0ada-ca47-4ace-8927-b25ae4a2951c  SCOPE:regression
     test('[UI] employee-drawer: Submit form with missing required fields shows validation errors', async ({ page }) => {
       await setupEmployeeDrawerMocks(page);
       const po = new EmployeeDrawerPage(page);
@@ -149,7 +149,7 @@ test.describe('employee-drawer — UI Regression Suite', () => {
 
   test.describe('edge', () => {
 
-    // TC-f1daa5ea-1eac-4d85-8ed3-a613bab22ff6  SCOPE:regression
+    // TC-321e3ed5-eb9e-4882-bb4f-2d7234435dcf  SCOPE:regression
     test('[UI] employee-drawer: Close drawer without saving discards unsaved form data', async ({ page }) => {
       await setupEmployeeDrawerMocks(page);
       const po = new EmployeeDrawerPage(page);

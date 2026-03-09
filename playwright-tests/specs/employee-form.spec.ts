@@ -6,7 +6,7 @@ test.describe('employee-form — UI Regression Suite', () => {
 
   test.describe('positive', () => {
 
-    // TC-b4c7322d-f937-4809-b6d9-98eeb81eea5d  SCOPE:regression
+    // TC-f85be5b4-4150-4766-ba23-68f88e94b398  SCOPE:regression
     test('[UI] employee-form: Filling all required fields clears validation errors and allows successful submission', async ({ page }) => {
       await setupEmployeeFormMocks(page);
       const po = new EmployeeFormPage(page);
@@ -71,7 +71,7 @@ test.describe('employee-form — UI Regression Suite', () => {
 
   test.describe('negative', () => {
 
-    // TC-0d973a5b-abc8-444e-87f0-f2512afd9bc6  SCOPE:regression
+    // TC-8ad4f0b9-b45d-41a7-a834-07894bd1b7fc  SCOPE:regression
     test('[UI] employee-form: Submitting empty form displays all required field validation errors', async ({ page }) => {
       await setupEmployeeFormMocks(page);
       const po = new EmployeeFormPage(page);

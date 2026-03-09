@@ -30,7 +30,7 @@ async function apiCall(
 
 test.describe("health — API Regression Suite", () => {
   test.describe("positive", () => {
-    // TC-6e3e74d8-2769-4026-8430-951b986cf914  SCOPE:regression
+    // TC-b9e1caaf-044b-41f8-9e62-f702dcc451ab  SCOPE:regression
     test("[API] health: GET /api/health returns 200 with ok status and mongodb info", async ({
       page,
     }) => {
@@ -47,7 +47,7 @@ test.describe("health — API Regression Suite", () => {
   });
 
   test.describe("negative", () => {
-    // TC-a5a487a3-f364-4487-a299-ce01826187ca  SCOPE:regression
+    // TC-555ec2be-46ac-4ccb-b8ce-5beac165eef2  SCOPE:regression
     test("[API] health: POST /api/health returns 404 or 405 Method Not Allowed", async ({
       page,
     }) => {
@@ -68,7 +68,7 @@ test.describe("health — API Regression Suite", () => {
   });
 
   test.describe("edge", () => {
-    // TC-3e463707-810f-431f-947a-be8d6cc7e8ce  SCOPE:regression
+    // TC-2d5ad258-44b9-406d-ac85-0fda4f26fd69  SCOPE:regression
     test("[API] health: GET /api/health with unexpected query params and headers still returns 200 ok", async ({
       page,
     }) => {
@@ -106,19 +106,5 @@ test.describe("health — API Regression Suite", () => {
       expect(r3.status).toBe(200);
       expect(r3.body.status).toBe("ok");
     });
-  });
-});
-
-test.describe("health — API New Feature", () => {
-  test.describe("positive", () => {
-    test("No new feature cases defined", () => {});
-  });
-
-  test.describe("negative", () => {
-    test("No new feature cases defined", () => {});
-  });
-
-  test.describe("edge", () => {
-    test("No new feature cases defined", () => {});
   });
 });

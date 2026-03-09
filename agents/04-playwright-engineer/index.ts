@@ -477,6 +477,12 @@ async function processUIModule(
   } else {
     // Initial generation: first batch only (POM + fixture + first MAX_CASES_PER_SPEC tests).
     // Remaining cases are covered by remediation batches — avoids LLM token overflow on large modules.
+    // Skip if all cases are regression — spec should already be committed; regenerating would
+    // overwrite manually-crafted fixtures and POMs.
+    if (newFeatureCases.length === 0) {
+      console.log(`  [AGT-04] [ui] WARNING: spec missing for ${module} but all cases are regression — skipping generation (commit ${module}.spec.ts to fix)`);
+      return;
+    }
     const firstBatchReg = regressionCases.slice(0, Math.ceil(MAX_CASES_PER_SPEC * 0.7));
     const firstBatchNew = newFeatureCases.slice(0, Math.floor(MAX_CASES_PER_SPEC * 0.3));
     const firstBatch = [...firstBatchReg, ...firstBatchNew];
@@ -492,8 +498,12 @@ async function processUIModule(
 
     const specCode = await generateUISpec(module, firstBatchReg, firstBatchNew, pomCode, appStructure);
 
-    await writeChecked(pomPath, pomCode, `${module}.page`);
-    await writeChecked(fixturePath, fixtureCode, `${module}.fixture`);
+    if (!(await fileExists(pomPath))) {
+      await writeChecked(pomPath, pomCode, `${module}.page`);
+    }
+    if (!(await fileExists(fixturePath))) {
+      await writeChecked(fixturePath, fixtureCode, `${module}.fixture`);
+    }
     await writeChecked(specPath, specCode, `${module}.spec`);
     validateTypeScript(specPath);
 
@@ -551,6 +561,12 @@ async function processAPIModule(
     }
   } else {
     // Initial generation: first batch only; remaining cases appended in batches below.
+    // Skip if all cases are regression — spec should already be committed; regenerating would
+    // overwrite the manually-crafted fixture.
+    if (newFeatureCases.length === 0) {
+      console.log(`  [AGT-04] [api] WARNING: API spec missing for ${module} but all cases are regression — skipping generation (commit ${module}.api.spec.ts to fix)`);
+      return;
+    }
     const firstBatchReg = regressionCases.slice(0, Math.ceil(MAX_CASES_PER_SPEC * 0.7));
     const firstBatchNew = newFeatureCases.slice(0, Math.floor(MAX_CASES_PER_SPEC * 0.3));
     const firstBatch = [...firstBatchReg, ...firstBatchNew];

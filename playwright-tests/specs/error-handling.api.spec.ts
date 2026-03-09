@@ -24,7 +24,7 @@ async function apiCall(
 test.describe('error-handling — API Regression Suite', () => {
 
   test.describe('positive', () => {
-    // TC-721b8f50-2bf1-4ee6-9d6f-d5201748e983  SCOPE:regression
+    // TC-47b10f35-516f-4aa8-93e5-72469c7b938d  SCOPE:regression
     test('[API] error-handling: Unknown GET route returns 404 NOT_FOUND with error payload', async ({ page }) => {
       await setupErrorHandlingMocks(page);
       await page.goto('/');
@@ -40,7 +40,7 @@ test.describe('error-handling — API Regression Suite', () => {
   });
 
   test.describe('negative', () => {
-    // TC-f99b002f-13d3-4000-908d-d8964b7936c0  SCOPE:regression
+    // TC-81a52858-694d-47e1-9943-2af0744e9537  SCOPE:regression
     test('[API] error-handling: Unknown POST route returns 404 NOT_FOUND regardless of HTTP method', async ({ page }) => {
       await setupErrorHandlingMocks(page);
       await page.goto('/');
@@ -64,7 +64,7 @@ test.describe('error-handling — API Regression Suite', () => {
   });
 
   test.describe('edge', () => {
-    // TC-730c13a2-6ea4-4faf-81a9-37be834e774b  SCOPE:regression
+    // TC-77be24f5-c06d-4448-99ab-841138493c31  SCOPE:regression
     test('[API] error-handling: Deeply nested unknown API path returns 404 NOT_FOUND', async ({ page }) => {
       await setupErrorHandlingMocks(page);
       await page.goto('/');

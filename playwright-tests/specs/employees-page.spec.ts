@@ -6,7 +6,7 @@ test.describe('employees-page — UI Regression Suite', () => {
 
   test.describe('positive', () => {
 
-    // TC-9b642b3d-b708-45f5-946f-8517a751c8dc  SCOPE:regression
+    // TC-fec270bb-25f1-40f5-a4c6-878977f4357c  SCOPE:regression
     test('Table loads and displays seeded employee rows with name, department, and status columns', async ({ page }) => {
       await setupEmployeesPageMocks(page);
       const po = new EmployeesPagePage(page);
@@ -41,7 +41,7 @@ test.describe('employees-page — UI Regression Suite', () => {
       expect(firstName).not.toBe(secondName);
     });
 
-    // TC-c9626199-191b-41c9-9d42-168d225d385c  SCOPE:regression
+    // TC-034552c2-ff61-4a90-a021-1180a7f90c1b  SCOPE:regression
     test('Search by employee name filters table to matching results', async ({ page }) => {
       await setupEmployeesPageMocks(page);
       const po = new EmployeesPagePage(page);
@@ -74,7 +74,7 @@ test.describe('employees-page — UI Regression Suite', () => {
       expect(restoredCount).toBe(initialRowCount);
     });
 
-    // TC-b3823052-d9f6-4478-ba12-629b354371d3  SCOPE:regression
+    // TC-fb2ff956-e821-4827-bc1d-fc8c3a2feb17  SCOPE:regression
     test('Selecting a department filter updates the employee list to show only matching employees', async ({ page }) => {
       await setupEmployeesPageMocks(page);
       const po = new EmployeesPagePage(page);
@@ -113,7 +113,7 @@ test.describe('employees-page — UI Regression Suite', () => {
 
   test.describe('negative', () => {
 
-    // TC-16599658-79d1-4670-8bf4-0d6548ba6786  SCOPE:regression
+    // TC-e375d4ee-ca0f-4537-820a-41ea01c78c0f  SCOPE:regression
     test('Table displays empty state when no employees exist', async ({ page }) => {
       await setupEmptyEmployeesPageMocks(page);
       const po = new EmployeesPagePage(page);
@@ -137,7 +137,7 @@ test.describe('employees-page — UI Regression Suite', () => {
       expect(headersLower).toContain('status');
     });
 
-    // TC-d55ed9a6-4860-421b-bddc-f61a10f2f90e  SCOPE:regression
+    // TC-875f1e43-7dd3-435d-b1ab-abdd5b63e798  SCOPE:regression
     test('Search with no matching results displays empty state', async ({ page }) => {
       await setupEmployeesPageMocks(page);
       const po = new EmployeesPagePage(page);
@@ -166,7 +166,7 @@ test.describe('employees-page — UI Regression Suite', () => {
       expect(headersLower).toContain('department');
     });
 
-    // TC-79d078d8-d56c-4131-a1f2-d7f982ddaf29  SCOPE:regression
+    // TC-064a879a-dffd-4bec-8075-40e86c15a496  SCOPE:regression
     test('Selecting a status filter with no matching employees shows an empty state', async ({ page }) => {
       await setupEmployeesPageMocks(page);
       const po = new EmployeesPagePage(page);
@@ -197,7 +197,7 @@ test.describe('employees-page — UI Regression Suite', () => {
 
   test.describe('edge', () => {
 
-    // TC-8f3a8653-135a-4694-ac1d-8c1055407b05  SCOPE:regression
+    // TC-a66f6475-4606-4109-aa46-ab17e8979581  SCOPE:regression
     test('Table correctly renders a single employee (boundary — minimum data set)', async ({ page }) => {
       await setupSingleEmployeePageMocks(page);
       const po = new EmployeesPagePage(page);
@@ -221,7 +221,7 @@ test.describe('employees-page — UI Regression Suite', () => {
       expect(emptyVisible).toBe(false);
     });
 
-    // TC-e510456a-de04-4d16-ab30-877f41f5144d  SCOPE:regression
+    // TC-084bc1a9-304d-453b-a7ce-de7b369e95bb  SCOPE:regression
     test('Search with a single character filters progressively and handles whitespace-only input', async ({ page }) => {
       await setupEmployeesPageMocks(page);
       const po = new EmployeesPagePage(page);
@@ -264,7 +264,7 @@ test.describe('employees-page — UI Regression Suite', () => {
       }
     });
 
-    // TC-f94faba1-881b-4cfb-ab00-1c9c4103f90a  SCOPE:regression
+    // TC-8c1af3c1-a5e7-46ad-a588-45da9d01d383  SCOPE:regression
     test('Combining department and status filters narrows results by both criteria simultaneously', async ({ page }) => {
       await setupEmployeesPageMocks(page);
       const po = new EmployeesPagePage(page);

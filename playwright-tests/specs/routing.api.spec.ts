@@ -29,7 +29,7 @@ test.describe('routing — API Regression Suite', () => {
 
   test.describe('positive', () => {
 
-    // TC-0d4ecee1  SCOPE:regression
+    // TC-0d4ecee1-ad64-49ab-9206-170a49d87c6b  SCOPE:regression
     test('[API] routing: GET /api/nonexistent returns 404 NOT_FOUND', async ({ page }) => {
       await setupRoutingMocks(page);
       await page.goto('/');
@@ -48,7 +48,7 @@ test.describe('routing — API Regression Suite', () => {
 
   test.describe('negative', () => {
 
-    // TC-74801089  SCOPE:regression
+    // TC-74801089-303c-464b-b175-e9bb8c0f1351  SCOPE:regression
     test('[API] routing: POST /api/nonexistent returns 404 NOT_FOUND', async ({ page }) => {
       await setupRoutingMocks(page);
       await page.goto('/');
@@ -58,7 +58,7 @@ test.describe('routing — API Regression Suite', () => {
       expect(r.body.message ?? r.body.error ?? r.body.status).toBeTruthy();
     });
 
-    // TC-e6df2195  SCOPE:regression
+    // TC-e6df2195-915d-4586-aa2c-b08972d3634a  SCOPE:regression
     test('[API] routing: PUT /api/nonexistent returns 404 NOT_FOUND', async ({ page }) => {
       await setupRoutingMocks(page);
       await page.goto('/');
@@ -68,7 +68,7 @@ test.describe('routing — API Regression Suite', () => {
       expect(r.body.message ?? r.body.error ?? r.body.status).toBeTruthy();
     });
 
-    // TC-84d0f3f3  SCOPE:regression
+    // TC-84d0f3f3-042c-49ca-ace5-962c0527d765  SCOPE:regression
     test('[API] routing: DELETE /api/nonexistent returns 404 NOT_FOUND', async ({ page }) => {
       await setupRoutingMocks(page);
       await page.goto('/');
@@ -78,7 +78,7 @@ test.describe('routing — API Regression Suite', () => {
       expect(r.body.message ?? r.body.error ?? r.body.status).toBeTruthy();
     });
 
-    // TC-52615651  SCOPE:regression
+    // TC-52615651-dcf2-48d0-885c-c2de69a7deb4  SCOPE:regression
     test('[API] routing: PATCH /api/nonexistent returns 404 NOT_FOUND', async ({ page }) => {
       await setupRoutingMocks(page);
       await page.goto('/');
@@ -92,7 +92,7 @@ test.describe('routing — API Regression Suite', () => {
 
   test.describe('edge', () => {
 
-    // TC-4036b119  SCOPE:regression
+    // TC-4036b119-78fe-4659-8706-fa8b159624de  SCOPE:regression
     test('[API] routing: Deeply nested unknown path returns 404', async ({ page }) => {
       await setupRoutingMocks(page);
       await page.goto('/');
@@ -106,7 +106,7 @@ test.describe('routing — API Regression Suite', () => {
       expect(indicator.toLowerCase()).toMatch(/not.?found|404/);
     });
 
-    // TC-481bd470  SCOPE:regression
+    // TC-481bd470-ae65-47c8-b8f9-4edca71cf7fc  SCOPE:regression
     test('[API] routing: Unknown path with query parameters returns 404', async ({ page }) => {
       await setupRoutingMocks(page);
       await page.goto('/');
@@ -116,7 +116,7 @@ test.describe('routing — API Regression Suite', () => {
       expect(r.body.message ?? r.body.error ?? r.body.status).toBeTruthy();
     });
 
-    // TC-f5bd71cf  SCOPE:regression
+    // TC-f5bd71cf-096e-4edc-b12a-97a0cab52817  SCOPE:regression
     test('[API] routing: Unknown path with special characters returns 404 and not 500', async ({ page }) => {
       await setupRoutingMocks(page);
       await page.goto('/');
@@ -128,7 +128,7 @@ test.describe('routing — API Regression Suite', () => {
       expect(bodyStr).not.toContain('stack');
     });
 
-    // TC-3dccf573  SCOPE:regression
+    // TC-3dccf573-4d64-4061-8cd4-be0c577172ad  SCOPE:regression
     test('[API] routing: Unknown route outside /api prefix returns 404', async ({ page }) => {
       await setupRoutingMocks(page);
       await page.goto('/');
@@ -137,7 +137,7 @@ test.describe('routing — API Regression Suite', () => {
       expect(response.status).not.toBeGreaterThanOrEqual(500);
     });
 
-    // TC-80790aab  SCOPE:regression
+    // TC-80790aab-5d30-446e-b9f5-a30bf742b6fa  SCOPE:regression
     test('[API] routing: Unknown route with request body on GET still returns 404', async ({ page }) => {
       await setupRoutingMocks(page);
       await page.goto('/');

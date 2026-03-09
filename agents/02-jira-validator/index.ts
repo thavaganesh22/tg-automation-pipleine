@@ -486,9 +486,13 @@ async function generateJiraScenarios(
 Your job is to generate high-level test scenarios covering the NEW BEHAVIOUR described in this story.
 
 HARD LIMIT: Generate AT MOST ${MAX_JIRA_SCENARIOS} scenarios total. Prioritise P0 and P1.
-Minimum: 1 UI scenario + 1 API scenario.
 
-You MUST generate BOTH types:
+IMPORTANT: Only generate scenarios for genuinely NEW behaviour introduced by this story.
+- If the story has no acceptance criteria and no clear new behaviour, return []
+- If the story is a sample, placeholder, maintenance task, or has nothing testable, return []
+- Do NOT invent scenarios just to have output — an empty array is the correct response when there is nothing new
+
+When scenarios ARE warranted, generate BOTH types:
   UI scenarios  ("testType": "ui")  — what a user tests in the browser:
     page loads, interactions, form submissions, success/error feedback, navigation
   API scenarios ("testType": "api") — what backend tests should cover:
@@ -500,6 +504,7 @@ Each acceptance criterion should produce at least one scenario.
 IMPORTANT JSON FORMAT RULES:
 - Return ONLY a raw JSON array — no code fences, no backticks, no explanation
 - Start your response with [ and end with ]
+- An empty array [] is valid when there is nothing new to test
 - Keep all string values SHORT (max 15 words)
 
 Schema (every field required):
@@ -543,8 +548,9 @@ ${story.linkedIssues.map((l) => `- ${l.type}: ${l.key} — ${l.summary}`).join("
 
 ---
 
-Generate up to ${MAX_JIRA_SCENARIOS} regression test scenarios (raw JSON array, no code fences).
+Generate up to ${MAX_JIRA_SCENARIOS} new-feature test scenarios (raw JSON array, no code fences).
 Cover each acceptance criterion with at least one UI or API scenario.
+If there are no acceptance criteria and no new behaviour to test, return [].
 `.trim(),
       },
     ],
