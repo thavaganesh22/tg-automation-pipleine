@@ -400,8 +400,8 @@ function vizDurationTrend(dvId) {
 function vizFailuresByFile(dvId) {
   const viz = {
     _title: 'Failures — by Spec File',
-    legend:      { isVisible: false, position: 'right' },
-    valueLabels: 'inside',
+    legend:      { isVisible: true, position: 'right' },
+    valueLabels: 'show',
     layers: [{
       layerId: 'l1', xAccessor: 'g1', accessors: ['m1'],
       layerType: 'data', seriesType: 'bar_horizontal',
@@ -452,7 +452,7 @@ function vizTestTypePie(dvId) {
     layers: [{ layerId: 'l1', primaryGroups: ['g1'], metrics: ['m1'], layerType: 'data' }],
   };
   return lensState('lnsPie', viz, {
-    l1: { g1: colTerms('Test Type', 'testType.keyword', 'm1', 5), m1: colCount('Tests') },
+    l1: { g1: colTerms('Test Type', 'testType', 'm1', 5), m1: colCount('Tests') },
   }, dvId);
 }
 
@@ -464,7 +464,7 @@ function vizStatusPie(dvId) {
     layers: [{ layerId: 'l1', primaryGroups: ['g1'], metrics: ['m1'], layerType: 'data' }],
   };
   return lensState('lnsPie', viz, {
-    l1: { g1: colTerms('Status', 'status.keyword', 'm1', 10), m1: colCount('Tests') },
+    l1: { g1: colTerms('Status', 'status', 'm1', 10), m1: colCount('Tests') },
   }, dvId);
 }
 
@@ -486,7 +486,7 @@ function vizStatusOverTime(dvId) {
   return lensState('lnsXY', viz, {
     l1: {
       x1:     colDate('Date'),
-      split1: colTerms('Status', 'status.keyword', 'y1', 5),
+      split1: colTerms('Status', 'status', 'y1', 5),
       y1:     colCount('Tests'),
     },
   }, dvId);
@@ -504,7 +504,7 @@ function vizTopSlowTests(dvId) {
   return lensState('lnsDatatable', viz, {
     l1: {
       g1: colTerms('Test Name', 'testName.keyword', 'm1', 20),
-      g2: colTerms('Suite',     'suite.keyword',    'm1', 20),
+      g2: colTerms('Suite',     'suite',            'm1', 20),
       m1: colAvg('Avg Duration (ms)', 'durationMs', { id: 'number', params: { decimals: 0 } }),
     },
   }, dvId);
