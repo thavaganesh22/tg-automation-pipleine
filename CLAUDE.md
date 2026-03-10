@@ -35,6 +35,10 @@ npm run test:unit
 
 # Install all deps including employee-app workspaces
 npm install-all
+
+# One-time Kibana setup (creates ES indices, data views, visualizations, dashboard)
+npm run kibana:setup           # local docker-compose stack
+npm run kibana:setup:azure     # Azure VM (CI environment)
 ```
 
 ## Architecture
@@ -52,8 +56,8 @@ This is a 7-agent LLM pipeline (powered by Claude via `@anthropic-ai/sdk`) that 
 | AGT-03 | `agents/03-test-case-designer/` | Converts scenarios to `TestCase[]` with UUIDs; maintains a stable `regression-baseline.json` across runs |
 | AGT-04 | `agents/04-playwright-engineer/` | Inspects the live app with headless Chromium to discover real selectors, then writes POM (`pages/`), fixtures (`fixtures/`), and spec files (`specs/`) to `playwright-tests/` |
 | AGT-05 | `agents/05-coverage-auditor/` | Checks spec files for `// TC-<uuid>` coverage comments; triggers AGT-04 remediation if below threshold |
-| AGT-06 | `agents/06-test-executor/` | Runs Playwright tests against the staging URL |
-| AGT-07 | `agents/07-report-architect/` | Publishes Kibana dashboard, sends stakeholder email, posts PR comment |
+| AGT-06 | `agents/06-test-executor/` | Runs Playwright tests against the staging URL; collects per-test `AllTestResult[]` for per-test ES indexing |
+| AGT-07 | `agents/07-report-architect/` | Indexes to `qa-test-runs` (run stats), `qa-failed-tests` (one per failure), `qa-test-results` (one per test); HTML report artifact; SLA alerts; PR comment |
 
 ### State management
 
@@ -104,7 +108,7 @@ Copy `.env.example` → `.env`. Required variables:
 
 Important guardrail env vars (all have defaults):
 - `MIN_P0_COVERAGE=80`, `MIN_P1_COVERAGE=80` — AGT-05 blocks if below
-- `SLA_PASS_RATE=0.95` — AGT-06 blocks if below
+- `SLA_PASS_RATE=1` in CI (100%); set `0.95` locally for a 95% threshold — AGT-06 blocks if below
 - `MAX_CASES_PER_SPEC=20`, `MAX_REGRESSION_SCENARIOS_PER_CHUNK=20` — keeps LLM output within `max_tokens`
 
 ## CI/CD
@@ -115,6 +119,10 @@ Important guardrail env vars (all have defaults):
 3. Runs `npm run pipeline`
 4. Posts a structured QA report as a PR comment
 5. Fails the check if the pipeline exits non-zero
+
+**CI browser strategy**: AGT-06 generates its own `playwright.config.ts` at runtime — Chromium only for both UI and API tests. The root `playwright.config.ts` is for local dev only (UI: Chromium + Firefox + WebKit; API: Chromium only).
+
+**`setup-kibana` is a one-time operation**: The `scripts/setup-kibana.js` script must be run once after provisioning the Elastic stack. AGT-07 only calls the ES `_bulk` and `_doc` index APIs — it never recreates indices, data views, or Kibana dashboards.
 
 ## Critical patterns
 
@@ -127,3 +135,7 @@ Important guardrail env vars (all have defaults):
 - **Spec truncation guard — three passes**: AGT-04's `writeChecked()` validates generated TypeScript in three passes: (1) `syntaxDepth()` checks brace **and** paren balance — valid cut points are after `});` not just `}` (cutting at `}` alone leaves `test.describe(` unclosed); (2) `checkTypeScriptSyntax()` uses `ts.transpileModule()` for full syntax validation without import resolution; (3) if a syntax error remains, a second `truncateToBalanced()` pass is applied.
 - **JIRA Basic auth**: Atlassian Cloud requires `Authorization: Basic base64(email:token)` — Bearer tokens are rejected with 403. `JIRA_EMAIL` must be set alongside `JIRA_TOKEN`. If JIRA is unreachable (any error), AGT-02 falls back to a WARN verdict and the pipeline continues.
 - **Duplicate test prevention**: `extractExistingTestIds()` reads `// TC-<uuid>` from existing specs before any merge call; already-covered cases are filtered out before the LLM call.
+- **Per-test ES indexing**: AGT-06 collects `AllTestResult[]` (one entry per test: `title`, `suite`, `file`, `testType`, `status`, `durationMs`, `retried`) via `walkSuites()` from the Playwright JSON report. AGT-07 bulk-indexes these to `qa-test-results` using `/_bulk` with `application/x-ndjson`. Documents include `runId` for correlation with `qa-test-runs`.
+- **ES field naming — plain keyword vs `.keyword`**: Fields declared as `keyword` type in the explicit ES mapping (e.g. `testType`, `status`, `suite`) must be referenced **without** `.keyword` in Kibana terms aggregations. Fields declared as `text` with a `keyword` sub-field (e.g. `testName`) require `.keyword` for terms aggregation. Mismatching causes "No results found" in Kibana visualizations.
+- **Kibana setup is idempotent but one-time**: `setup-kibana.js` uses stable saved-object IDs — re-running it safely overwrites existing objects. However, it must be run manually once after provisioning; it is not called by the pipeline itself.
+- **Browser strategy (AGT-06)**: AGT-06 generates a fresh `playwright.config.ts` per run (Chromium only, for both UI and API). The root `playwright.config.ts` is only used for local `npm test` runs and includes Firefox + WebKit for UI specs.

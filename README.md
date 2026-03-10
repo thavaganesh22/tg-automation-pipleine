@@ -81,8 +81,9 @@
   │     AGT-07      │  Indexes results to Elasticsearch:
   │  Report         │    qa-test-runs      — full run stats + UI/API breakdown
   │  Architect      │    qa-failed-tests   — one doc per failure, retried flag
+  │                 │    qa-test-results   — one doc per individual test result
   │                 │  Generates HTML dashboard artifact.
-  └────────┬────────┘  Sends SLA alerts if pass rate < 95%.
+  └────────┬────────┘  Sends SLA alerts if pass rate < 100%.
            │
            ▼
   ✅ PR check passes — merge is now allowed
@@ -103,7 +104,7 @@ A live PR comment is posted when the pipeline starts and updated with the full r
 | AGT-04 | Playwright Engineer  | claude-opus-4-6   | Inspects live app with headless Chromium to discover real `[data-testid]` selectors; UI pipeline: POM + fixture + spec; API pipeline: shared fixture + api.spec; merges new tests into existing specs |
 | AGT-05 | Coverage Auditor     | —                 | Separate UI + API traceability matrices; blocks if either type fails P0/P1 threshold |
 | AGT-06 | Test Executor        | claude-opus-4-6   | Playwright runner; auto-heal for script errors; classifies failures as script vs app |
-| AGT-07 | Report Architect     | claude-sonnet-4-6 | Elasticsearch indexing; HTML report artifact; SLA alerting |
+| AGT-07 | Report Architect     | claude-sonnet-4-6 | Indexes to 3 ES indices (`qa-test-runs`, `qa-failed-tests`, `qa-test-results`); HTML report artifact; SLA alerting |
 
 ---
 
@@ -146,7 +147,9 @@ npm run pipeline
 | Elasticsearch | http://localhost:9200 | Report storage |
 | Kibana | http://localhost:5601 | Dashboard visualisation |
 
-Kibana data views (`qa-test-runs`, `qa-failed-tests`) are created automatically by the `kibana-setup` one-shot container on first start.
+Kibana data views (`qa-test-runs`, `qa-failed-tests`, `qa-test-results`) are created automatically by the `kibana-setup` one-shot container on first start.
+
+> **Azure / CI**: Kibana runs on a persistent Azure VM. Run `npm run kibana:setup:azure` once after provisioning to create all indices, data views, visualizations, and the dashboard.
 
 ---
 
@@ -162,9 +165,9 @@ npm run pipeline -- --test-type=api      # API tests only
 
 | Flag | AGT-01 | AGT-03 | AGT-04 | AGT-05 | AGT-06 |
 |------|--------|--------|--------|--------|--------|
-| `both` (default) | UI + API scenarios | UI + API cases | `*.spec.ts` + `*.api.spec.ts` | Audits both separately | Runs all specs |
-| `ui` | UI scenarios only | UI cases only | `*.spec.ts` only | UI audit only | `testIgnore: *.api.spec.ts` |
-| `api` | API scenarios only | API cases only | `*.api.spec.ts` only | API audit only | `testMatch: *.api.spec.ts` |
+| `both` (default) | UI + API scenarios | UI + API cases | `*.spec.ts` + `*.api.spec.ts` | Audits both separately | Chromium (UI) + Chromium (API) |
+| `ui` | UI scenarios only | UI cases only | `*.spec.ts` only | UI audit only | Chromium only (`testIgnore: *.api.spec.ts`) |
+| `api` | API scenarios only | API cases only | `*.api.spec.ts` only | API audit only | Chromium only (`testMatch: *.api.spec.ts`) |
 
 ---
 
@@ -250,6 +253,13 @@ playwright-tests/
                 {module}.api.spec.ts       — API specs (page.evaluate fetch, no POM)
 ```
 
+**Browser strategy:**
+
+| Environment | UI specs | API specs |
+|-------------|----------|-----------|
+| Local (`playwright.config.ts`) | Chromium + Firefox + WebKit | Chromium only |
+| CI (AGT-06 generated config) | Chromium only | Chromium only |
+
 **Live app inspection** — AGT-04 browses `BASE_URL` with headless Chromium before any generation to verify real `[data-testid]` selectors. The discovered list is injected into every POM and spec prompt alongside the static selector reference. If the app is unreachable, generation continues using the static reference only.
 
 **UI spec rules** — enforced by AGT-04 prompt:
@@ -294,24 +304,25 @@ After the first pipeline run, open Kibana:
 - **Local**: http://localhost:5601
 - **Azure VM (CI)**: http://cbts-elastic-vm.eastus.cloudapp.azure.com:5601 (login: `elastic`)
 
-Run the setup script once to create all data views, visualizations, and the dashboard:
+Run the setup script **once** to create all ES indices, Kibana data views, visualizations, and the dashboard:
 
 ```bash
 # Local
 npm run kibana:setup
 
-# Azure VM
+# Azure VM (CI)
 npm run kibana:setup:azure
 ```
 
-The script is idempotent — re-running it overwrites existing objects with stable IDs.
+The script is idempotent — re-running it overwrites existing objects with stable IDs. It does **not** run on every pipeline execution; AGT-07 only indexes data.
 
-Two data views are created:
+Three ES indices and data views are created:
 
 | Index | Time field | Contents |
 |-------|-----------|---------|
-| `qa-test-runs` | `@timestamp` | One doc per run: pass rate, coverage %, UI/API fields, heal metadata, SLA status |
+| `qa-test-runs` | `@timestamp` | One doc per pipeline run: pass rate, coverage %, UI/API breakdown, heal metadata, SLA status |
 | `qa-failed-tests` | `@timestamp` | One doc per failed test: name, file, error (≤500 chars), `failureType`, `retried` flag |
+| `qa-test-results` | `@timestamp` | One doc per individual test result (pass + fail + skip): `testName`, `suite`, `file`, `testType`, `status`, `durationMs`, `retried` |
 
 **Dashboard panels:**
 
@@ -319,9 +330,12 @@ Two data views are created:
 |-------|------|-------------|
 | Overall / P0 / UI / API Coverage | Metric tiles | `qa-test-runs` |
 | Pass Rate Trend | Line chart | `qa-test-runs` |
-| Test Type Distribution | Pie chart | `qa-test-runs` |
 | Passed vs Failed per Run | Stacked bar | `qa-test-runs` |
 | Run Duration Trend | Line chart | `qa-test-runs` |
+| UI vs API Tests | Donut chart | `qa-test-results` |
+| Test Status Breakdown | Donut chart | `qa-test-results` |
+| Pass / Fail / Skip Over Time | Stacked bar (date histogram) | `qa-test-results` |
+| Slowest Tests | Table (avg durationMs) | `qa-test-results` |
 | Failures by Spec File | Horizontal bar | `qa-failed-tests` |
 | Flaky Tests Leaderboard | Table (`retried=true`) | `qa-failed-tests` |
 | SLA Breach History | Table (`slaBreached=true`) | `qa-test-runs` |
@@ -383,6 +397,7 @@ Triggered on every PR open/update targeting `main` or `develop`. Timeout: 60 min
 | Alignment FAIL | AGT-02 | Code contradicts or is unrelated to the JIRA story |
 | P0 UI coverage below threshold | AGT-05 | < 80% P0 coverage in UI specs after remediation |
 | P0 API coverage below threshold | AGT-05 | < 80% P0 coverage in API specs after remediation |
+| Pass rate below SLA | AGT-06 | `SLA_PASS_RATE=1` in CI — any test failure blocks the pipeline |
 | AGT-07 did not complete | AGT-07 | Report Architect must finish for the check to pass |
 
 **PR comment** — posted immediately ("in progress") then updated with the full report:
@@ -471,7 +486,7 @@ bash infra/azure/vm-setup.sh
 | `MAX_REGRESSION_SCENARIOS_PER_CHUNK` | No | AGT-01 chunk size (default 20) |
 | `MIN_P0_COVERAGE` | No | Block threshold % (default 80) |
 | `MIN_P1_COVERAGE` | No | Block threshold % (default 80) |
-| `SLA_PASS_RATE` | No | Alert threshold 0–1 (default 0.95) |
+| `SLA_PASS_RATE` | No | Block threshold 0–1 (default `1` in CI = 100%; set `0.95` locally for lenient threshold) |
 | `STAKEHOLDER_EMAILS` | No | Comma-separated SLA alert recipients |
 | `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` | No | Email transport for SLA alerts |
 
@@ -502,6 +517,8 @@ bash infra/azure/vm-setup.sh
 ├── pipeline-state/              Inter-agent JSON state (cached in CI)
 ├── test-results/                AGT-06 artifacts: screenshots, traces, videos
 ├── reports/                     AGT-07 HTML dashboards
+├── scripts/
+│   └── setup-kibana.js          One-time setup: ES indices + Kibana data views + dashboard
 ├── employee-app/                Target application (MongoDB + Express + React)
 ├── infra/azure/                 Azure VM provisioning (Elastic Stack)
 ├── docker-compose.yml           App (mongodb/backend/frontend) + ES + Kibana + kibana-setup
@@ -548,6 +565,7 @@ The pipeline is **restartable at any agent**. Fix the issue and run `--from=6` t
 - AGT-04 validates generated TypeScript in three passes: (1) brace + paren depth — valid cut points are after `});` not just `}`, (2) `ts.transpileModule()` syntax check without import resolution, (3) second truncation pass if errors remain
 - AGT-04 deduplicates by test-case UUID before appending to existing specs — prevents duplicate test titles
 - AGT-02 uses `Authorization: Basic base64(email:token)` for Atlassian Cloud — Bearer tokens are rejected; if JIRA is unreachable the pipeline continues with a WARN verdict
+- `SLA_PASS_RATE=1` in CI — any test failure blocks the pipeline; use `SLA_PASS_RATE=0.95` locally for a 95% threshold
 
 ### Operational
 
@@ -555,7 +573,9 @@ The pipeline is **restartable at any agent**. Fix the issue and run `--from=6` t
 - AGT-03 generates at most `MAX_TEST_CASES` test cases (default 500) per cycle
 - Playwright suite timeout: 15 minutes total; 20 seconds per test; 4 parallel workers (max 8)
 - Auto-heal: 1 repair attempt per run; skipped if >50% of tests fail
-- Flaky tests retried once before recording as failed
+- Flaky tests retried twice in CI (once locally) before recording as failed
+- CI runs Chromium only (UI + API); multi-browser (Chromium/Firefox/WebKit) reserved for local development
+- Kibana setup (`npm run kibana:setup`) is a one-time operation — indices, data views, and dashboard are not recreated on every pipeline run
 
 ---
 
