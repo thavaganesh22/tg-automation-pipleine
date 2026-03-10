@@ -13,7 +13,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import * as fs from "fs/promises";
 import * as path from "path";
-import type { ExecutionResult } from "../06-test-executor";
+import type { ExecutionResult, AllTestResult } from "../06-test-executor";
 import type { CoverageReport } from "../05-coverage-auditor";
 
 const client = new Anthropic();
@@ -45,8 +45,10 @@ function parseEsUrl(raw: string): { baseUrl: string; authHeader: string | null }
 const { baseUrl: ES_URL, authHeader: ES_AUTH_HEADER } = parseEsUrl(
   process.env.ELASTICSEARCH_URL ?? "http://localhost:9200"
 );
+const KIBANA_URL = ES_URL.replace(":9200", ":5601");
 const ES_INDEX_RUNS = "qa-test-runs";
 const ES_INDEX_FAILURES = "qa-failed-tests";
+const ES_INDEX_RESULTS = "qa-test-results";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -117,8 +119,9 @@ export async function runReportArchitect(
   // 3. AI narrative insights
   const aiInsights = await generateInsights(runHistory, flakiness, executionResult);
 
-  // 4. Index current run to Elasticsearch
+  // 4. Index current run + per-test results to Elasticsearch
   await indexRunToES(executionResult, coverageReport, trend, slaBreached, aiInsights);
+  await indexTestResultsToES(executionResult.allTests ?? [], executionResult.runId, executionResult.finishedAt);
 
   // 5. SLA alert
   if (slaBreached) {
@@ -136,7 +139,7 @@ export async function runReportArchitect(
 
   // 6. Generate HTML dashboard artifact
   await generateDashboard(dashboard, executionResult, coverageReport);
-  console.log(`  [AGT-07] Kibana: ${ES_URL.replace("9200", "5601")} (qa-test-runs, qa-failed-tests)`);
+  console.log(`  [AGT-07] Kibana: ${KIBANA_URL} (${ES_INDEX_RUNS}, ${ES_INDEX_RESULTS}, ${ES_INDEX_FAILURES})`);
 
   return dashboard;
 }
@@ -164,7 +167,53 @@ async function esRequest<T>(
   return response.json() as Promise<T>;
 }
 
-// ── Indexing ────────────────────────────────────────────────────────────────
+// ── Per-test indexing ────────────────────────────────────────────────────────
+// Index setup (index creation + Kibana data views) is done once via:
+//   npm run kibana:setup
+// AGT-07 only pushes data on each run.
+
+async function indexTestResultsToES(
+  allTests: AllTestResult[],
+  runId: string,
+  timestamp: string
+): Promise<void> {
+  if (allTests.length === 0) return;
+  const lines: string[] = [];
+  allTests.forEach((t, i) => {
+    lines.push(JSON.stringify({ index: { _index: ES_INDEX_RESULTS, _id: `${runId}-${i}` } }));
+    lines.push(JSON.stringify({
+      "@timestamp": timestamp,
+      runId,
+      testName: t.title,
+      suite: t.suite,
+      file: t.file,
+      testType: t.testType,
+      status: t.status,
+      durationMs: t.durationMs,
+      retried: t.retried,
+    }));
+  });
+  const body = lines.join("\n") + "\n";
+  const headers: Record<string, string> = { "Content-Type": "application/x-ndjson" };
+  if (ES_AUTH_HEADER) headers["Authorization"] = ES_AUTH_HEADER;
+  try {
+    const res = await fetch(`${ES_URL}/_bulk`, { method: "POST", headers, body });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`${res.status}: ${text.slice(0, 200)}`);
+    }
+    const result = await res.json() as { errors?: boolean };
+    if (result.errors) {
+      console.warn(`  [AGT-07] Some per-test docs failed to index (check ES logs)`);
+    } else {
+      console.log(`  [AGT-07] ${allTests.length} test results indexed → ${ES_INDEX_RESULTS}`);
+    }
+  } catch (err) {
+    console.warn(`  [AGT-07] Could not bulk-index test results — ${(err as Error).message}`);
+  }
+}
+
+// ── Indexing ─────────────────────────────────────────────────────────────────
 
 async function indexRunToES(
   result: ExecutionResult,
@@ -387,6 +436,8 @@ async function generateDashboard(
   const reportPath = path.join("reports", `dashboard-${execution.runId}.html`);
   const html = buildDashboardHTML(dashboard, execution, coverage);
   await fs.writeFile(reportPath, html, "utf-8");
+  // Also write a stable latest.html for easy access
+  await fs.writeFile(path.join("reports", "latest.html"), html, "utf-8");
   console.log(`  [AGT-07] HTML dashboard written to ${reportPath}`);
 }
 

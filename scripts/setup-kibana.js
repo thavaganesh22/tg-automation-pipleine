@@ -29,22 +29,33 @@ const { URL } = require('url');
 const KIBANA_URL  = (process.env.KIBANA_URL  || 'http://localhost:5601').replace(/\/$/, '');
 const KIBANA_USER = process.env.KIBANA_USER  || 'elastic';
 const KIBANA_PASS = process.env.KIBANA_PASS  || '';
+// Derive ES URL from Kibana URL (5601 → 9200) or use explicit override
+const ES_URL = (process.env.ELASTICSEARCH_URL || KIBANA_URL.replace(':5601', ':9200')).replace(/\/$/, '');
 
 // Stable IDs — re-running overwrites existing objects.
 const ID = {
+  // Data views
   dvRuns:    'dv-qa-test-runs-0001',
   dvFailed:  'dv-qa-failed-tests-001',
+  dvResults: 'dv-qa-test-results-001',
+  // qa-test-runs visualizations
   vPassRate: 'vis-pass-rate-0001',
   vCovOver:  'vis-cov-overall-001',
   vCovP0:    'vis-cov-p0-00001',
   vCovUI:    'vis-cov-ui-00001',
   vCovAPI:   'vis-cov-api-0001',
   vTests:    'vis-tests-run-001',
-  vType:     'vis-test-type-001',
   vDuration: 'vis-duration-0001',
+  vSLA:      'vis-sla-history-001',
+  // qa-failed-tests visualizations
   vFailFile: 'vis-fail-file-001',
   vFlaky:    'vis-flaky-tests-001',
-  vSLA:      'vis-sla-history-001',
+  // qa-test-results visualizations (per-test breakdown)
+  vTypePie:     'vis-test-type-pie-001',
+  vStatusPie:   'vis-status-pie-0001',
+  vStatusTrend: 'vis-status-trend-001',
+  vTopSlow:     'vis-top-slow-001',
+  // Dashboard
   dash:      'dash-qa-pipeline-001',
 };
 
@@ -111,6 +122,55 @@ async function waitForKibana(maxAttempts = 30) {
     await new Promise((r) => setTimeout(r, 5000));
   }
   throw new Error('Kibana did not become ready within the timeout.');
+}
+
+// ── Elasticsearch helpers ─────────────────────────────────────────────────────
+
+function esRequest(method, esPath, body) {
+  return new Promise((resolve, reject) => {
+    const parsed  = new URL(ES_URL + esPath);
+    const lib     = parsed.protocol === 'https:' ? https : http;
+    const payload = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: parsed.hostname,
+      port:     parsed.port || (parsed.protocol === 'https:' ? 443 : 80),
+      path:     parsed.pathname + parsed.search,
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+        ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
+      },
+    };
+    const req = lib.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          resolve({ status: res.statusCode, body: JSON.parse(data) });
+        } catch {
+          resolve({ status: res.statusCode, body: data });
+        }
+      });
+    });
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+async function ensureEsIndex(indexName, mappings) {
+  const check = await esRequest('HEAD', `/${indexName}`);
+  if (check.status === 200) {
+    console.log(`  ✓ ES index already exists: ${indexName}`);
+    return;
+  }
+  const res = await esRequest('PUT', `/${indexName}`, { mappings });
+  if (res.status >= 200 && res.status < 300) {
+    console.log(`  ✓ ES index created: ${indexName}`);
+  } else {
+    console.warn(`  ! ES index ${indexName}: ${JSON.stringify(res.body).slice(0, 200)}`);
+  }
 }
 
 // ── Data views ────────────────────────────────────────────────────────────────
@@ -255,9 +315,24 @@ const PCT    = { id: 'percent', params: { decimals: 1 } };
 const NUMFMT = { id: 'number',  params: { decimals: 1 } };
 
 /** Range filter: only include docs where field > 0.
- *  Used on coverage tiles so local npm-test runs (which index 0) don't skew the average. */
-function gtZeroFilter(field) {
-  return [{ meta: { disabled: false, negate: false, alias: null }, query: { range: { [field]: { gt: 0 } } } }];
+ *  Kibana requires $state, meta.key, meta.type, and meta.index for filters to be applied correctly.
+ *  @param {string} field - the field name to filter on
+ *  @param {string} dvId  - the data view ID to bind the filter to
+ */
+function gtZeroFilter(field, dvId) {
+  return [{
+    $state: { store: 'appState' },
+    meta: {
+      alias: null,
+      disabled: false,
+      negate: false,
+      key: field,
+      params: { gt: 0 },
+      type: 'range',
+      index: dvId,
+    },
+    query: { range: { [field]: { gt: 0 } } },
+  }];
 }
 
 // ── Visualization definitions ─────────────────────────────────────────────────
@@ -303,16 +378,6 @@ function vizTestsPerRun(dvId) {
   }, dvId);
 }
 
-function vizTestTypeDistribution(dvId) {
-  const viz = {
-    _title: 'Test Type Distribution',
-    shape:  'pie',
-    layers: [{ layerId: 'l1', primaryGroups: ['g1'], metrics: ['m1'], layerType: 'data' }],
-  };
-  return lensState('lnsPie', viz, {
-    l1: { g1: colTerms('Test Type', 'testType.keyword', 'm1', 5), m1: colCount('Runs') },
-  }, dvId);
-}
 
 function vizDurationTrend(dvId) {
   const viz = {
@@ -377,27 +442,99 @@ function vizSLAHistory(dvId) {
   }, dvId, 'slaBreached: true');
 }
 
+// ── qa-test-results visualizations (per-test breakdown) ───────────────────────
+
+/** Pie: UI tests vs API tests (count of individual test documents). */
+function vizTestTypePie(dvId) {
+  const viz = {
+    _title: 'Test Type Split — UI vs API',
+    shape:  'donut',
+    layers: [{ layerId: 'l1', primaryGroups: ['g1'], metrics: ['m1'], layerType: 'data' }],
+  };
+  return lensState('lnsPie', viz, {
+    l1: { g1: colTerms('Test Type', 'testType.keyword', 'm1', 5), m1: colCount('Tests') },
+  }, dvId);
+}
+
+/** Pie: passed / failed / flaky / skipped breakdown across all tests. */
+function vizStatusPie(dvId) {
+  const viz = {
+    _title: 'Test Status Distribution',
+    shape:  'donut',
+    layers: [{ layerId: 'l1', primaryGroups: ['g1'], metrics: ['m1'], layerType: 'data' }],
+  };
+  return lensState('lnsPie', viz, {
+    l1: { g1: colTerms('Status', 'status.keyword', 'm1', 10), m1: colCount('Tests') },
+  }, dvId);
+}
+
+/** Stacked bar: pass / fail / flaky count per run over time. */
+function vizStatusOverTime(dvId) {
+  const viz = {
+    _title: 'Pass / Fail / Flaky — per Run over Time',
+    legend:      { isVisible: true, position: 'bottom' },
+    valueLabels: 'hide',
+    layers: [{
+      layerId:    'l1',
+      xAccessor:  'x1',
+      accessors:  ['y1'],
+      splitAccessor: 'split1',
+      layerType:  'data',
+      seriesType: 'bar_stacked',
+    }],
+  };
+  return lensState('lnsXY', viz, {
+    l1: {
+      x1:     colDate('Date'),
+      split1: colTerms('Status', 'status.keyword', 'y1', 5),
+      y1:     colCount('Tests'),
+    },
+  }, dvId);
+}
+
+/** Data table: top 20 slowest tests by average duration. */
+function vizTopSlowTests(dvId) {
+  const viz = {
+    _title: 'Slowest Tests — Avg Duration',
+    layerId:   'l1',
+    layerType: 'data',
+    columns:   [{ columnId: 'g1' }, { columnId: 'g2' }, { columnId: 'm1' }],
+    sorting:   { columnId: 'm1', direction: 'desc' },
+  };
+  return lensState('lnsDatatable', viz, {
+    l1: {
+      g1: colTerms('Test Name', 'testName.keyword', 'm1', 20),
+      g2: colTerms('Suite',     'suite.keyword',    'm1', 20),
+      m1: colAvg('Avg Duration (ms)', 'durationMs', { id: 'number', params: { decimals: 0 } }),
+    },
+  }, dvId);
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 function buildDashboard() {
   // Grid: 48 units wide.  y positions are cumulative.
   const panels = [
-    // Row 1 — metric tiles (y=0, h=8)
+    // Row 1 — coverage metric tiles (y=0, h=8)
     { id: ID.vCovOver,  i: 'p01', x: 0,  y: 0,  w: 12, h: 8, title: 'Overall Coverage' },
     { id: ID.vCovP0,    i: 'p02', x: 12, y: 0,  w: 12, h: 8, title: 'P0 Coverage' },
     { id: ID.vCovUI,    i: 'p03', x: 24, y: 0,  w: 12, h: 8, title: 'UI Coverage' },
     { id: ID.vCovAPI,   i: 'p04', x: 36, y: 0,  w: 12, h: 8, title: 'API Coverage' },
-    // Row 2 — pass rate + type breakdown (y=8, h=15)
-    { id: ID.vPassRate, i: 'p05', x: 0,  y: 8,  w: 32, h: 15, title: 'Pass Rate Trend' },
-    { id: ID.vType,     i: 'p06', x: 32, y: 8,  w: 16, h: 15, title: 'Test Type Distribution' },
-    // Row 3 — tests per run + duration (y=23, h=15)
-    { id: ID.vTests,    i: 'p07', x: 0,  y: 23, w: 24, h: 15, title: 'Passed vs Failed' },
-    { id: ID.vDuration, i: 'p08', x: 24, y: 23, w: 24, h: 15, title: 'Run Duration' },
-    // Row 4 — failure analysis (y=38, h=15)
-    { id: ID.vFailFile, i: 'p09', x: 0,  y: 38, w: 24, h: 15, title: 'Failures by Spec File' },
-    { id: ID.vFlaky,    i: 'p10', x: 24, y: 38, w: 24, h: 15, title: 'Flaky Tests' },
-    // Row 5 — SLA history full-width (y=53, h=12)
-    { id: ID.vSLA,      i: 'p11', x: 0,  y: 53, w: 48, h: 12, title: 'SLA Breach History' },
+    // Row 2 — pass rate trend + per-test type/status pies (y=8, h=15)
+    { id: ID.vPassRate,  i: 'p05', x: 0,  y: 8,  w: 24, h: 15, title: 'Pass Rate Trend' },
+    { id: ID.vTypePie,   i: 'p06', x: 24, y: 8,  w: 12, h: 15, title: 'UI vs API Tests' },
+    { id: ID.vStatusPie, i: 'p07', x: 36, y: 8,  w: 12, h: 15, title: 'Test Status Breakdown' },
+    // Row 3 — pass/fail/flaky per run over time (y=23, h=15)
+    { id: ID.vStatusTrend, i: 'p08', x: 0,  y: 23, w: 48, h: 15, title: 'Pass / Fail / Flaky per Run' },
+    // Row 4 — tests per run (summary) + run duration (y=38, h=15)
+    { id: ID.vTests,    i: 'p09', x: 0,  y: 38, w: 24, h: 15, title: 'Passed vs Failed (run summary)' },
+    { id: ID.vDuration, i: 'p10', x: 24, y: 38, w: 24, h: 15, title: 'Run Duration' },
+    // Row 5 — failure analysis + slowest tests (y=53, h=15)
+    { id: ID.vFailFile, i: 'p11', x: 0,  y: 53, w: 24, h: 15, title: 'Failures by Spec File' },
+    { id: ID.vTopSlow,  i: 'p12', x: 24, y: 53, w: 24, h: 15, title: 'Slowest Tests' },
+    // Row 6 — flaky tests + SLA history (y=68)
+    { id: ID.vFlaky,    i: 'p13', x: 0,  y: 68, w: 24, h: 15, title: 'Flaky Tests' },
+    { id: ID.vSLA,      i: 'p14', x: 24, y: 68, w: 24, h: 12, title: 'SLA Breach History' },
   ];
 
   const panelsJson = panels.map((p) => ({
@@ -436,47 +573,72 @@ function buildDashboard() {
 
 async function main() {
   console.log(`\nKibana URL : ${KIBANA_URL}`);
+  console.log(`ES URL     : ${ES_URL}`);
   console.log(`Auth       : ${KIBANA_PASS ? `Basic (user: ${KIBANA_USER})` : 'none'}\n`);
 
-  // 1. Wait for Kibana
-  console.log('Waiting for Kibana to be ready...');
+  // 1. Create Elasticsearch indices with explicit mappings
+  console.log('Creating Elasticsearch indices...');
+  await ensureEsIndex('qa-test-results', {
+    properties: {
+      '@timestamp': { type: 'date' },
+      runId:        { type: 'keyword' },
+      testName:     { type: 'text', fields: { keyword: { type: 'keyword', ignore_above: 512 } } },
+      suite:        { type: 'keyword' },
+      file:         { type: 'keyword' },
+      testType:     { type: 'keyword' },
+      status:       { type: 'keyword' },
+      durationMs:   { type: 'long' },
+      retried:      { type: 'boolean' },
+    },
+  });
+
+  // 2. Wait for Kibana
+  console.log('\nWaiting for Kibana to be ready...');
   await waitForKibana();
 
-  // 2. Data views
+  // 3. Data views
   console.log('\nCreating data views...');
-  await createDataView(ID.dvRuns,   'qa-test-runs',   'QA Test Runs',   '@timestamp');
-  await createDataView(ID.dvFailed, 'qa-failed-tests', 'QA Failed Tests', '@timestamp');
+  await createDataView(ID.dvRuns,    'qa-test-runs',    'QA Test Runs',    '@timestamp');
+  await createDataView(ID.dvFailed,  'qa-failed-tests', 'QA Failed Tests', '@timestamp');
+  await createDataView(ID.dvResults, 'qa-test-results', 'QA Test Results', '@timestamp');
 
-  // 3. Visualizations
+  // 4. Visualizations
   console.log('\nCreating visualizations...');
   const vizDefs = [
+    // qa-test-runs (run-level aggregates)
     [ID.vPassRate, vizPassRateTrend(ID.dvRuns)],
-    [ID.vCovOver,  vizMetric('Overall Coverage %',  ID.dvRuns, 'coveragePercent',    'Overall Coverage',  NUMFMT, gtZeroFilter('coveragePercent'))],
-    [ID.vCovP0,    vizMetric('P0 Coverage %',        ID.dvRuns, 'p0CoveragePercent',  'P0 Coverage',       NUMFMT, gtZeroFilter('p0CoveragePercent'))],
-    [ID.vCovUI,    vizMetric('UI Coverage %',         ID.dvRuns, 'uiCoveragePercent',  'UI Coverage',       NUMFMT, gtZeroFilter('uiCoveragePercent'))],
-    [ID.vCovAPI,   vizMetric('API Coverage %',        ID.dvRuns, 'apiCoveragePercent', 'API Coverage',      NUMFMT, gtZeroFilter('apiCoveragePercent'))],
+    [ID.vCovOver,  vizMetric('Overall Coverage %',  ID.dvRuns, 'coveragePercent',    'Overall Coverage',  NUMFMT, gtZeroFilter('coveragePercent',    ID.dvRuns))],
+    [ID.vCovP0,    vizMetric('P0 Coverage %',        ID.dvRuns, 'p0CoveragePercent',  'P0 Coverage',       NUMFMT, gtZeroFilter('p0CoveragePercent',  ID.dvRuns))],
+    [ID.vCovUI,    vizMetric('UI Coverage %',         ID.dvRuns, 'uiCoveragePercent',  'UI Coverage',       NUMFMT, gtZeroFilter('uiCoveragePercent',  ID.dvRuns))],
+    [ID.vCovAPI,   vizMetric('API Coverage %',        ID.dvRuns, 'apiCoveragePercent', 'API Coverage',      NUMFMT, gtZeroFilter('apiCoveragePercent', ID.dvRuns))],
     [ID.vTests,    vizTestsPerRun(ID.dvRuns)],
-    [ID.vType,     vizTestTypeDistribution(ID.dvRuns)],
     [ID.vDuration, vizDurationTrend(ID.dvRuns)],
+    [ID.vSLA,      vizSLAHistory(ID.dvRuns)],
+    // qa-failed-tests (failure drill-down)
     [ID.vFailFile, vizFailuresByFile(ID.dvFailed)],
     [ID.vFlaky,    vizFlakyLeaderboard(ID.dvFailed)],
-    [ID.vSLA,      vizSLAHistory(ID.dvRuns)],
+    // qa-test-results (per-test breakdowns — the new ones)
+    [ID.vTypePie,     vizTestTypePie(ID.dvResults)],
+    [ID.vStatusPie,   vizStatusPie(ID.dvResults)],
+    [ID.vStatusTrend, vizStatusOverTime(ID.dvResults)],
+    [ID.vTopSlow,     vizTopSlowTests(ID.dvResults)],
   ];
 
   for (const [id, { attributes, references }] of vizDefs) {
     await upsertObject('lens', id, attributes, references);
   }
 
-  // 4. Dashboard
+  // 5. Dashboard
   console.log('\nCreating dashboard...');
   const { attributes: dashAttrs, references: dashRefs } = buildDashboard();
   await upsertObject('dashboard', ID.dash, dashAttrs, dashRefs);
 
-  // 5. Summary
+  // 6. Summary
   const dashUrl = `${KIBANA_URL}/app/dashboards#/view/${ID.dash}`;
   console.log(`\n✓ Setup complete.\n`);
-  console.log(`  Dashboard : ${dashUrl}`);
-  console.log(`  Time range: last 30 days (adjustable in Kibana)\n`);
+  console.log(`  Dashboard  : ${dashUrl}`);
+  console.log(`  Time range : last 30 days (adjustable in Kibana)`);
+  console.log(`  Re-run     : npm run kibana:setup (safe — all objects use stable IDs)\n`);
 }
 
 main().catch((err) => {

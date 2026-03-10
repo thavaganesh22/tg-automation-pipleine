@@ -27,6 +27,16 @@ export interface FailedTest {
   failureType: "script" | "app";
 }
 
+export interface AllTestResult {
+  title: string;
+  file: string;
+  suite: string;
+  testType: "ui" | "api";
+  status: "passed" | "failed" | "flaky" | "skipped";
+  durationMs: number;
+  retried: boolean;
+}
+
 export interface ExecutionResult {
   runId: string;
   startedAt: string;
@@ -40,6 +50,7 @@ export interface ExecutionResult {
   durationMs: number;
   passRate: number;
   failedTests: FailedTest[];
+  allTests: AllTestResult[];
   artifactsDir: string;
   healAttempted: boolean;
   healedSpecs: string[];
@@ -147,6 +158,7 @@ export async function runTestExecutor(
     flaky: report.flaky,
     skipped: report.skipped,
     failedTests: report.failedTests,
+    allTests: report.allTests,
     healAttempted: false,
     healedSpecs: [],
     scriptErrors: 0,
@@ -407,6 +419,7 @@ module.exports = defineConfig({
     failed: mergedFailed,
     passRate: mergedPassRate,
     failedTests: mergedFailedTests,
+    allTests: healReport.allTests.length > 0 ? healReport.allTests : firstResult.allTests,
     healAttempted: true,
     healedSpecs,
     scriptErrors: scriptFails.length,
@@ -489,6 +502,7 @@ interface ParsedReport {
   flaky: number;
   skipped: number;
   failedTests: FailedTest[];
+  allTests: AllTestResult[];
 }
 
 async function parseReport(reportPath: string, artifactsDir: string): Promise<ParsedReport> {
@@ -496,18 +510,19 @@ async function parseReport(reportPath: string, artifactsDir: string): Promise<Pa
   try {
     raw = await fs.readFile(reportPath, "utf-8");
   } catch {
-    return { total: 0, passed: 0, failed: 0, flaky: 0, skipped: 0, failedTests: [] };
+    return { total: 0, passed: 0, failed: 0, flaky: 0, skipped: 0, failedTests: [], allTests: [] };
   }
 
   const report = JSON.parse(raw) as {
     suites?: Array<{
       file?: string;
+      title?: string;
       suites?: unknown[];
       specs?: Array<{
         title: string;
         tests?: Array<{
           status: string;
-          results?: Array<{ status?: string; error?: { message?: string }; retry?: number }>;
+          results?: Array<{ status?: string; duration?: number; error?: { message?: string }; retry?: number }>;
         }>;
       }>;
     }>;
@@ -518,30 +533,44 @@ async function parseReport(reportPath: string, artifactsDir: string): Promise<Pa
     flaky = 0,
     skipped = 0;
   const failedTests: FailedTest[] = [];
+  const allTests: AllTestResult[] = [];
 
-  function walkSuites(suites: typeof report.suites): void {
+  function walkSuites(
+    suites: typeof report.suites,
+    currentFile: string = "",
+    suitePath: string[] = []
+  ): void {
     if (!suites) return;
     for (const suite of suites) {
+      const file = suite.file ?? currentFile;
+      const titleParts = suite.title ? [...suitePath, suite.title] : suitePath;
+      const suiteLabel = titleParts.filter(Boolean).join(" > ") || path.basename(file, ".spec.ts");
+      const testType: "ui" | "api" = /\.api\.spec\.ts$/.test(file) ? "api" : "ui";
+
       for (const spec of suite.specs ?? []) {
         for (const test of spec.tests ?? []) {
           // Playwright JSON report uses test.status = "expected"|"unexpected"|"flaky"|"skipped"
           // NOT "passed"/"failed". Check test.status first, fall back to last result.status.
           const retried = (test.results?.length ?? 0) > 1;
-          const lastResultStatus = test.results?.[test.results.length - 1]?.status ?? "";
+          const lastResult = test.results?.[test.results.length - 1];
+          const lastResultStatus = lastResult?.status ?? "";
+          const durationMs = lastResult?.duration ?? 0;
           const isPassed = test.status === "expected" || test.status === "passed" || lastResultStatus === "passed";
           const isFlaky = test.status === "flaky";
           const isSkipped = test.status === "skipped";
 
-          if (isPassed) passed++;
-          else if (isFlaky) { flaky++; passed++; }
-          else if (isSkipped) skipped++;
+          let status: AllTestResult["status"];
+          if (isFlaky) { status = "flaky"; flaky++; passed++; }
+          else if (isPassed) { status = "passed"; passed++; }
+          else if (isSkipped) { status = "skipped"; skipped++; }
           else {
+            status = "failed";
             failed++;
             const errorMsg = test.results?.[0]?.error?.message ?? "Unknown error";
             const truncatedError = errorMsg.slice(0, 500);
             failedTests.push({
               title: spec.title,
-              file: suite.file ?? "",
+              file,
               // GUARDRAIL: truncate error to 500 chars to avoid PII leakage in DB
               error: truncatedError,
               screenshotPath: locateArtifact(artifactsDir, spec.title, "png"),
@@ -550,14 +579,16 @@ async function parseReport(reportPath: string, artifactsDir: string): Promise<Pa
               failureType: classifyFailure(truncatedError),
             });
           }
+
+          allTests.push({ title: spec.title, file, suite: suiteLabel, testType, status, durationMs, retried });
         }
       }
-      walkSuites(suite.suites as typeof report.suites);
+      walkSuites(suite.suites as typeof report.suites, file, titleParts);
     }
   }
 
   walkSuites(report.suites);
-  return { total: passed + failed + skipped, passed, failed, flaky, skipped, failedTests };
+  return { total: passed + failed + skipped, passed, failed, flaky, skipped, failedTests, allTests };
 }
 
 function locateArtifact(dir: string, title: string, ext: string): string | null {
@@ -581,22 +612,39 @@ async function writePlaywrightConfig(
   config: TestExecutorConfig,
   testType: "ui" | "api" | "both"
 ): Promise<void> {
-  // testMatch / testIgnore lines — filter spec files by type:
-  //   ui   → all *.spec.ts, excluding *.api.spec.ts
-  //   api  → only *.api.spec.ts
-  //   both → all *.spec.ts (default — no extra lines needed)
-  const testFilterLines =
-    testType === "ui"
-      ? `  testIgnore: ["**/*.api.spec.ts"],`
-      : testType === "api"
-        ? `  testMatch: ["**/*.api.spec.ts"],`
-        : "";
+  // Project configuration:
+  //   ui   → UI specs in 3 browsers (Chromium / Firefox / WebKit); API specs excluded
+  //   api  → API specs in Chromium only; no UI specs
+  //   both → UI specs in 3 browsers + API specs in Chromium only (project-level split)
+  let topLevelFilter = "";
+  let projectsBlock = "";
+
+  if (testType === "ui") {
+    topLevelFilter = `\n  testIgnore: ["**/*.api.spec.ts"],`;
+    projectsBlock = `
+  projects: [
+    { name: "chromium", use: { browserName: "chromium" } },
+  ],`;
+  } else if (testType === "api") {
+    topLevelFilter = `\n  testMatch: ["**/*.api.spec.ts"],`;
+    projectsBlock = `
+  projects: [
+    { name: "api", use: { browserName: "chromium" } },
+  ],`;
+  } else {
+    // both: UI in Chromium only (CI), API in Chromium only
+    projectsBlock = `
+  projects: [
+    { name: "chromium-ui", testIgnore: ["**/*.api.spec.ts"], use: { browserName: "chromium" } },
+    { name: "api",         testMatch:  ["**/*.api.spec.ts"], use: { browserName: "chromium" } },
+  ],`;
+  }
 
   const content = `// Auto-generated by AGT-06 — deleted after run
 const { defineConfig } = require("@playwright/test");
 module.exports = defineConfig({
   testDir: ${JSON.stringify(path.resolve(specDir))},
-  outputDir: ${JSON.stringify(outputDir)},${testFilterLines ? `\n  ${testFilterLines.trim()}` : ""}
+  outputDir: ${JSON.stringify(outputDir)},${topLevelFilter}
   use: {
     baseURL: ${JSON.stringify(config.baseURL)},
     headless: ${config.headless ?? true},
@@ -610,7 +658,7 @@ module.exports = defineConfig({
   workers: ${MAX_WORKERS},
   timeout: ${TEST_TIMEOUT_MS},
   maxFailures: ${MAX_FAILURES},
-  reporter: [["json", { outputFile: ${JSON.stringify(path.join(outputDir, "results.json"))} }], ["line"]],
+  reporter: [["json", { outputFile: ${JSON.stringify(path.join(outputDir, "results.json"))} }], ["line"]],${projectsBlock}
 });
 `;
   await fs.writeFile(configPath, content, "utf-8");
