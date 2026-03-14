@@ -10,6 +10,8 @@
     "pipeline:from": "ts-node orchestrator/index.ts --from=",
     "pipeline:agent": "ts-node orchestrator/index.ts --agent=",
     "pipeline:local": "ELASTICSEARCH_URL=http://localhost:9200 ts-node orchestrator/index.ts",
+    "agent:playwright": "ts-node agents/04-playwright-engineer/cli.ts",
+    "mcp:server": "ts-node mcp/server.ts",
     "elastic:check": "node -e \"const h=process.env.ELASTICSEARCH_URL||'http://localhost:9200';require('https').get||require('http').get;const u=new URL(h+'/_cluster/health');const m=u.protocol==='https:'?require('https'):require('http');const r=m.request({hostname:u.hostname,port:u.port,path:u.pathname,auth:u.username+':'+u.password},res=>{let b='';res.on('data',d=>b+=d);res.on('end',()=>{console.log(JSON.parse(b));});});r.on('error',e=>{console.error('Unreachable:',e.message);process.exit(1);});r.end();\"",
     "kibana:setup": "node scripts/setup-kibana.js",
     "kibana:setup:azure": "KIBANA_URL=http://cbts-elastic-vm.eastus.cloudapp.azure.com:5601 KIBANA_PASS=cbtsreport2$ node scripts/setup-kibana.js",
@@ -23,6 +25,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@playwright/test": "^1.44.0",
     "axios": "^1.7.0",
     "dotenv": "^16.4.0",
@@ -46,7 +49,7 @@
     "jest": "^29.7.0",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=20.0.0"

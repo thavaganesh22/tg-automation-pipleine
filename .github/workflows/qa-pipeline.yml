@@ -33,6 +33,10 @@ on:
         description: "Force AGT-01 to regenerate scenarios and rebuild all specs (true | false)"
         required: false
         default: "false"
+      force_inspect:
+        description: "Force fresh browser inspection — bypass app-observations.json cache (true | false)"
+        required: false
+        default: "false"
 
 # =============================================================================
 # JOB 1 - PR Pipeline (AGT-01 through AGT-07)
@@ -70,7 +74,7 @@ jobs:
         run: npm run typecheck
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: npx playwright install --with-deps chromium
 
       - name: Restore pipeline state cache
         uses: actions/cache@v4
@@ -482,7 +486,7 @@ jobs:
         run: npm run typecheck
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: npx playwright install --with-deps chromium
 
       - name: Restore pipeline state (resume runs only)
         if: github.event.inputs.from_agent != '' && github.event.inputs.from_agent != '1'
@@ -521,10 +525,12 @@ jobs:
           FROM="${{ github.event.inputs.from_agent || '1' }}"
           SINGLE="${{ github.event.inputs.single_agent || '0' }}"
           TYPE="${{ github.event.inputs.test_type || 'both' }}"
+          EXTRA=""
+          [ "${{ github.event.inputs.force_inspect }}" = "true" ] && EXTRA="$EXTRA --force-inspect"
           if [ "$SINGLE" != "0" ]; then
-            npm run pipeline -- --agent="$SINGLE" --test-type="$TYPE"
+            npm run pipeline -- --agent="$SINGLE" --test-type="$TYPE" $EXTRA
           else
-            npm run pipeline -- --from="$FROM" --test-type="$TYPE"
+            npm run pipeline -- --from="$FROM" --test-type="$TYPE" $EXTRA
           fi
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

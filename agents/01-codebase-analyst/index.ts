@@ -21,7 +21,8 @@ import { execSync } from "child_process";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { z } from "zod";
-import { v4 as uuidv4 } from "uuid";
+import { deterministicId } from "../../orchestrator/ids";
+import type { EnhancedAppStructure } from "../../shared/types";
 
 const client = new Anthropic();
 
@@ -134,7 +135,8 @@ const SECRET_PATTERNS = [
  */
 export async function runCodebaseAnalyst(
   repoPath: string,
-  testType?: TestType
+  testType?: TestType,
+  appObservations?: EnhancedAppStructure | null
 ): Promise<Scenario[]> {
   await fs.access(repoPath);
 
@@ -172,7 +174,8 @@ export async function runCodebaseAnalyst(
       prContext,
       effectiveTestType,
       i,
-      codebaseChunks.length
+      codebaseChunks.length,
+      appObservations ?? null
     );
     regressionScenarios.push(...s);
   }
@@ -374,7 +377,8 @@ async function analyseForRegression(
   prContext: PRContext,
   testType: TestType,
   chunkIndex: number,
-  totalChunks: number
+  totalChunks: number,
+  appObservations: EnhancedAppStructure | null
 ): Promise<Scenario[]> {
   const filesSummary = Object.entries(files)
     .map(([p, c]) => `### ${p}\n${c}`)
@@ -396,8 +400,9 @@ async function analyseForRegression(
   For each major module include: 1 UI + 1 API scenario minimum.`;
 
   const response = await client.messages.create({
-    model: "claude-opus-4-6",
+    model: "claude-sonnet-4-6",
     max_tokens: 8096,
+    temperature: 0,
     system: `You are a senior QA architect building a regression test suite for a full-stack application.
 Codebase chunk ${chunkIndex + 1} of ${totalChunks}.
 
@@ -431,7 +436,7 @@ Schema (every field required):
     messages: [
       {
         role: "user",
-        content: `Source files — generate up to ${MAX_REGRESSION_SCENARIOS_PER_CHUNK} regression scenarios (raw JSON array only, no code fences):\n\n${filesSummary}`,
+        content: `Source files — generate up to ${MAX_REGRESSION_SCENARIOS_PER_CHUNK} regression scenarios (raw JSON array only, no code fences):\n\n${filesSummary}${appObservations ? `\n\nLIVE APP FEATURES (discovered from running app):\n  Selectors: ${appObservations.discoveredSelectors.slice(0, 30).join(", ")}\n  Table columns: ${appObservations.observations.tableColumns.join(", ")}\n  Form fields: ${Object.keys(appObservations.formBehavior.fieldsWithDefaults).join(", ")}\n  API endpoints observed: GET /api/employees, GET /api/health, POST /api/employees, DELETE /api/employees/:id\n  Route behavior: ${Object.entries(appObservations.routeBehavior).map(([k, v]) => `${k} → ${v}`).join(", ")}` : ""}`,
       },
     ],
   });
@@ -514,7 +519,7 @@ function parseScenarios(
         testType: inferTestType(obj),
         userJourneys: toStringArray(obj["userJourneys"]),
         apiEndpoints: toStringArray(obj["apiEndpoints"]),
-        id: uuidv4(),
+        id: deterministicId(`agt01::${scope}::${String(obj["module"] ?? "unknown").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")}::${String(obj["title"] ?? "")}`),
         jiraTicket: prContext.jiraTicket,
         prNumber: prContext.prNumber,
         changedFiles:

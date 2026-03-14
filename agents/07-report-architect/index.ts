@@ -400,6 +400,7 @@ async function generateInsights(
   const response = await client.messages.create({
     model: "claude-sonnet-4-6",
     max_tokens: 1024,
+    temperature: 0,
     system: `You are a QA analytics expert writing a stakeholder report.
 Write a concise summary (max 3 paragraphs).
 Focus on: trends, top flaky tests, and actionable recommendations.

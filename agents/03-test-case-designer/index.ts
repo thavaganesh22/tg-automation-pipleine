@@ -24,10 +24,13 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { v4 as uuidv4 } from "uuid";
+import { deterministicId } from "../../orchestrator/ids";
 import type { ValidatedScenario } from "../02-jira-validator";
 
 const client = new Anthropic();
+
+const API_TIMEOUT_MS = 120_000; // 2 min per LLM call — prevents indefinite hangs
+const MAX_RETRIES = 2;          // retry once on timeout
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -52,7 +55,7 @@ export const TestCaseSchema = z.object({
   steps: z.array(TestStepSchema).min(1).max(20),
   expectedOutcome: z.string().min(1),
   requiresPII: z.boolean(),
-  tags: z.array(z.string()),
+  tags: z.array(z.string()).default([]),
 });
 
 export type TestCase = z.infer<typeof TestCaseSchema>;
@@ -166,13 +169,13 @@ async function generateCases(
   const titlePrefix = isUI ? "[UI]" : "[API]";
   const exampleAction = isUI
     ? "Navigate to / and click the Add Employee button"
-    : "Send POST /api/employees with JSON body: {firstName, email, department}";
+    : "Send POST /api/employees with complete JSON body (all required fields: firstName, lastName, email, designation, department, employmentType, employmentStatus, startDate, address)";
   const exampleResult = isUI
     ? "Employee drawer opens and all form fields are visible and interactive"
-    : "Response 201 with JSON body containing id, firstName, email fields";
+    : "Response 201 with JSON body containing _id, firstName, email fields";
   const exampleData = isUI
     ? "selector: [data-testid=add-employee-btn]"
-    : '{"firstName":"Test","email":"test@test.com","department":"Engineering"}';
+    : '{"firstName":"Test","lastName":"User","email":"test@test.com","designation":"Engineer","department":"Engineering","employmentType":"Full-Time","employmentStatus":"Active","startDate":"2024-01-15","address":{"street":"123 Test St","city":"Test City","country":"United States"}}';
 
   // Scope-specific context block
   const scopeContext =
@@ -184,9 +187,10 @@ Acceptance Criteria: ${scenario.jiraAcceptanceCriteria ?? "N/A"}
 JIRA Description: ${scenario.jiraDescription ?? "N/A"}
 Alignment: ${scenario.alignmentSummary}`;
 
-  const response = await client.messages.create({
-    model: "claude-opus-4-6",
+  const response = await callWithRetry(() => client.messages.create({
+    model: "claude-sonnet-4-6",
     max_tokens: 8096,
+    temperature: 0,
     system: `You are a senior QA engineer writing ${scenario.testType.toUpperCase()} test cases for a web application.
 
 ${typeInstruction}
@@ -199,6 +203,16 @@ MANDATORY RULES:
 5. Flag requiresPII: true if any step involves personal data (names, emails, phone, SSN)
 6. THIS APP HAS NO AUTHENTICATION — do NOT generate any test case involving 401, 403, login, logout, tokens, sessions, or authorization headers. All endpoints are publicly accessible.
 7. Return ONLY a valid JSON array — no markdown, no explanation text
+8. NEVER hardcode specific employee names in steps (e.g. do NOT write "search for John Doe" or "click the row for Alice Smith").
+   Instead write generically: "retrieve the first employee ID from the API" or "create a test employee with a unique email".
+   Search tests must describe searching for the FIRST employee's actual name (obtained programmatically), not a hardcoded name.
+9. For steps that CREATE an employee: always note that the email must be unique (e.g. append a timestamp suffix like test+<timestamp>@example.com) to avoid DUPLICATE_EMAIL 409 errors on repeated runs.
+10. For steps that create an employee and then interact with it in the UI: include a step to SEARCH/FILTER for that employee by name BEFORE clicking its row, so it is visible on page 1 regardless of total employee count (pagination).
+11. TEST DATA ISOLATION — critical for parallel-safe tests:
+    - READ-ONLY tests (view list, search, filter, open drawer to view): use the existing seeded data via getFirstEmployeeId(). Do NOT create or delete employees in these tests.
+    - WRITE tests (edit employee fields, delete employee, confirm deletion): MUST create a dedicated test employee at the start of the test and delete it in a cleanup step. NEVER use a seeded employee for a destructive or mutating operation — modifying seeded data breaks other tests running in parallel.
+    - Preconditions for write tests should say: "Create a dedicated test employee via API before the test; delete it after."
+    - Preconditions for read-only tests should say: "Application is running with seeded employees."
 
 Schema per test case:
 {
@@ -243,9 +257,39 @@ ${caseScope === "new-feature" ? `JIRA Story: ${scenario.jiraSummary}\nChanged Fi
 Generate up to ${maxCases} test cases. ${isUI ? "Focus only on browser/UI behaviour." : "Focus only on HTTP/API behaviour."}`,
       },
     ],
-  });
+  }), `${scenario.testType}/${scenario.module}`);
 
   return parseCases((response.content[0] as { text: string }).text, scenario, caseScope);
+}
+
+// ── API Call with Timeout + Retry ──────────────────────────────────────────
+
+async function callWithRetry<T>(
+  fn: () => Promise<T>,
+  label: string
+): Promise<T> {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await Promise.race([
+        fn(),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`[AGT-03] API call timed out after ${API_TIMEOUT_MS / 1000}s for ${label}`)),
+            API_TIMEOUT_MS
+          )
+        ),
+      ]);
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (attempt < MAX_RETRIES) {
+        console.warn(`  [AGT-03] Attempt ${attempt}/${MAX_RETRIES} failed for ${label}: ${msg.slice(0, 100)} — retrying...`);
+        await new Promise((r) => setTimeout(r, 3_000)); // brief pause before retry
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw new Error(`[AGT-03] All ${MAX_RETRIES} attempts failed for ${label}`);
 }
 
 // ── Parsing helpers ────────────────────────────────────────────────────────
@@ -314,7 +358,7 @@ function parseCases(
 
       const tc = TestCaseSchema.parse({
         ...obj,
-        id: uuidv4(),
+        id: deterministicId(`agt03::${scenario.id}::${String(obj["title"] ?? "")}`),
         scenarioId: scenario.id,
         jiraRef: scenario.jiraRef ?? null,
         title: String(obj["title"] ?? "Untitled test case"),

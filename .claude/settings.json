@@ -1,0 +1,15 @@
+{
+  "mcpServers": [
+    {
+      "playwright": {
+        "command": "npx",
+        "args": ["@anthropic-ai/mcp-playwright"]
+      }
+    },
+    {
+      "type": "url",
+      "url": "https://mcp.github.com/sse",
+      "name": "github-mcp"
+    }
+  ]
+}

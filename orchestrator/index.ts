@@ -11,6 +11,8 @@ import type { CoverageReport } from "../agents/05-coverage-auditor";
 import { runTestExecutor } from "../agents/06-test-executor";
 import type { ExecutionResult } from "../agents/06-test-executor";
 import { runReportArchitect } from "../agents/07-report-architect";
+import { getCachedOrInspect } from "../shared/browser-cache";
+import type { EnhancedAppStructure } from "../shared/types";
 import { loadConfig } from "./config";
 import { PipelineLogger } from "./logger";
 import { PipelineStateManager } from "./state";
@@ -35,10 +37,32 @@ async function main(): Promise<void> {
   const regenScenarios =
     args.some((a: string) => a === "--regen" || a === "--regen-scenarios") ||
     process.env.REGEN_SCENARIOS === "true";
+  const forceInspect = args.some((a: string) => a === "--force-inspect");
 
   log.banner();
   const config = await loadConfig();
   const state = new PipelineStateManager();
+
+  // ── Browser Inspection (shared across all agents) ────────────────────────
+  // Run once before AGT-01 so all agents get verified app observations.
+  // Falls back to null if the app is unreachable — agents proceed gracefully.
+  let appObservations: EnhancedAppStructure | null = null;
+  try {
+    const baseUrl = config.stagingUrl;
+    log.info(`Inspecting live app at ${baseUrl}...`);
+    appObservations = await getCachedOrInspect(baseUrl, forceInspect);
+    if (appObservations) {
+      log.info(
+        `App inspection: ${appObservations.discoveredSelectors.length} selectors | ` +
+        `${Object.keys(appObservations.formBehavior.fieldsWithDefaults).length} form defaults | ` +
+        `${Object.keys(appObservations.apiSchemas.listShape ?? {}).length > 0 ? "API schemas captured" : "no API schemas"}`
+      );
+    } else {
+      log.warn("App inspection returned no results — agents will use hardcoded fallbacks");
+    }
+  } catch (err) {
+    log.warn(`App inspection failed: ${(err as Error).message.slice(0, 100)} — proceeding without observations`);
+  }
 
   // ── AGENT 01: Codebase Analysis (PR-triggered) ───────────────────────────
   if (shouldRun(1, fromAgent, singleAgent)) {
@@ -62,7 +86,7 @@ async function main(): Promise<void> {
       }
 
       log.info(`Test type: ${testType}`);
-      const scenarios = await runCodebaseAnalyst(config.repoPath, testType);
+      const scenarios = await runCodebaseAnalyst(config.repoPath, testType, appObservations);
       await state.save("scenarios", scenarios);
       log.done(`Generated ${scenarios.length} regression scenarios (${testType})`);
     }
@@ -88,7 +112,7 @@ async function main(): Promise<void> {
     // AGT-02 fetches the specific story identified in the PR (TGDEMO-xxxxx)
     // and validates that the code changes actually match the story description
     // and acceptance criteria. Throws on FAIL verdict — blocks the pipeline.
-    const validatedScenarios = await runJiraValidator(scenarios, config.jira);
+    const validatedScenarios = await runJiraValidator(scenarios, config.jira, appObservations);
     await state.save("validated-scenarios", validatedScenarios);
 
     const mismatches = validatedScenarios.filter((s) => s.coverageStatus === "MISMATCH");
@@ -215,8 +239,8 @@ async function main(): Promise<void> {
     log.phase(4, "AGT-04", "Playwright Test Generation");
     const testCases = await state.load<TestCase[]>("test-cases");
     const apiSpecs = await loadApiSpecs(config.openApiPath);
-    await runPlaywrightEngineer(testCases, apiSpecs);
-    log.done("Playwright specs, POMs, and fixtures written to playwright-tests/");
+    const agt04 = await runPlaywrightEngineer(testCases, apiSpecs, { appObservations });
+    log.done(`Playwright specs, POMs, and fixtures written to ${agt04.outputDir}/ (${agt04.filesWritten.length} files)`);
     if (singleAgent === 4) {
       log.complete("Single-agent run complete");
       return;
@@ -246,7 +270,8 @@ async function main(): Promise<void> {
       const apiSpecs = await loadApiSpecs(config.openApiPath);
       const gapCaseIds = new Set(coverageReport.gapCases.map((g) => g.testCaseId));
       const gapTestCases = testCases.filter((tc) => gapCaseIds.has(tc.id));
-      await runPlaywrightEngineer(gapTestCases, apiSpecs, { remediationMode: true });
+      await runPlaywrightEngineer(gapTestCases, apiSpecs, { remediationMode: true, appObservations });
+
 
       log.info("Re-checking coverage after remediation…");
       coverageReport = await runCoverageAuditor(testCases, "playwright-tests/specs", config.guardrails);
@@ -276,7 +301,8 @@ async function main(): Promise<void> {
       baseURL: config.stagingUrl,
       headless: true,
       testType,
-      autoHeal: true,
+      autoHeal: process.env.AUTO_HEAL_ENABLED === "true",
+      appObservations,
     });
     await state.save("execution-result", executionResult);
     const passRate =

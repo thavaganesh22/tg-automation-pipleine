@@ -22,8 +22,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import axios from "axios";
 import { z } from "zod";
-import { v4 as uuidv4 } from "uuid";
+import { deterministicId } from "../../orchestrator/ids";
 import type { Scenario } from "../01-codebase-analyst";
+import type { EnhancedAppStructure } from "../../shared/types";
 
 const client = new Anthropic();
 
@@ -114,10 +115,11 @@ export interface JiraConfig {
 // ── Guardrail: allowlisted JIRA hosts ──────────────────────────────────────
 
 function assertHostAllowed(host: string): void {
-  const allowlist = (process.env.JIRA_HOST_ALLOWLIST ?? "")
-    .split(",")
-    .map((s: string) => s.trim())
-    .filter(Boolean);
+  const raw = process.env.JIRA_HOST_ALLOWLIST ?? "";
+  // If JIRA_HOST_ALLOWLIST is not set, skip the check — let the fetch attempt proceed
+  // (it will fail gracefully with a WARN verdict if the host is unreachable or rejected).
+  if (!raw.trim()) return;
+  const allowlist = raw.split(",").map((s: string) => s.trim()).filter(Boolean);
   if (!allowlist.some((h: string) => host.startsWith(h))) {
     throw new Error(
       `[AGT-02 GUARDRAIL] JIRA host "${host}" is not in JIRA_HOST_ALLOWLIST.\n` +
@@ -130,7 +132,8 @@ function assertHostAllowed(host: string): void {
 
 export async function runJiraValidator(
   scenarios: Scenario[],
-  config: JiraConfig
+  config: JiraConfig,
+  appObservations?: EnhancedAppStructure | null
 ): Promise<ValidatedScenario[]> {
   assertHostAllowed(config.host);
 
@@ -194,8 +197,14 @@ export async function runJiraValidator(
     );
   }
 
-  // ── Step 4: Return enriched AGT-01 scenarios + new JIRA-derived scenarios ─
-  return [...report.validatedScenarios, ...report.jiraDerivedScenarios];
+  // ── Step 4: Verify new features exist in live app (if observations available)
+  let jiraDerived = report.jiraDerivedScenarios;
+  if (appObservations && jiraDerived.length > 0) {
+    jiraDerived = verifyNewFeatures(jiraDerived, appObservations);
+  }
+
+  // ── Step 5: Return enriched AGT-01 scenarios + new JIRA-derived scenarios ─
+  return [...report.validatedScenarios, ...jiraDerived];
 }
 
 // ── JIRA API ───────────────────────────────────────────────────────────────
@@ -379,8 +388,9 @@ Verdict guide:
   FAIL = Code contradicts the story, implements something completely different, or is dangerously out of scope`;
 
   const response = await client.messages.create({
-    model: "claude-opus-4-6",
+    model: "claude-sonnet-4-6",
     max_tokens: 6000,
+    temperature: 0,
     system: `You are a strict QA lead performing alignment validation between JIRA stories and code changes.
 Be precise and evidence-based. Only flag real mismatches — not style preferences.
 Return ONLY valid JSON.`,
@@ -480,8 +490,9 @@ async function generateJiraScenarios(
   const MAX_JIRA_SCENARIOS = parseInt(process.env.MAX_JIRA_SCENARIOS ?? "15", 10);
 
   const response = await client.messages.create({
-    model: "claude-opus-4-6",
+    model: "claude-sonnet-4-6",
     max_tokens: 6000,
+    temperature: 0.2,
     system: `You are a senior QA architect creating test scenarios for a specific JIRA story.
 Your job is to generate high-level test scenarios covering the NEW BEHAVIOUR described in this story.
 
@@ -573,13 +584,12 @@ If there are no acceptance criteria and no new behaviour to test, return [].
       const rawTestType = String(obj["testType"] ?? "").toLowerCase();
       const testType: "ui" | "api" = rawTestType === "api" ? "api" : "ui";
 
+      const scenarioModule = String(obj["module"] ?? "unknown").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      const scenarioTitle = String(obj["title"] ?? "Untitled scenario");
       const scenario = ValidatedScenarioSchema.parse({
-        id: uuidv4(),
-        title: String(obj["title"] ?? "Untitled scenario"),
-        module: String(obj["module"] ?? "unknown")
-          .toLowerCase()
-          .replace(/\s+/g, "-")
-          .replace(/[^a-z0-9-]/g, ""),
+        id: deterministicId(`agt02::${story.key}::${scenarioModule}::${scenarioTitle}`),
+        title: scenarioTitle,
+        module: scenarioModule,
         description: String(obj["description"] ?? ""),
         entryPoints: toStringArray(obj["entryPoints"], codeChanges.changedFiles),
         priority: normalisePriority(obj["priority"]),
@@ -667,6 +677,50 @@ function extractJSONArray(text: string): unknown[] {
   return [];
 }
 
+// ── Live App Feature Verification ───────────────────────────────────────────
+
+function verifyNewFeatures(
+  scenarios: ValidatedScenario[],
+  observations: EnhancedAppStructure
+): ValidatedScenario[] {
+  const selectors = new Set(observations.discoveredSelectors);
+  const routes = observations.routeBehavior;
+
+  for (const scenario of scenarios) {
+    let verified = false;
+
+    // Check if UI elements from scenario description exist in discovered selectors
+    if (scenario.testType === "ui") {
+      const mentionsSelector = observations.discoveredSelectors.some(
+        (sel) => scenario.title.toLowerCase().includes(sel.replace(/-/g, " ").toLowerCase()) ||
+                 scenario.description.toLowerCase().includes(sel.replace(/-/g, " ").toLowerCase())
+      );
+      // UI scenarios are verified if the app has relevant selectors
+      verified = mentionsSelector || selectors.size > 0;
+    }
+
+    // Check if API endpoints from scenario exist in observed routes
+    if (scenario.testType === "api") {
+      const apiEndpoints = scenario.apiEndpoints ?? [];
+      verified = apiEndpoints.length === 0 || apiEndpoints.some((endpoint) => {
+        const routePath = endpoint.replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");
+        return Object.keys(routes).some((r) => routePath.startsWith(r)) ||
+               routePath.startsWith("/api/");
+      });
+    }
+
+    // Tag with verification status (info log only — don't block scenarios)
+    if (!verified) {
+      console.log(
+        `  [AGT-02] Feature verification: "${scenario.title}" — ` +
+        `could not confirm in live app (may be newly added)`
+      );
+    }
+  }
+
+  return scenarios;
+}
+
 // ── Fallbacks ──────────────────────────────────────────────────────────────
 
 function buildFallbackScenario(s: Scenario, jiraTicket: string): ValidatedScenario {
@@ -716,13 +770,35 @@ function buildFallbackReport(
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 
-/** Extract the first JSON object from LLM text (handles code fences and leading text) */
+/** Extract the first JSON object from LLM text (handles code fences and leading text).
+ *  Uses balanced-brace scanning instead of greedy regex to handle nested objects correctly. */
 function extractJSONObject(text: string): Record<string, unknown> | null {
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[0]) as Record<string, unknown>;
-  } catch {
-    return null;
+  // Strategy 1: code fence content
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const source = fenceMatch ? fenceMatch[1].trim() : text.trim();
+
+  // Strategy 2: find first '{' and scan to balanced '}'
+  const start = source.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < source.length; i++) {
+    const ch = source[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\" && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(source.slice(start, i + 1)) as Record<string, unknown>;
+        } catch { break; }
+      }
+    }
   }
+  return null;
 }

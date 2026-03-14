@@ -20,7 +20,7 @@ export const CreateEmployeeSchema = z.object({
   employmentStatus: z.enum(EMPLOYMENT_STATUSES).default("Active"),
   startDate:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD"),
   address:          AddressSchema,
-  avatarUrl:        z.string().url().optional().default(""),
+  avatarUrl:        z.union([z.string().url(), z.literal("")]).optional().default(""),
 });
 
 export const UpdateEmployeeSchema = CreateEmployeeSchema.partial();
