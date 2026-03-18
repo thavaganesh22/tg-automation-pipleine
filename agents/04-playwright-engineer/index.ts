@@ -1698,6 +1698,20 @@ ${JSON.stringify(dedupedCases, null, 2)}`,
     newBlock = truncated;
   }
 
+  // Post-generation dedup: the LLM may produce test() names that differ from
+  // TestCase.title (adds field names, rephrases, etc.) which bypasses pre-generation
+  // dedup. Check the actual generated test() names against what's already in the spec.
+  const generatedTitles = extractExistingTestTitles(newBlock);
+  const titleConflicts  = [...generatedTitles].filter(
+    (t) => existingTitles.has(t) || existingNormTitles.has(normalizeTitle(t))
+  );
+  if (titleConflicts.length > 0) {
+    console.warn(
+      `  [AGT-04] [ui] Skipping append — ${titleConflicts.length} generated test title(s) already exist in spec (Playwright duplicate prevention).`
+    );
+    return;
+  }
+
   const merged = existing.trimEnd() + "\n\n" + newBlock.trim() + "\n";
   await fs.writeFile(specPath, merged, "utf-8");
   console.log(`  [AGT-04] [ui] Appended ${dedupedCases.length} gap tests → ${specPath}`);
@@ -1812,6 +1826,20 @@ ${JSON.stringify(dedupedCases, null, 2)}`,
       `[AGT-04 GUARDRAIL] ${module}.api.spec API merge block had unbalanced braces/parens — truncated.`
     );
     newBlock = truncated;
+  }
+
+  // Post-generation dedup: the LLM may produce test() names that differ from
+  // TestCase.title (adds field names, rephrases, etc.) which bypasses pre-generation
+  // dedup. Check the actual generated test() names against what's already in the spec.
+  const generatedTitles = extractExistingTestTitles(newBlock);
+  const titleConflicts  = [...generatedTitles].filter(
+    (t) => existingTitles.has(t) || existingNormTitles.has(normalizeTitle(t))
+  );
+  if (titleConflicts.length > 0) {
+    console.warn(
+      `  [AGT-04] [api] Skipping append — ${titleConflicts.length} generated test title(s) already exist in spec (Playwright duplicate prevention).`
+    );
+    return;
   }
 
   // Ensure existing file ends cleanly, then append the new describe block

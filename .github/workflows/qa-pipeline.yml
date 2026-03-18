@@ -215,8 +215,32 @@ jobs:
           # Not set on PR runs — AGT-01 through AGT-04 will use cached state when available
           REGEN_SCENARIOS: ""
 
-      - name: Commit updated baseline and generated specs
+      - name: Validate generated specs (no duplicate test titles)
         if: steps.pipeline.outcome == 'success' || steps.pipeline.outcome == 'failure'
+        id: spec-check
+        run: |
+          node -e "
+            const fs = require('fs');
+            const path = require('path');
+            const specDir = 'playwright-tests/specs';
+            if (!fs.existsSync(specDir)) { console.log('No specs dir — skipping'); process.exit(0); }
+            let clean = true;
+            for (const file of fs.readdirSync(specDir).filter(f => f.endsWith('.spec.ts'))) {
+              const content = fs.readFileSync(path.join(specDir, file), 'utf8');
+              const titles = [...content.matchAll(/test\s*\(\s*['\"\`](.*?)['\"\`]\s*,\s*async/g)].map(m => m[1]);
+              const seen = new Set(), dups = new Set();
+              for (const t of titles) { if (seen.has(t)) dups.add(t); seen.add(t); }
+              if (dups.size > 0) {
+                console.error('DUPLICATE TITLES in ' + file + ': ' + [...dups].slice(0,3).join(', '));
+                clean = false;
+              }
+            }
+            if (!clean) { console.error('Specs contain duplicate test titles — commit skipped.'); process.exit(1); }
+            console.log('All specs clean.');
+          "
+
+      - name: Commit updated baseline and generated specs
+        if: (steps.pipeline.outcome == 'success' || steps.pipeline.outcome == 'failure') && steps.spec-check.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
