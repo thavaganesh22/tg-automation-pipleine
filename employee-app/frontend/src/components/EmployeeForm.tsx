@@ -169,6 +169,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
                 value={form.phone} onChange={(e) => set("phone", e.target.value)}
                 placeholder="+1-416-555-0192"
               />
+              {err("phone")}
             </F>
             <F id="cellPhone" label="Cell Phone">
               <input
@@ -176,6 +177,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
                 value={form.cellPhone} onChange={(e) => set("cellPhone", e.target.value)}
                 placeholder="+1-416-555-0193"
               />
+              {err("cellPhone")}
             </F>
           </div>
         </div>
