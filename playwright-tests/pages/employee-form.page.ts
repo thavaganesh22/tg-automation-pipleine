@@ -31,6 +31,7 @@ export class EmployeeFormPage {
   private readonly phoneError = '[data-testid="phone-error"]';
   private readonly cellPhoneError = '[data-testid="cellPhone-error"]';
 
+  // Additional selectors
   constructor(page: Page) {
     this.page = page;
   }
@@ -405,5 +406,165 @@ export class EmployeeFormPage {
 
   async setViewportSize(width: number, height: number): Promise<void> {
     await this.page.setViewportSize({ width, height });
+  }
+
+  // --- Additional methods for new test cases ---
+
+  /**
+   * Checks whether a standalone label with the exact text exists in the drawer.
+   * "Standalone" means the label text is exactly the given string, not a substring
+   * of another label (e.g. 'Phone' should not match 'Work Phone' or 'Cell Phone').
+   */
+  async isStandaloneLabelPresentInDrawer(labelText: string): Promise<boolean> {
+    const labels = await this.getDrawerLabelTexts();
+    return labels.some(l => l.trim() === labelText);
+  }
+
+  /**
+   * Returns the count of phone-related labels in the drawer.
+   * A label is considered phone-related if it contains the word "Phone" (case-insensitive).
+   */
+  async getPhoneRelatedLabelCount(): Promise<number> {
+    const labels = await this.getDrawerLabelTexts();
+    return labels.filter(l => l.trim().toLowerCase().includes('phone')).length;
+  }
+
+  /**
+   * Returns all phone-related label texts found in the drawer.
+   */
+  async getPhoneRelatedLabels(): Promise<string[]> {
+    const labels = await this.getDrawerLabelTexts();
+    return labels.filter(l => l.trim().toLowerCase().includes('phone')).map(l => l.trim());
+  }
+
+  /**
+   * Clears the Cell Phone field and enters a new value.
+   */
+  async clearAndFillCellPhone(value: string): Promise<void> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    await this.page.locator(this.cellPhoneInput).clear();
+    await this.page.fill(this.cellPhoneInput, value);
+  }
+
+  /**
+   * Clears the Work Phone (phone) field and enters a new value.
+   */
+  async clearAndFillPhone(value: string): Promise<void> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    await this.page.locator(this.phoneInput).clear();
+    await this.page.fill(this.phoneInput, value);
+  }
+
+  /**
+   * Checks if the Cell Phone input field is interactive by clicking into it,
+   * typing a value, and verifying the value was accepted.
+   */
+  async isCellPhoneInputInteractive(testValue: string): Promise<boolean> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    await this.page.locator(this.cellPhoneInput).click();
+    await this.page.fill(this.cellPhoneInput, testValue);
+    const currentValue = await this.page.locator(this.cellPhoneInput).inputValue();
+    return currentValue === testValue;
+  }
+
+  /**
+   * Gets the first employee's data (firstName, lastName, phone, cellPhone) via API.
+   */
+  async getFirstEmployeeData(): Promise<{ firstName: string; lastName: string; phone: string; cellPhone: string }> {
+    const res = await this.page.request.get(`${this.baseUrl}/api/employees`);
+    const body = await res.json();
+    if (!body.data || body.data.length === 0) throw new Error('No employees found');
+    const emp = body.data[0] as { firstName: string; lastName: string; phone?: string; cellPhone?: string };
+    return {
+      firstName: emp.firstName,
+      lastName: emp.lastName,
+      phone: emp.phone ?? '',
+      cellPhone: emp.cellPhone ?? '',
+    };
+  }
+
+  /**
+   * Scrolls to the phone input within the drawer to ensure it's visible.
+   */
+  async scrollToPhoneInputInDrawer(): Promise<void> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'attached' });
+    await this.page.locator(this.phoneInput).scrollIntoViewIfNeeded();
+  }
+
+  /**
+   * Scrolls to the cell phone input within the drawer to ensure it's visible.
+   */
+  async scrollToCellPhoneInputInDrawer(): Promise<void> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'attached' });
+    await this.page.locator(this.cellPhoneInput).scrollIntoViewIfNeeded();
+  }
+
+  /**
+   * Checks if a label is fully visible (not clipped) at the current viewport size
+   * by scrolling to it first, then checking its bounding box fits within the viewport.
+   */
+  async isLabelFullyVisibleAfterScroll(labelText: string): Promise<boolean> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = this.page.locator(`${this.employeeDrawer} label`);
+    const count = await labels.count();
+    for (let i = 0; i < count; i++) {
+      const text = (await labels.nth(i).textContent() ?? '').trim();
+      if (text === labelText) {
+        await labels.nth(i).scrollIntoViewIfNeeded();
+        const box = await labels.nth(i).boundingBox();
+        if (!box) return false;
+        const viewport = this.page.viewportSize();
+        if (!viewport) return false;
+        return (
+          box.x >= 0 &&
+          box.y >= 0 &&
+          box.x + box.width <= viewport.width &&
+          box.y + box.height <= viewport.height
+        );
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Checks that no standalone 'Phone' label exists (i.e., no label whose trimmed text
+   * is exactly 'Phone'). Returns true if no such standalone label is found.
+   */
+  async isNoStandalonePhoneLabelPresent(): Promise<boolean> {
+    const labels = await this.getDrawerLabelTexts();
+    return !labels.some(l => l.trim() === 'Phone');
+  }
+
+  /**
+   * Fills all required fields plus optional phone fields for a complete employee form submission.
+   */
+  async fillCompleteForm(data: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    designation: string;
+    department: string;
+    employmentType: string;
+    street: string;
+    city: string;
+    country: string;
+    phone?: string;
+    cellPhone?: string;
+  }): Promise<void> {
+    await this.fillRequiredFields(data);
+    if (data.phone) {
+      await this.fillPhone(data.phone);
+    }
+    if (data.cellPhone) {
+      await this.fillCellPhone(data.cellPhone);
+    }
+  }
+
+  /**
+   * Waits for the loading row to disappear after a table refresh.
+   */
+  async waitForTableToLoad(): Promise<void> {
+    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
   }
 }
