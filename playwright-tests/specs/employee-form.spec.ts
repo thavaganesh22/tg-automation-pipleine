@@ -312,3 +312,267 @@ test.describe('employee-form — UI Gap Cases', () => {
     });
   });
 });
+
+test.describe('employee-form — UI Gap Cases', () => {
+  test.describe('positive', () => {
+    // TC-94215b3d-f8c1-5f59-6c1f-e12025da0947  SCOPE:new-feature
+    test("'Work Phone' label is displayed in the Add Employee form", async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+      await po.openAddEmployeeDrawer();
+      expect(await po.isDrawerVisible()).toBe(true);
+      expect(await po.isLabelVisibleInDrawer('Work Phone')).toBe(true);
+      expect(await po.isExactStandaloneLabelPresent('Phone')).toBe(false);
+    });
+
+    // TC-4bcc5421-980e-5c84-798f-d5004a85a429  SCOPE:new-feature
+    test("'Work Phone' label is displayed in the Edit Employee form", async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+      const id = await po.getFirstEmployeeId();
+      await po.clickEmployeeRow(id);
+      expect(await po.isDrawerVisible()).toBe(true);
+      expect(await po.isLabelVisibleInDrawer('Work Phone')).toBe(true);
+      expect(await po.isExactStandaloneLabelPresent('Phone')).toBe(false);
+    });
+
+    // TC-1507bc8e-c612-5275-c99d-36c344e252e2  SCOPE:new-feature
+    test("'Cell Phone' label is displayed in the Add Employee form", async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+      await po.openAddEmployeeDrawer();
+      expect(await po.isDrawerVisible()).toBe(true);
+      expect(await po.isLabelVisibleInDrawer('Cell Phone')).toBe(true);
+      expect(await po.isLabelVisibleInDrawer('Work Phone')).toBe(true);
+    });
+
+    // TC-bf533d55-f09d-54e0-8a0f-3b9140720941  SCOPE:new-feature
+    test('Work Phone field accepts and saves a valid phone number', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+      const uniqueEmail = `test.wp.${Date.now()}@test.com`;
+      const id = await po.createEmployee({
+        firstName: 'UITest',
+        lastName: 'WorkPhone',
+        email: uniqueEmail,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        employmentStatus: 'Active',
+        startDate: '2024-01-15',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' },
+        phone: '555-010-0001',
+      });
+      try {
+        await po.navigate();
+        await po.searchEmployees('UITest');
+        expect(await po.isEmployeeRowVisible(id)).toBe(true);
+        await po.clickEmployeeRow(id);
+        expect(await po.isDrawerVisible()).toBe(true);
+        const phoneValue = await po.getPhoneInputValue();
+        expect(phoneValue).toBe('555-010-0001');
+      } finally {
+        await po.deleteEmployee(id);
+      }
+    });
+
+    // TC-5fea515f-e0c2-5be1-3c58-3a28dc10def5  SCOPE:new-feature
+    test('Cell Phone field accepts and saves a valid phone number', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+      const uniqueEmail = `test.cp.${Date.now()}@test.com`;
+      const id = await po.createEmployee({
+        firstName: 'UITest',
+        lastName: 'CellPhone',
+        email: uniqueEmail,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        employmentStatus: 'Active',
+        startDate: '2024-01-15',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' },
+        cellPhone: '555-020-0002',
+      });
+      try {
+        await po.navigate();
+        await po.searchEmployees('UITest');
+        expect(await po.isEmployeeRowVisible(id)).toBe(true);
+        await po.clickEmployeeRow(id);
+        expect(await po.isDrawerVisible()).toBe(true);
+        const cellValue = await po.getCellPhoneInputValue();
+        expect(cellValue).toBe('555-020-0002');
+      } finally {
+        await po.deleteEmployee(id);
+      }
+    });
+
+    // TC-1454ef5d-8947-584f-df5a-1cd6c5e7bf19  SCOPE:new-feature
+    test('Editing an existing employee preserves Work Phone and Cell Phone values', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+      const uniqueEmail = `test.edit.${Date.now()}@test.com`;
+      const id = await po.createEmployee({
+        firstName: 'UITest',
+        lastName: 'EditPhones',
+        email: uniqueEmail,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        employmentStatus: 'Active',
+        startDate: '2024-01-15',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' },
+        phone: '555-050-0005',
+        cellPhone: '555-060-0006',
+      });
+      try {
+        await po.navigate();
+        await po.searchEmployees('UITest');
+        expect(await po.isEmployeeRowVisible(id)).toBe(true);
+        await po.clickEmployeeRow(id);
+        expect(await po.isDrawerVisible()).toBe(true);
+
+        // Verify initial values
+        expect(await po.getPhoneInputValue()).toBe('555-050-0005');
+        expect(await po.getCellPhoneInputValue()).toBe('555-060-0006');
+
+        // Update Work Phone only
+        await po.fillPhone('555-070-0007');
+        await po.submitEmployeeForm();
+        await po.waitForSuccessToast();
+        await po.waitForDrawerToClose();
+
+        // Reopen and verify
+        await po.searchEmployees('UITest');
+        expect(await po.isEmployeeRowVisible(id)).toBe(true);
+        await po.clickEmployeeRow(id);
+        expect(await po.isDrawerVisible()).toBe(true);
+        expect(await po.getPhoneInputValue()).toBe('555-070-0007');
+        expect(await po.getCellPhoneInputValue()).toBe('555-060-0006');
+      } finally {
+        await po.deleteEmployee(id);
+      }
+    });
+  });
+
+  test.describe('negative', () => {
+    // TC-013b62e0-7812-5b53-c60f-b6817a446afd  SCOPE:new-feature
+    test('Work Phone field is optional — form submits without it', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+      await po.openAddEmployeeDrawer();
+      const uniqueEmail = `test.nowork.${Date.now()}@test.com`;
+      await po.fillRequiredFields({
+        firstName: 'UITest',
+        lastName: 'NoWorkPhone',
+        email: uniqueEmail,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        street: '123 Test St',
+        city: 'Test City',
+        country: 'United States',
+      });
+      // Explicitly leave Work Phone empty — do not call fillPhone
+      await po.submitEmployeeForm();
+      await po.waitForSuccessToast();
+      await po.waitForDrawerToClose();
+
+      // Verify employee was created, then clean up
+      await po.searchEmployees('UITest');
+      const rowCount = await po.getEmployeeRowCount();
+      expect(rowCount).toBeGreaterThan(0);
+
+      // Find and delete the created employee
+      const createdId = await po.getFirstVisibleEmployeeId();
+      await po.deleteEmployee(createdId);
+    });
+
+    // TC-a1b01dea-0cb1-509e-dd70-b3d64aea15dd  SCOPE:new-feature
+    test('Cell Phone field is optional — form submits without it', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+      await po.openAddEmployeeDrawer();
+      const uniqueEmail = `test.nocell.${Date.now()}@test.com`;
+      await po.fillRequiredFields({
+        firstName: 'UITest',
+        lastName: 'NoCellPhone',
+        email: uniqueEmail,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        street: '123 Test St',
+        city: 'Test City',
+        country: 'United States',
+      });
+      // Explicitly leave Cell Phone empty — do not call fillCellPhone
+      await po.submitEmployeeForm();
+      await po.waitForSuccessToast();
+      await po.waitForDrawerToClose();
+
+      // Verify employee was created, then clean up
+      await po.searchEmployees('UITest');
+      const rowCount = await po.getEmployeeRowCount();
+      expect(rowCount).toBeGreaterThan(0);
+
+      const createdId = await po.getFirstVisibleEmployeeId();
+      await po.deleteEmployee(createdId);
+    });
+  });
+
+  test.describe('edge', () => {
+    // TC-ab03e324-324d-502f-fa28-5814bec36843  SCOPE:new-feature
+    test('Both Work Phone and Cell Phone can be populated simultaneously', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+      const uniqueEmail = `test.both.${Date.now()}@test.com`;
+      const id = await po.createEmployee({
+        firstName: 'UITest',
+        lastName: 'BothPhones',
+        email: uniqueEmail,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        employmentStatus: 'Active',
+        startDate: '2024-01-15',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' },
+        phone: '555-030-0003',
+        cellPhone: '555-040-0004',
+      });
+      try {
+        await po.navigate();
+        await po.searchEmployees('UITest');
+        expect(await po.isEmployeeRowVisible(id)).toBe(true);
+        await po.clickEmployeeRow(id);
+        expect(await po.isDrawerVisible()).toBe(true);
+        expect(await po.getPhoneInputValue()).toBe('555-030-0003');
+        expect(await po.getCellPhoneInputValue()).toBe('555-040-0004');
+      } finally {
+        await po.deleteEmployee(id);
+      }
+    });
+
+    // TC-bc0d08f3-df1a-5791-acf2-8074f9d19972  SCOPE:new-feature
+    test('Work Phone label is visible in the form at desktop and mobile viewports', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+
+      // Desktop viewport
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await po.navigate();
+      await po.openAddEmployeeDrawer();
+      expect(await po.isDrawerVisible()).toBe(true);
+      expect(await po.isLabelVisibleInDrawer('Work Phone')).toBe(true);
+      expect(await po.isPhoneInputVisible()).toBe(true);
+
+      // Close drawer
+      await page.locator('[data-testid="close-drawer-btn"]').click();
+      await po.waitForDrawerToClose();
+
+      // Mobile viewport
+      await page.setViewportSize({ width: 375, height: 667 });
+      await po.openAddEmployeeDrawer();
+      expect(await po.isDrawerVisible()).toBe(true);
+      expect(await po.isLabelVisibleInDrawer('Work Phone')).toBe(true);
+      expect(await po.isPhoneInputVisible()).toBe(true);
+    });
+  });
+});

@@ -24,6 +24,13 @@ export class EmployeeFormPage {
   private readonly submitBtn = '[data-testid="submit-btn"]';
   private readonly successToast = '[data-testid="success-toast"]';
 
+  // New selectors
+  private readonly startDateInput = '[data-testid="startDate-input"]';
+  private readonly closeDrawerBtn = '[data-testid="close-drawer-btn"]';
+  private readonly drawerError = '[data-testid="drawer-error"]';
+  private readonly phoneError = '[data-testid="phone-error"]';
+  private readonly cellPhoneError = '[data-testid="cellPhone-error"]';
+
   constructor(page: Page) {
     this.page = page;
   }
@@ -244,5 +251,159 @@ export class EmployeeFormPage {
 
   async waitForDrawerToClose(): Promise<void> {
     await this.page.locator(this.employeeDrawer).waitFor({ state: 'hidden', timeout: 10000 });
+  }
+
+  // --- New methods ---
+
+  async getFirstEmployeeName(): Promise<string> {
+    const res = await this.page.request.get(`${this.baseUrl}/api/employees`);
+    const body = await res.json();
+    if (!body.data || body.data.length === 0) throw new Error('No employees found');
+    const emp = body.data[0] as { firstName: string; lastName: string };
+    return `${emp.firstName} ${emp.lastName}`;
+  }
+
+  async closeDrawer(): Promise<void> {
+    await this.page.waitForSelector(this.closeDrawerBtn, { state: 'visible' });
+    await this.page.click(this.closeDrawerBtn);
+    await this.page.locator(this.employeeDrawer).waitFor({ state: 'hidden', timeout: 10000 });
+  }
+
+  async isPhoneErrorVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.phoneError, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async isCellPhoneErrorVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.cellPhoneError, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getVisibleErrorTexts(): Promise<string[]> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    return this.page.locator(`${this.employeeDrawer} [data-testid$="-error"]`).allTextContents();
+  }
+
+  async isPhoneInputInViewport(): Promise<boolean> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    return this.page.locator(this.phoneInput).isVisible();
+  }
+
+  async isLabelInViewportWithoutScroll(labelText: string): Promise<boolean> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = this.page.locator(`${this.employeeDrawer} label`);
+    const count = await labels.count();
+    for (let i = 0; i < count; i++) {
+      const text = (await labels.nth(i).textContent() ?? '').trim();
+      if (text === labelText) {
+        const box = await labels.nth(i).boundingBox();
+        if (!box) return false;
+        const viewport = this.page.viewportSize();
+        if (!viewport) return false;
+        return box.y >= 0 && box.y + box.height <= viewport.height;
+      }
+    }
+    return false;
+  }
+
+  async isLabelReachableByScrollingInDrawer(labelText: string): Promise<boolean> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = this.page.locator(`${this.employeeDrawer} label`);
+    const count = await labels.count();
+    for (let i = 0; i < count; i++) {
+      const text = (await labels.nth(i).textContent() ?? '').trim();
+      if (text === labelText) {
+        await labels.nth(i).scrollIntoViewIfNeeded();
+        return labels.nth(i).isVisible();
+      }
+    }
+    return false;
+  }
+
+  async fillStartDate(value: string): Promise<void> {
+    await this.page.waitForSelector(this.startDateInput, { state: 'visible' });
+    await this.page.fill(this.startDateInput, value);
+  }
+
+  async getStartDateInputValue(): Promise<string> {
+    await this.page.waitForSelector(this.startDateInput, { state: 'visible' });
+    return this.page.locator(this.startDateInput).inputValue();
+  }
+
+  async clearSearchInput(): Promise<void> {
+    const searchLoc = this.page.locator(this.searchInput);
+    await searchLoc.waitFor({ state: 'visible' });
+    await searchLoc.fill('');
+    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+  }
+
+  async getEmployeeNameFromRow(id: string): Promise<string> {
+    const rowSelector = `[data-testid="employee-row-${id}"]`;
+    await this.page.waitForSelector(rowSelector, { state: 'visible' });
+    const nameCell = this.page.locator(`${rowSelector} [data-testid="employee-name"]`);
+    await nameCell.waitFor({ state: 'visible' });
+    return (await nameCell.textContent() ?? '').trim();
+  }
+
+  async getEmployeeEmailFromRow(id: string): Promise<string> {
+    const rowSelector = `[data-testid="employee-row-${id}"]`;
+    await this.page.waitForSelector(rowSelector, { state: 'visible' });
+    const emailCell = this.page.locator(`${rowSelector} [data-testid="employee-email"]`);
+    await emailCell.waitFor({ state: 'visible' });
+    return (await emailCell.textContent() ?? '').trim();
+  }
+
+  async getEmployeeDepartmentFromRow(id: string): Promise<string> {
+    const rowSelector = `[data-testid="employee-row-${id}"]`;
+    await this.page.waitForSelector(rowSelector, { state: 'visible' });
+    const deptCell = this.page.locator(`${rowSelector} [data-testid="employee-department"]`);
+    await deptCell.waitFor({ state: 'visible' });
+    return (await deptCell.textContent() ?? '').trim();
+  }
+
+  async isDrawerErrorVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.drawerError, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getDrawerErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.drawerError, { state: 'visible' });
+    return (await this.page.locator(this.drawerError).textContent() ?? '').trim();
+  }
+
+  async isSuccessToastVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.successToast, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getSuccessToastText(): Promise<string> {
+    await this.page.waitForSelector(this.successToast, { state: 'visible', timeout: 15000 });
+    return (await this.page.locator(this.successToast).textContent() ?? '').trim();
+  }
+
+  async hasAnyVisibleErrorContaining(text: string): Promise<boolean> {
+    const errors = await this.getVisibleErrorTexts();
+    return errors.some(e => e.toLowerCase().includes(text.toLowerCase()));
+  }
+
+  async setViewportSize(width: number, height: number): Promise<void> {
+    await this.page.setViewportSize({ width, height });
   }
 }
