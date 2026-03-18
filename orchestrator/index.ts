@@ -38,6 +38,14 @@ async function main(): Promise<void> {
     args.some((a: string) => a === "--regen" || a === "--regen-scenarios") ||
     process.env.REGEN_SCENARIOS === "true";
   const forceInspect = args.some((a: string) => a === "--force-inspect");
+  // --add-regression allows new regression modules to be added to the baseline.
+  // Without this flag the baseline is treated as frozen — new modules detected by
+  // AGT-01 are silently skipped so the pipeline never expands regression scope
+  // without an explicit opt-in. Set ADD_REGRESSION=true as env fallback for CI
+  // override if ever needed.
+  const addRegression =
+    args.some((a: string) => a === "--add-regression") ||
+    process.env.ADD_REGRESSION === "true";
 
   log.banner();
   const config = await loadConfig();
@@ -146,21 +154,59 @@ async function main(): Promise<void> {
       const baselineCases = await state.load<TestCase[]>("regression-baseline");
       log.info(`Loaded ${baselineCases.length} regression test cases from baseline (UUIDs preserved)`);
 
+      // Shared normaliser — collapses casing/delimiter drift for dedup comparisons.
+      // "Employee List" | "employee-list" | "employee_list" → "employee list"
+      const normModule = (m: string) =>
+        m.toLowerCase().replace(/[-_\s]+/g, " ").trim();
+
       const regressionScenarios = validatedScenarios.filter((s) => s.scenarioScope === "regression");
-      const newFeatureScenarios = validatedScenarios.filter((s) => s.scenarioScope === "new-feature");
 
-      // Only generate new regression cases for modules not already in the baseline
-      const baselineModules = new Set(baselineCases.map((tc) => tc.module));
+      // Dedup new-feature scenarios within this run by normalised title — prevents
+      // the LLM generating near-identical scenarios for the same JIRA story.
+      const rawNewFeatureScenarios = validatedScenarios.filter((s) => s.scenarioScope === "new-feature");
+      const seenNFTitles = new Set<string>();
+      const newFeatureScenarios = rawNewFeatureScenarios.filter((s) => {
+        const key = normModule(s.title);
+        if (seenNFTitles.has(key)) return false;
+        seenNFTitles.add(key);
+        return true;
+      });
+      if (newFeatureScenarios.length < rawNewFeatureScenarios.length) {
+        log.info(
+          `New-feature dedup: ${rawNewFeatureScenarios.length - newFeatureScenarios.length} duplicate scenario(s) removed within this run`
+        );
+      }
+
+      // Only generate new regression cases for modules not already in the baseline.
+      // Normalise module names before comparison to avoid duplicates from LLM casing/
+      // delimiter drift (e.g. "Employee List" vs "employee-list" vs "employee_list").
+      const baselineModules = new Set(baselineCases.map((tc) => normModule(tc.module)));
       const newRegressionScenarios = regressionScenarios.filter(
-        (s) => !baselineModules.has(s.module)
+        (s) => !baselineModules.has(normModule(s.module))
       );
+      if (newRegressionScenarios.length < regressionScenarios.length) {
+        log.info(
+          `Module dedup: ${regressionScenarios.length - newRegressionScenarios.length} regression scenario(s) skipped — modules already in baseline`
+        );
+      }
 
-      const scenariosToProcess = [...newRegressionScenarios, ...newFeatureScenarios];
+      // Gate new regression module generation behind --add-regression flag.
+      // Without it, new modules detected by AGT-01 are skipped — the baseline
+      // is frozen and only new-feature scenarios from JIRA are processed.
+      const allowedRegressionScenarios = addRegression ? newRegressionScenarios : [];
+      if (!addRegression && newRegressionScenarios.length > 0) {
+        log.info(
+          `Skipping ${newRegressionScenarios.length} new regression module(s) — ` +
+          `baseline is frozen. Run with --add-regression to expand regression scope.`
+        );
+      }
+
+      const scenariosToProcess = [...allowedRegressionScenarios, ...newFeatureScenarios];
       let freshCases: TestCase[] = [];
 
       if (scenariosToProcess.length > 0) {
         log.info(
-          `Generating test cases for ${newRegressionScenarios.length} new regression module(s) + ` +
+          `Generating test cases for ${allowedRegressionScenarios.length} new regression module(s) + ` +
             `${newFeatureScenarios.length} new-feature scenario(s)`
         );
         freshCases = await runTestCaseDesigner(scenariosToProcess);
@@ -168,7 +214,7 @@ async function main(): Promise<void> {
         log.info("No new modules or new-feature scenarios — using baseline as-is");
       }
 
-      // Additive baseline update: append new regression cases for new modules
+      // Additive baseline update: append new regression cases only when --add-regression was passed
       const freshRegression = freshCases.filter((tc) => tc.caseScope === "regression");
       if (freshRegression.length > 0) {
         const updatedBaseline = [...baselineCases, ...freshRegression];
@@ -208,6 +254,18 @@ async function main(): Promise<void> {
       if (reusedCount > 0) {
         log.info(
           `UUID stabilised: ${reusedCount}/${stableNewFeature.length} new-feature case(s) reused IDs from previous run`
+        );
+      }
+
+      // ── Stage new-feature cases for promotion on PR merge ────────────────
+      // New-feature cases are NOT promoted here — promotion happens when the PR
+      // is merged to main (push trigger in CI). Save them to pending-promotion.json
+      // so the post-merge job can read them and add to the regression baseline.
+      if (stableNewFeature.length > 0) {
+        await state.save("pending-promotion", stableNewFeature);
+        log.info(
+          `Staged ${stableNewFeature.length} new-feature case(s) in pending-promotion.json ` +
+          `— will be promoted to regression baseline when this PR merges`
         );
       }
 

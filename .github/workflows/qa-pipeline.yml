@@ -12,6 +12,9 @@ on:
     types: [opened, synchronize, reopened]
     branches: [main, develop]
 
+  push:
+    branches: [main]
+
   # schedule:
   # - cron: "0 2 * * *"
 
@@ -35,6 +38,10 @@ on:
         default: "false"
       force_inspect:
         description: "Force fresh browser inspection — bypass app-observations.json cache (true | false)"
+        required: false
+        default: "false"
+      add_regression:
+        description: "Allow new regression modules to be added to the baseline (true | false)"
         required: false
         default: "false"
 
@@ -213,11 +220,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add pipeline-state/regression-baseline.json || true
+          git add pipeline-state/pending-promotion.json || true
           git add playwright-tests/specs/ || true
           git add playwright-tests/pages/ || true
           git add playwright-tests/fixtures/ || true
           git diff --cached --quiet || git commit -m "chore: update regression baseline and generated specs [skip ci]"
-          git push || true
+          git push origin HEAD:${{ github.head_ref }} || true
 
       - name: Save pipeline state cache
         if: always()
@@ -527,6 +535,7 @@ jobs:
           TYPE="${{ github.event.inputs.test_type || 'both' }}"
           EXTRA=""
           [ "${{ github.event.inputs.force_inspect }}" = "true" ] && EXTRA="$EXTRA --force-inspect"
+          [ "${{ github.event.inputs.add_regression }}" = "true" ] && EXTRA="$EXTRA --add-regression"
           if [ "$SINGLE" != "0" ]; then
             npm run pipeline -- --agent="$SINGLE" --test-type="$TYPE" $EXTRA
           else
@@ -566,7 +575,7 @@ jobs:
           git add playwright-tests/pages/ || true
           git add playwright-tests/fixtures/ || true
           git diff --cached --quiet || git commit -m "chore: update regression baseline and generated specs [skip ci]"
-          git push || true
+          git push origin HEAD:${{ github.ref_name }} || true
 
       - name: Stop employee-app
         if: always()
@@ -627,3 +636,67 @@ jobs:
           else
             echo "No execution results found - pipeline may not have reached AGT-06" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # =============================================================================
+  # JOB 3 - Promote new-feature cases to regression on PR merge
+  # Runs only on push to main (i.e. when a PR is merged).
+  # Reads pending-promotion.json committed by the PR pipeline and merges those
+  # test cases (with caseScope changed to "regression") into regression-baseline.json.
+  # =============================================================================
+
+  promote-on-merge:
+    name: "Promote new-feature cases to regression baseline"
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Promote pending new-feature cases to regression
+        run: |
+          PENDING="pipeline-state/pending-promotion.json"
+          BASELINE="pipeline-state/regression-baseline.json"
+
+          if [ ! -f "$PENDING" ]; then
+            echo "No pending-promotion.json found — nothing to promote."
+            exit 0
+          fi
+
+          node -e "
+            const fs = require('fs');
+            const pending  = JSON.parse(fs.readFileSync('$PENDING',  'utf8'));
+            const baseline = fs.existsSync('$BASELINE')
+              ? JSON.parse(fs.readFileSync('$BASELINE', 'utf8'))
+              : [];
+
+            const baselineIds = new Set(baseline.map(tc => tc.id));
+            const toPromote   = pending.filter(tc => !baselineIds.has(tc.id));
+
+            if (toPromote.length === 0) {
+              console.log('All pending cases already in baseline — nothing to promote.');
+              process.exit(0);
+            }
+
+            const promoted = toPromote.map(tc => ({ ...tc, caseScope: 'regression' }));
+            const updated  = [...baseline, ...promoted];
+            fs.writeFileSync('$BASELINE', JSON.stringify(updated, null, 2));
+            console.log('Promoted ' + promoted.length + ' case(s) to regression baseline (total: ' + updated.length + ')');
+          "
+
+          rm -f "$PENDING"
+
+      - name: Commit promoted baseline
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pipeline-state/regression-baseline.json || true
+          git rm --cached pipeline-state/pending-promotion.json 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "chore: promote new-feature cases to regression baseline [skip ci]"
+          git push origin HEAD:main || true

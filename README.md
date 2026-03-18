@@ -194,9 +194,32 @@ REGEN_SCENARIOS=true npm run pipeline
 regen_scenarios: true
 ```
 
+### Regression baseline — frozen by default
+
+The regression baseline (`pipeline-state/regression-baseline.json`) is **frozen by default**. New regression modules detected by AGT-01 are skipped unless you explicitly opt in:
+
+```bash
+# Add new regression modules to the baseline (local)
+npm run pipeline:add-regression
+
+# GitHub Actions — workflow_dispatch input
+add_regression: true
+```
+
+This prevents the pipeline from silently expanding regression scope on every PR run.
+
 ### New-feature scenarios (AGT-02)
 
 AGT-02 always runs. It reads the PR's changed files and JIRA story acceptance criteria to generate **new-feature scenarios** specific to this PR. These flow into AGT-03 and AGT-04, which append the new tests to existing spec files without touching the committed regression coverage.
+
+New-feature scenarios are deduplicated within each run (normalised title comparison) to prevent the LLM generating near-identical scenarios for the same JIRA story.
+
+### Promoting new-feature tests to regression
+
+New-feature test cases are **not** automatically promoted to regression during a PR run. They are staged in `pipeline-state/pending-promotion.json` and promoted only when the PR is merged:
+
+- **In CI**: The `promote-on-merge` job fires on `push` to `main`, reads `pending-promotion.json`, and appends those cases (with `caseScope: "regression"`) to `regression-baseline.json`.
+- **Locally**: Run `npm run promote` after a successful pipeline run, then commit the updated baseline before opening your PR.
 
 ### How this prevents spec regeneration bugs
 
@@ -354,6 +377,15 @@ npm run pipeline -- --agent=4
 # Force AGT-01 to regenerate regression scenarios
 npm run pipeline -- --regen-scenarios
 
+# Run pipeline and allow new regression modules to be added to the baseline
+npm run pipeline:add-regression
+
+# Promote staged new-feature cases to regression baseline (run locally before merging)
+npm run promote
+
+# Update CLAUDE.md and README.md from current source files
+npm run update-docs
+
 # Run only the Playwright specs (skip all AI agents)
 npm run test:specs
 ```
@@ -380,7 +412,7 @@ If no ticket is found, AGT-01 warns but continues. Regression analysis still run
 
 ## CI/CD
 
-The workflow (`.github/workflows/qa-pipeline.yml`) defines two jobs.
+The workflow (`.github/workflows/qa-pipeline.yml`) defines three jobs.
 
 ### Job 1: `pr-pipeline` — Pull Request Gate
 
@@ -412,9 +444,15 @@ Triggered on every PR open/update targeting `main` or `develop`. Timeout: 60 min
 | Duration         | 127s                       |
 ```
 
+After the pipeline completes, the bot commits `regression-baseline.json`, `pending-promotion.json`, and generated specs back to the PR branch using `git push origin HEAD:${{ github.head_ref }}` with a `[skip ci]` message to prevent a commit loop.
+
 ### Job 2: `full-pipeline` — Manual Dispatch
 
 Triggered via `workflow_dispatch`. Supports pipeline resume and scenario regeneration.
+
+### Job 3: `promote-on-merge` — Regression Promotion
+
+Triggered on `push` to `main` (i.e. when a PR is merged). Reads `pipeline-state/pending-promotion.json` left by the PR pipeline, promotes those new-feature test cases to `regression-baseline.json` (changing `caseScope` to `"regression"`), removes `pending-promotion.json`, and commits to main with `[skip ci]`.
 
 **Manual dispatch inputs:**
 
@@ -424,6 +462,8 @@ Triggered via `workflow_dispatch`. Supports pipeline resume and scenario regener
 | `single_agent` | `0` | Run only this agent (0 = run all) |
 | `test_type` | `both` | `ui` \| `api` \| `both` |
 | `regen_scenarios` | `false` | Force AGT-01 to regenerate regression scenarios and rebuild all specs |
+| `add_regression` | `false` | Allow new regression modules to be added to the baseline |
+| `force_inspect` | `false` | Force fresh browser inspection — bypass app-observations.json cache |
 
 ### Infrastructure in CI
 
@@ -524,7 +564,9 @@ bash infra/azure/vm-setup.sh
 ├── test-results/                AGT-06 artifacts: screenshots, traces, videos
 ├── reports/                     AGT-07 HTML dashboards
 ├── scripts/
-│   └── setup-kibana.js          One-time setup: ES indices + Kibana data views + dashboard
+│   ├── setup-kibana.js          One-time setup: ES indices + Kibana data views + dashboard
+│   ├── promote-to-regression.js Promote pending new-feature cases to regression baseline locally
+│   └── update-docs.js           Update CLAUDE.md + README.md from source files via Claude API
 ├── employee-app/                Target application (MongoDB + Express + React)
 ├── infra/azure/                 Azure VM provisioning (Elastic Stack)
 ├── docker-compose.yml           App (mongodb/backend/frontend) + ES + Kibana + kibana-setup
@@ -541,7 +583,8 @@ bash infra/azure/vm-setup.sh
 pipeline-state/
 ├── scenarios.json              AGT-01 → AGT-02  (regression; cached; skipped if exists)
 ├── validated-scenarios.json    AGT-02 → AGT-03  (+ alignmentVerdict, jiraRef, new-feature scenarios)
-├── regression-baseline.json    AGT-03           (stable UUIDs; additive across runs)
+├── regression-baseline.json    AGT-03           (stable UUIDs; frozen by default; --add-regression to expand)
+├── pending-promotion.json      AGT-03           (new-feature cases staged for regression promotion on PR merge)
 ├── test-cases.json             AGT-03 → AGT-04  (testType on every case)
 ├── coverage-report.json        AGT-05 → AGT-07  (overall + ui + api breakdowns)
 ├── execution-result.json       AGT-06 → AGT-07  (includes healAttempted, healedSpecs, scriptErrors, appErrors)

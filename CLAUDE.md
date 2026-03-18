@@ -23,6 +23,9 @@ npm run pipeline -- --regen-scenarios
 # Force fresh browser inspection (bypass app-observations.json cache)
 npm run pipeline -- --force-inspect
 
+# Run pipeline AND allow new regression modules to be added to the baseline
+npm run pipeline:add-regression
+
 # Run pipeline with local Elasticsearch (localhost:9200)
 npm run pipeline:local
 
@@ -55,6 +58,12 @@ npm install-all
 # Check Elasticsearch cluster health
 npm run elastic:check
 
+# Promote staged new-feature cases to regression baseline (run after pipeline, before merging)
+npm run promote
+
+# Update CLAUDE.md and README.md from current source files (run after significant changes)
+npm run update-docs
+
 # One-time Kibana setup (creates ES indices, data views, visualizations, dashboard)
 npm run kibana:setup           # local docker-compose stack
 npm run kibana:setup:azure     # Azure VM (CI environment)
@@ -72,7 +81,7 @@ This is a 7-agent LLM pipeline (powered by Claude via `@anthropic-ai/sdk`) that 
 |---|-----------|------|
 | AGT-01 | `agents/01-codebase-analyst/` | Walks `REPO_PATH`, generates `Scenario[]` tagged `regression` and `testType: ui\|api`. No new-feature scenarios — those come from AGT-02. |
 | AGT-02 | `agents/02-jira-validator/` | Fetches JIRA story, validates PR alignment (PASS/WARN/FAIL verdict), and generates new-feature `Scenario[]` from acceptance criteria + code changes. FAIL verdict blocks the pipeline. |
-| AGT-03 | `agents/03-test-case-designer/` | Converts scenarios to `TestCase[]` with UUIDs; uses `deterministicId()` (SHA1-based, `orchestrator/ids.ts`) for stable IDs across runs; maintains `regression-baseline.json`. |
+| AGT-03 | `agents/03-test-case-designer/` | Converts scenarios to `TestCase[]` with UUIDs; uses `deterministicId()` (SHA1-based, `orchestrator/ids.ts`) for stable IDs across runs; maintains `regression-baseline.json`. Baseline is frozen by default — new regression modules only added with `--add-regression`. Stages new-feature cases to `pending-promotion.json` for promotion on PR merge. |
 | AGT-04 | `agents/04-playwright-engineer/` | Uses observations from `shared/browser-inspector.ts` (`EnhancedAppStructure`) to generate observation-driven prompts with verified selectors, form defaults, API schemas, and dropdown options. Writes POM (`pages/`), fixtures (`fixtures/`), and spec files (`specs/`) to `playwright-tests/`. Also available as standalone CLI via `agents/04-playwright-engineer/cli.ts`. |
 | AGT-05 | `agents/05-coverage-auditor/` | Checks spec files for `// TC-<uuid>` coverage comments; triggers AGT-04 remediation if below threshold; blocks pipeline if still below after remediation. |
 | AGT-06 | `agents/06-test-executor/` | Runs Playwright tests against the staging URL; collects per-test `AllTestResult[]` for per-test ES indexing; auto-heals script errors via LLM. |
@@ -87,6 +96,7 @@ Key state files:
 - `validated-scenarios.json` — AGT-02 output (regression + new-feature scenarios with JIRA enrichment)
 - `test-cases.json` — AGT-03 output (combined regression + new-feature test cases)
 - `regression-baseline.json` — stable regression test cases across runs (committed to repo)
+- `pending-promotion.json` — new-feature cases staged for promotion to regression on PR merge (committed to PR branch by bot; consumed by `promote-on-merge` CI job or `npm run promote` locally)
 - `coverage-report.json` — AGT-05 output
 - `execution-result.json` — AGT-06 output
 - `traceability-matrix.json` — test case → spec file mapping (AGT-05 output)
@@ -155,15 +165,23 @@ Important guardrail env vars (all have defaults):
 - `MAX_CASES_PER_SCENARIO=10`, `MAX_JIRA_SCENARIOS=15`
 - `MAX_FILES_SCAN=1000` — codebase scan limit for AGT-01
 - `TEST_TYPE=both|ui|api` — override test type filter via env (also set by `--test-type` flag)
+- `ADD_REGRESSION=true` — allow new regression modules to be added to the baseline (default: false; use `--add-regression` flag or `npm run pipeline:add-regression`)
 
 ## CI/CD
 
-`.github/workflows/qa-pipeline.yml` runs the full 7-agent pipeline on every PR to `main`/`develop`. The PR check only passes after AGT-07 completes. The workflow:
+`.github/workflows/qa-pipeline.yml` defines three jobs:
+
+**Job 1 — `pr-pipeline`**: Runs on every PR to `main`/`develop`. The PR check only passes after AGT-07 completes.
 1. Starts `employee-app` via `docker compose`
 2. Restores `pipeline-state/` from cache (so regression specs aren't rebuilt from scratch)
 3. Runs `npm run pipeline`
-4. Posts a structured QA report as a PR comment
-5. Fails the check if the pipeline exits non-zero
+4. Commits updated `regression-baseline.json`, `pending-promotion.json`, and generated specs back to the PR branch (`git push origin HEAD:${{ github.head_ref }}`) with `[skip ci]` to prevent loop
+5. Posts a structured QA report as a PR comment
+6. Fails the check if the pipeline exits non-zero
+
+**Job 2 — `full-pipeline`**: Runs on `workflow_dispatch`. Supports `--from`, `--agent`, `--test-type`, `--regen-scenarios`, `--force-inspect`, and `--add-regression` inputs.
+
+**Job 3 — `promote-on-merge`**: Runs on `push` to `main` (i.e. when a PR is merged). Reads `pending-promotion.json`, promotes new-feature cases to `regression-baseline.json` with `caseScope: "regression"`, deletes `pending-promotion.json`, and commits to main with `[skip ci]`.
 
 **CI browser strategy**: AGT-06 generates its own `playwright.config.ts` at runtime — Chromium only for both UI and API tests. The root `playwright.config.ts` is for local dev only (UI: Chromium + Firefox + WebKit; API: Chromium only).
 
