@@ -950,12 +950,20 @@ STRICT PAGE OBJECT MODEL RULES — follow every rule exactly:
         await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
         await this.page.waitForSelector('[data-testid^="employee-row-"]', { timeout: 10000 }).catch(() => {});
    b. getFirstEmployeeId(): Promise<string>
-      — Uses page.request.get GET /api/employees, extracts first employee ID
+      — Uses page.request.get GET /api/employees, extracts first employee ID from UNFILTERED list
       — CRITICAL: response shape is { data: Employee[], pagination: {...} }
         The array is at response.data NOT response (response itself is an object)
         CORRECT:   const body = await res.json(); return body.data[0]._id as string;
         INCORRECT: const body = await res.json(); return body[0]._id as string;  // WRONG
       — throws if no employees found (data array is empty)
+      — WARNING: NEVER call this after searchEmployees() — it ignores the search filter and returns
+        the wrong employee. Use getFirstVisibleEmployeeId() instead after any search.
+   b2. getFirstVisibleEmployeeId(): Promise<string>
+      — Reads the first visible [data-testid^="employee-row-"] element from the DOM
+      — Use this after searchEmployees() to get the ID of the filtered result:
+          await po.searchEmployees('UITest');
+          const id = await po.getFirstVisibleEmployeeId(); // correct: reads filtered DOM
+      — Implementation: locator('[data-testid^="employee-row-"]').first(), getAttribute('data-testid'), strip 'employee-row-' prefix
    c. createEmployee(payload: { firstName: string; lastName: string; email: string; designation: string; department: string; employmentType: string; employmentStatus: string; startDate: string; address: { street: string; city: string; country: string } }): Promise<string>
       — page.request.post POST /api/employees with ALL required fields, returns created._id
       — REQUIRED fields: firstName, lastName, email, designation, department, employmentType, employmentStatus, startDate (YYYY-MM-DD), address (object with street, city, country)
@@ -1274,6 +1282,12 @@ RULES — follow every rule exactly:
         }
    h. Tests that DELETE an employee must first create one using the pattern from rule (g).
       NEVER call getFirstEmployeeId() in a test that will delete the employee — use createEmployee() instead.
+   h2. Tests that CREATE an employee via the UI form (not createEmployee()):
+      After form submission, you do NOT have the ID. To get it:
+        await po.searchEmployees('UITest');          // filter by the name you used
+        const id = await po.getFirstVisibleEmployeeId(); // reads from filtered DOM — CORRECT
+      NEVER use getFirstEmployeeId() after a searchEmployees() call — it queries the unfiltered API
+      and returns the wrong employee (e.g. a seeded employee, not the one just created via the form).
    i. After any action that triggers an API call (submit, delete, save), always call a POM wait method
       before asserting — e.g. waitForSuccessToast(), waitForConfirmDialogHidden(), waitForDrawerClose().
       NEVER assert immediately after a click without waiting for the async response first.

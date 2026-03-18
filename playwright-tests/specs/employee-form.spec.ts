@@ -275,8 +275,8 @@ test.describe('employee-form — UI Gap Cases', () => {
       const count = await po.getEmployeeRowCount();
       expect(count).toBeGreaterThan(0);
 
-      // Clean up: get the first employee ID from search results (our created one)
-      const id = await po.getFirstEmployeeId();
+      // Clean up: use visible DOM row (search is filtered to 'UITest') not unfiltered API
+      const id = await po.getFirstVisibleEmployeeId();
       try {
         expect(await po.isEmployeeRowVisible(id)).toBe(true);
       } finally {

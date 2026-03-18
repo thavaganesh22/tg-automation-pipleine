@@ -42,6 +42,14 @@ export class EmployeeFormPage {
     return body.data[0]._id as string;
   }
 
+  async getFirstVisibleEmployeeId(): Promise<string> {
+    const row = this.page.locator('[data-testid^="employee-row-"]').first();
+    await row.waitFor({ state: 'visible', timeout: 10000 });
+    const testId = await row.getAttribute('data-testid');
+    if (!testId) throw new Error('No visible employee row found');
+    return testId.replace('employee-row-', '');
+  }
+
   async createEmployee(payload: { firstName: string; lastName: string; email: string; designation: string; department: string; employmentType: string; employmentStatus: string; startDate: string; address: { street: string; city: string; country: string }; phone?: string; cellPhone?: string }): Promise<string> {
     const res = await this.page.request.post(`${this.baseUrl}/api/employees`, {
       data: payload,
