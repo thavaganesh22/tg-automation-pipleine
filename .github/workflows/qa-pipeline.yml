@@ -262,26 +262,6 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: update regression baseline and generated specs [skip ci]"
           git push origin HEAD:${{ github.head_ref }} || true
 
-      - name: Update docs if agent/orchestrator files changed
-        if: steps.pipeline.outcome == 'success'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          PR_CHANGED_FILES: ${{ env.PR_CHANGED_FILES }}
-        run: |
-          # Only run if agent, orchestrator, or shared files were touched
-          if echo "$PR_CHANGED_FILES" | grep -qE '^(agents/|orchestrator/|shared/|scripts/|\.env\.example)'; then
-            echo "Agent/orchestrator files changed — updating docs..."
-            node scripts/update-docs.js
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git fetch origin ${{ github.head_ref }}
-            git checkout ${{ github.head_ref }}
-            git add CLAUDE.md README.md
-            git diff --cached --quiet || git commit -m "docs: auto-update CLAUDE.md and README.md [skip ci]"
-            git push origin HEAD:${{ github.head_ref }} || true
-          else
-            echo "No agent/orchestrator changes — skipping doc update."
-          fi
 
       - name: Save pipeline state cache
         if: always()
