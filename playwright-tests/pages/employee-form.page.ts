@@ -25,7 +25,10 @@ export class EmployeeFormPage {
   private readonly countryInput = '[data-testid="country-input"]';
   private readonly submitBtn = '[data-testid="submit-btn"]';
   private readonly successToast = '[data-testid="success-toast"]';
-
+  private readonly cancelBtn = '[data-testid="cancel-btn"]';
+  private readonly phoneError = '[data-testid="phone-error"]';
+  private readonly cellPhoneError = '[data-testid="cellPhone-error"]';
+  private readonly employeeName = '[data-testid="employee-name"]';
   constructor(page: Page) {
     this.page = page;
   }
@@ -268,5 +271,127 @@ export class EmployeeFormPage {
     await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
     const labels = await this.page.locator(`${this.employeeDrawer} label`).allTextContents();
     return labels.filter(l => l.trim() === text).length;
+  }
+
+  async isDrawerHidden(): Promise<boolean> {
+    try {
+      await this.page.locator(this.employeeDrawer).waitFor({ state: 'hidden', timeout: 5000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async clickCancelButton(): Promise<void> {
+    await this.page.waitForSelector(this.cancelBtn, { state: 'visible' });
+    await this.page.click(this.cancelBtn);
+    await this.page.locator(this.employeeDrawer).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  }
+
+  async hasLabelWithExactText(text: string): Promise<boolean> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = await this.page.locator(`${this.employeeDrawer} label`).allTextContents();
+    return labels.some(l => l.trim() === text);
+  }
+
+  async hasStandaloneLabelPhone(): Promise<boolean> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = await this.page.locator(`${this.employeeDrawer} label`).allTextContents();
+    return labels.some(l => l.trim() === 'Phone');
+  }
+
+  async isCellPhoneErrorVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.cellPhoneError, { state: 'visible', timeout: 5000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getCellPhoneErrorText(): Promise<string | null> {
+    try {
+      await this.page.waitForSelector(this.cellPhoneError, { state: 'visible', timeout: 5000 });
+      return this.page.locator(this.cellPhoneError).textContent();
+    } catch {
+      return null;
+    }
+  }
+
+  async isPhoneErrorVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.phoneError, { state: 'visible', timeout: 5000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getPhoneErrorText(): Promise<string | null> {
+    try {
+      await this.page.waitForSelector(this.phoneError, { state: 'visible', timeout: 5000 });
+      return this.page.locator(this.phoneError).textContent();
+    } catch {
+      return null;
+    }
+  }
+
+  async getCellPhoneInputMaxLength(): Promise<number | null> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    const val = await this.page.locator(this.cellPhoneInput).getAttribute('maxlength');
+    return val !== null ? parseInt(val, 10) : null;
+  }
+
+  async getFirstEmployeeRowId(): Promise<string | null> {
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    const firstRow = this.page.locator('[data-testid^="employee-row-"]').first();
+    try {
+      await firstRow.waitFor({ state: 'visible', timeout: 5000 });
+      const testId = await firstRow.getAttribute('data-testid');
+      if (testId) {
+        return testId.replace('employee-row-', '');
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async clickFirstEmployeeRow(): Promise<void> {
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+    const firstRow = this.page.locator('[data-testid^="employee-row-"]').first();
+    await firstRow.waitFor({ state: 'visible', timeout: 5000 });
+    await firstRow.click();
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+  }
+
+  async waitForDrawerHidden(): Promise<void> {
+    await this.page.locator(this.employeeDrawer).waitFor({ state: 'hidden', timeout: 5000 });
+  }
+
+  async isSuccessToastVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.successToast, { state: 'visible', timeout: 15000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getEmployeeNameFromRow(id: string): Promise<string | null> {
+    const rowSelector = `[data-testid="employee-row-${id}"]`;
+    await this.page.waitForSelector(rowSelector, { state: 'visible', timeout: 5000 });
+    return this.page.locator(`${rowSelector} ${this.employeeName}`).textContent();
+  }
+
+  async focusCellPhoneInput(): Promise<void> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    await this.page.locator(this.cellPhoneInput).focus();
+  }
+
+  async getInputValueLength(testId: string): Promise<number> {
+    await this.page.waitForSelector(`[data-testid="${testId}"]`, { state: 'visible' });
+    const value = await this.page.locator(`[data-testid="${testId}"]`).inputValue();
+    return value.length;
   }
 }

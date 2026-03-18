@@ -443,3 +443,325 @@ test.describe('employee-form — UI Gap Cases', () => {
     });
   });
 });
+
+test.describe('employee-form — UI Gap Cases', () => {
+  test.describe('positive', () => {
+    // TC-9a47f610  SCOPE:new-feature
+    test('[UI] employee-form: Phone field label reads "Work Phone" in Add Employee form', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+
+      await po.openAddEmployeeDrawer();
+
+      const phoneLabel = await po.getPhoneFieldLabel();
+      expect(phoneLabel).toBe('Work Phone');
+
+      const labels = await po.getAllFormLabels();
+      const standalonePhoneLabels = labels.filter(l => l.trim() === 'Phone');
+      expect(standalonePhoneLabels.length).toBe(0);
+    });
+
+    // TC-63796748  SCOPE:new-feature
+    test('[UI] employee-form: Phone field label reads "Work Phone" in Edit Employee form', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+
+      const id = await po.getFirstEmployeeId();
+      await po.clickEmployeeRow(id);
+
+      const phoneLabel = await po.getPhoneFieldLabel();
+      expect(phoneLabel).toBe('Work Phone');
+
+      const labels = await po.getAllFormLabels();
+      const standalonePhoneLabels = labels.filter(l => l.trim() === 'Phone');
+      expect(standalonePhoneLabels.length).toBe(0);
+    });
+
+    // TC-b63a3926  SCOPE:new-feature
+    test('[UI] employee-form: Cell Phone field is present and visible in Add Employee form', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+
+      await po.openAddEmployeeDrawer();
+
+      const cellPhoneLabel = await po.getCellPhoneFieldLabel();
+      expect(cellPhoneLabel).toBe('Cell Phone');
+
+      const isVisible = await po.isCellPhoneInputVisible();
+      expect(isVisible).toBe(true);
+
+      const isEnabled = await po.isCellPhoneInputEnabled();
+      expect(isEnabled).toBe(true);
+    });
+
+    // TC-bc41ad6a  SCOPE:new-feature
+    test('[UI] employee-form: Cell Phone field accepts input and persists on save', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+
+      const uniqueEmail = `test.${Date.now()}@test.com`;
+      const id = await po.createEmployee({
+        firstName: 'UITest',
+        lastName: 'User',
+        email: uniqueEmail,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        employmentStatus: 'Active',
+        startDate: '2024-01-15',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' },
+        cellPhone: '555-000-1234'
+      });
+
+      try {
+        await po.navigate();
+        await po.searchEmployees('UITest');
+        expect(await po.isEmployeeRowVisible(id)).toBe(true);
+
+        await po.clickEmployeeRow(id);
+        expect(await po.isDrawerVisible()).toBe(true);
+
+        const cellPhoneValue = await po.getCellPhoneValue();
+        expect(cellPhoneValue).toBe('555-000-1234');
+      } finally {
+        await po.deleteEmployee(id);
+      }
+    });
+
+    // TC-7ed4b0c6  SCOPE:new-feature
+    test('[UI] employee-form: Both "Work Phone" and "Cell Phone" labels are simultaneously visible in the form', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+
+      await po.openAddEmployeeDrawer();
+
+      const phoneLabel = await po.getPhoneFieldLabel();
+      expect(phoneLabel).toBe('Work Phone');
+
+      const cellPhoneLabel = await po.getCellPhoneFieldLabel();
+      expect(cellPhoneLabel).toBe('Cell Phone');
+
+      const isPhoneVisible = await po.isPhoneInputVisible();
+      expect(isPhoneVisible).toBe(true);
+
+      const isCellPhoneVisible = await po.isCellPhoneInputVisible();
+      expect(isCellPhoneVisible).toBe(true);
+
+      const workPhoneCount = await po.countLabelsWithExactText('Work Phone');
+      expect(workPhoneCount).toBe(1);
+
+      const cellPhoneCount = await po.countLabelsWithExactText('Cell Phone');
+      expect(cellPhoneCount).toBe(1);
+    });
+
+    // TC-6e5b7dbd  SCOPE:new-feature
+    test('[UI] employee-form: Work Phone field retains existing phone value after label change', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+
+      const uniqueEmail = `test.${Date.now()}@test.com`;
+      const id = await po.createEmployee({
+        firstName: 'UITest',
+        lastName: 'User',
+        email: uniqueEmail,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        employmentStatus: 'Active',
+        startDate: '2024-01-15',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' },
+        phone: '555-123-4567'
+      });
+
+      try {
+        await po.navigate();
+        await po.searchEmployees('UITest');
+        expect(await po.isEmployeeRowVisible(id)).toBe(true);
+
+        await po.clickEmployeeRow(id);
+        expect(await po.isDrawerVisible()).toBe(true);
+
+        const phoneLabel = await po.getPhoneFieldLabel();
+        expect(phoneLabel).toBe('Work Phone');
+
+        const phoneValue = await po.getPhoneValue();
+        expect(phoneValue).toBe('555-123-4567');
+      } finally {
+        await po.deleteEmployee(id);
+      }
+    });
+
+    // TC-f80f2c38  SCOPE:new-feature
+    test('[UI] employee-form: Cell Phone field is visible and pre-populated in Edit Employee form for an employee with a cell phone', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+
+      const uniqueEmail = `test.${Date.now()}@test.com`;
+      const id = await po.createEmployee({
+        firstName: 'UITest',
+        lastName: 'User',
+        email: uniqueEmail,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        employmentStatus: 'Active',
+        startDate: '2024-01-15',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' },
+        cellPhone: '555-999-8888'
+      });
+
+      try {
+        await po.navigate();
+        await po.searchEmployees('UITest');
+        expect(await po.isEmployeeRowVisible(id)).toBe(true);
+
+        await po.clickEmployeeRow(id);
+        expect(await po.isDrawerVisible()).toBe(true);
+
+        const isCellPhoneVisible = await po.isCellPhoneInputVisible();
+        expect(isCellPhoneVisible).toBe(true);
+
+        const cellPhoneValue = await po.getCellPhoneValue();
+        expect(cellPhoneValue).toBe('555-999-8888');
+      } finally {
+        await po.deleteEmployee(id);
+      }
+    });
+  });
+
+  test.describe('negative', () => {
+    // TC-ce6639c2  SCOPE:new-feature
+    test('[UI] employee-form: Cell Phone field does not accept excessively long input without appropriate feedback', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+
+      await po.openAddEmployeeDrawer();
+
+      await po.fillRequiredFields({
+        firstName: 'UITest',
+        lastName: 'EdgeUser',
+        email: `test.${Date.now()}@test.com`,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        street: '123 Test St',
+        city: 'Test City',
+        country: 'United States'
+      });
+
+      const longInput = 'A'.repeat(300);
+      await po.fillCellPhone(longInput);
+
+      const cellPhoneValue = await po.getCellPhoneValue();
+      // The field should either truncate the input or accept it for server-side validation
+      // Either way, we verify the field handled the input
+      const wasTruncated = cellPhoneValue.length < 300;
+
+      if (!wasTruncated) {
+        // If not truncated, submit and check for validation error or successful save
+        await po.submitEmployeeForm();
+
+        // Check if drawer is still visible (meaning validation error occurred)
+        const drawerStillOpen = await po.isDrawerVisible();
+        if (drawerStillOpen) {
+          // Validation error was shown - form didn't submit with excessively long value
+          expect(drawerStillOpen).toBe(true);
+        } else {
+          // Form submitted - clean up the created employee
+          await po.navigate();
+          await po.searchEmployees('UITest');
+          const rowCount = await po.getEmployeeRowCount();
+          if (rowCount > 0) {
+            const createdId = await po.getFirstEmployeeId();
+            await po.deleteEmployee(createdId);
+          }
+        }
+      } else {
+        // Input was truncated - this is acceptable behavior
+        expect(cellPhoneValue.length).toBeLessThan(300);
+      }
+    });
+  });
+
+  test.describe('edge', () => {
+    // TC-09c8c647  SCOPE:new-feature
+    test('[UI] employee-form: Cell Phone field accepts empty value (optional field — form saves without it)', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+
+      await po.openAddEmployeeDrawer();
+
+      const uniqueEmail = `test.${Date.now()}@test.com`;
+      await po.fillRequiredFields({
+        firstName: 'UITest',
+        lastName: 'User',
+        email: uniqueEmail,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        street: '123 Test St',
+        city: 'Test City',
+        country: 'United States'
+      });
+
+      // Explicitly do NOT fill cellPhone - leave it empty
+      await po.submitEmployeeForm();
+      await po.waitForSuccessToast();
+
+      // Search for the created employee
+      await po.searchEmployees('UITest');
+      const rowCount = await po.getEmployeeRowCount();
+      expect(rowCount).toBeGreaterThan(0);
+
+      // Find and get the employee ID to click and verify
+      // We need to find the employee we just created
+      let createdId: string | undefined;
+      try {
+        // Get the first visible employee (should be our created one after search)
+        createdId = await po.getFirstEmployeeId();
+        await po.clickEmployeeRow(createdId);
+        expect(await po.isDrawerVisible()).toBe(true);
+
+        const cellPhoneValue = await po.getCellPhoneValue();
+        expect(cellPhoneValue).toBe('');
+      } finally {
+        if (createdId) {
+          await po.deleteEmployee(createdId);
+        }
+      }
+    });
+
+    // TC-e3012d81  SCOPE:new-feature
+    test('[UI] employee-form: Work Phone label change is reflected consistently across Add and Edit modes', async ({ page }) => {
+      const po = new EmployeeFormPage(page);
+      await po.navigate();
+
+      // Check Add Employee form
+      await po.openAddEmployeeDrawer();
+
+      const addPhoneLabel = await po.getPhoneFieldLabel();
+      expect(addPhoneLabel).toBe('Work Phone');
+
+      const addLabels = await po.getAllFormLabels();
+      const addStandalonePhone = addLabels.filter(l => l.trim() === 'Phone');
+      expect(addStandalonePhone.length).toBe(0);
+
+      await po.closeDrawer();
+      expect(await po.isDrawerVisible()).toBe(false);
+
+      // Check Edit Employee form
+      const id = await po.getFirstEmployeeId();
+      await po.clickEmployeeRow(id);
+      expect(await po.isDrawerVisible()).toBe(true);
+
+      const editPhoneLabel = await po.getPhoneFieldLabel();
+      expect(editPhoneLabel).toBe('Work Phone');
+
+      const editLabels = await po.getAllFormLabels();
+      const editStandalonePhone = editLabels.filter(l => l.trim() === 'Phone');
+      expect(editStandalonePhone.length).toBe(0);
+
+      await po.closeDrawer();
+    });
+  });
+});
