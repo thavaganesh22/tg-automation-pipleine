@@ -24,11 +24,15 @@ export default defineConfig({
   reporter: [
     ["line"],
     ["html", { outputFolder: "playwright-report", open: "never" }],
+    ["./reporters/elasticsearch.ts"],
   ],
 
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
-    { name: "webkit", use: { ...devices["Desktop Safari"] } },
+    // UI tests — cross-browser (rendering matters)
+    { name: "chromium", use: { ...devices["Desktop Chrome"] },   testIgnore: ["**/*.api.spec.ts"] },
+    { name: "firefox",  use: { ...devices["Desktop Firefox"] },  testIgnore: ["**/*.api.spec.ts"] },
+    { name: "webkit",   use: { ...devices["Desktop Safari"] },   testIgnore: ["**/*.api.spec.ts"] },
+    // API tests — single browser (no rendering, HTTP only)
+    { name: "api",      use: { ...devices["Desktop Chrome"] },   testMatch:  ["**/*.api.spec.ts"] },
   ],
 });

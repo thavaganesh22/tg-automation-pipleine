@@ -1,104 +1,119 @@
-# 🤖 7-Agent Autonomous QA Pipeline
+# 7-Agent Autonomous QA Pipeline
 
-> A fully automated QA testing pipeline powered by Claude. Every Pull Request triggers all 7 agents — from codebase analysis to test execution and stakeholder reporting. The PR check only passes after AGT-07 (Report Architect) completes successfully.
+> A fully automated QA testing pipeline powered by Claude. Every Pull Request triggers all 7 agents — from codebase analysis to test execution and Kibana reporting. The PR check only passes after AGT-07 (Report Architect) completes successfully.
 
 ---
 
 ## Architecture
 
-### Pull Request Flow
-
-Every PR triggers the complete pipeline. All 7 agents run sequentially. The PR cannot be merged until AGT-07 finishes and all gates pass.
+### Pipeline flow
 
 ```
   Pull Request opened / updated
            │
            ▼
   ┌─────────────────┐
-  │     AGT-01      │  Extracts TGDEMO-xxxxx ticket from PR title or branch.
-  │  Codebase       │  Scans only the files changed in this PR.
-  │  Analyst        │  Generates PR-scoped test scenarios.
+  │     AGT-01      │  Scans the full codebase; generates REGRESSION scenarios.
+  │  Codebase       │  Scenario type controlled by --test-type flag:
+  │  Analyst        │    ui   → browser interaction scenarios only
+  │                 │    api  → HTTP endpoint scenarios only
+  │                 │    both → UI + API scenarios (default)
+  │                 │
+  │  SKIPPED if     │  ⚡ Skipped automatically when pipeline-state/scenarios.json
+  │  cached         │     already exists (use --regen-scenarios to force refresh).
   └────────┬────────┘
-           │  scenarios.json
+           │  scenarios.json  (regression only, tagged testType = "ui" | "api")
            ▼
   ┌─────────────────┐
   │     AGT-02      │  Fetches the JIRA story by ticket key.
-  │  JIRA Story     │  Deep code-vs-story alignment analysis:
-  │  Validator      │    • Does code implement the story description?
-  │                 │    • Are acceptance criteria addressed?
-  │                 │    • Any scope creep or missing requirements?
+  │  JIRA Story     │  Deep code-vs-story alignment analysis.
+  │  Validator      │  Also generates new-feature UI + API scenarios from the
+  │                 │    JIRA acceptance criteria + changed file context.
+  │  ALWAYS runs    │  Always runs — this is what generates new tests for each PR.
   └────────┬────────┘  ❌ FAIL verdict → pipeline halts, PR blocked
-           │  validated-scenarios.json
+           │  validated-scenarios.json  (regression + new-feature, all typed)
            ▼
   ┌─────────────────┐
-  │     AGT-03      │  Expands scenarios into detailed step-by-step
-  │  Test Case      │  test cases with positive and negative variants.
-  │  Designer       │  Max 500 test cases per cycle.
+  │     AGT-03      │  BASELINE STRATEGY:
+  │  Test Case      │  First run — generates all cases; saves regression baseline.
+  │  Designer       │  Subsequent runs — loads baseline; generates only new-feature
+  │                 │    test cases from AGT-02 (regression UUIDs preserved).
+  │  ALWAYS runs    │
   └────────┬────────┘
-           │  test-cases.json
+           │  test-cases.json  (testType on every case)
            ▼
   ┌─────────────────┐
-  │     AGT-04      │  Generates Playwright Page Object Models,
-  │  Playwright     │  HTTP mock fixtures, and spec files.
-  │  Engineer       │  TypeScript strict mode validated after each file.
+  │     AGT-04      │  LIVE APP INSPECTION: headless Chromium browses
+  │  Playwright     │  BASE_URL and discovers real [data-testid] attributes
+  │  Engineer       │  before any code generation. Falls back to static
+  │                 │  selector reference if app is unreachable.
+  │                 │
+  │                 │  TWO INDEPENDENT PIPELINES per module:
+  │                 │  UI  → POM ({module}.page.ts)
+  │                 │      + fixture ({module}.fixture.ts)
+  │                 │      + spec ({module}.spec.ts)
+  │                 │  API → shared fixture
+  │                 │      + api spec ({module}.api.spec.ts, no POM)
+  │  ALWAYS runs    │  Skips existing regression specs; merges only new-feature
+  │                 │  tests into existing files.
   └────────┬────────┘
-           │  playwright-tests/
+           │  playwright-tests/specs/
            ▼
   ┌─────────────────┐
-  │     AGT-05      │  Builds traceability matrix (TC-ID → spec mapping).
-  │  Coverage       │  Checks P0/P1 coverage thresholds (default 80%).
-  │  Auditor        │  ⟳ If P0/P1 < 80% → triggers AGT-04 gap remediation.
-  └────────┬────────┘  ❌ Still < 80% after remediation → pipeline halts
-           │  coverage-report.json
+  │     AGT-05      │  Audits UI and API coverage SEPARATELY.
+  │  Coverage       │  *.spec.ts matched against UI cases.
+  │  Auditor        │  *.api.spec.ts matched against API cases.
+  │                 │  Blocks if EITHER type falls below P0/P1 threshold.
+  │                 │  ⟳ Below threshold → triggers AGT-04 gap remediation.
+  └────────┬────────┘  ❌ Still below after remediation → pipeline halts
+           │  coverage-report.json  (overall + ui + api breakdowns)
            ▼
   ┌─────────────────┐
-  │     AGT-06      │  Executes Playwright suite (max 8 workers, 60s/test).
-  │  Test           │  Retries flaky tests up to 2×.
-  │  Executor       │  Captures screenshots, traces, and videos on failure.
+  │     AGT-06      │  Pre-flight TCP check — verifies app is reachable.
+  │  Test           │  Filters specs by type via Playwright config.
+  │  Executor       │  ✨ Auto-heal: classifies failures as "script" or "app";
+  │                 │     rewrites script-broken specs via LLM and re-runs them.
+  │                 │     Skipped if >50% of tests fail (app likely down).
   └────────┬────────┘
            │  execution-result.json
            ▼
   ┌─────────────────┐
-  │     AGT-07      │  Persists results to PostgreSQL (90-day history).
-  │  Report         │  Generates HTML dashboard with trend analysis.
-  │  Architect      │  Sends SLA alerts if pass rate < 95%.
-  └────────┬────────┘
+  │     AGT-07      │  Indexes results to Elasticsearch:
+  │  Report         │    qa-test-runs      — full run stats + UI/API breakdown
+  │  Architect      │    qa-failed-tests   — one doc per failure, retried flag
+  │                 │    qa-test-results   — one doc per individual test result
+  │                 │  Generates HTML dashboard artifact.
+  └────────┬────────┘  Sends SLA alerts if pass rate < 100%.
            │
            ▼
   ✅ PR check passes — merge is now allowed
   (or ❌ blocked if any gate above failed)
 ```
 
-A live PR comment is posted when the pipeline starts and updated with the full report when it finishes, whether it passed or failed.
+A live PR comment is posted when the pipeline starts and updated with the full report when it finishes.
 
 ---
 
-### Push / Schedule / Manual Flow
+## Agent reference
 
-Pushes to `main`/`develop`, nightly schedule, and manual dispatch also run the full 7-agent pipeline. On push events, the diff between the current and previous commit is used as the changed-file scope for AGT-01.
-
----
-
-## Agent Reference
-
-| Agent  | Name                 | Model             | Role                                                                                  |
-| ------ | -------------------- | ----------------- | ------------------------------------------------------------------------------------- |
-| AGT-01 | Codebase Analyst     | claude-opus-4-6   | Extracts JIRA ticket from PR; scans changed files only; generates PR-scoped scenarios |
-| AGT-02 | JIRA Story Validator | claude-opus-4-6   | Fetches JIRA story by key; deep code-vs-story alignment; FAIL verdict blocks pipeline |
-| AGT-03 | Test Case Designer   | claude-opus-4-6   | Expands scenarios into detailed manual test cases (positive + negative variants)      |
-| AGT-04 | Playwright Engineer  | claude-opus-4-6   | Generates Page Object Models, HTTP mock fixtures, and Playwright spec files           |
-| AGT-05 | Coverage Auditor     | claude-sonnet-4-6 | Traceability matrix; P0/P1 coverage gates; triggers AGT-04 gap remediation            |
-| AGT-06 | Test Executor        | —                 | Executes Playwright suite; retries flaky tests; captures failure artifacts            |
-| AGT-07 | Report Architect     | claude-sonnet-4-6 | PostgreSQL persistence; HTML dashboard; SLA alerting                                  |
+| Agent  | Name                 | Model             | Role |
+|--------|----------------------|-------------------|------|
+| AGT-01 | Codebase Analyst     | claude-opus-4-6   | Full codebase scan → regression scenarios; cached across PR commits; `--regen-scenarios` to refresh |
+| AGT-02 | JIRA Story Validator | claude-opus-4-6   | Alignment analysis + generates new-feature UI + API scenarios from JIRA story; always runs |
+| AGT-03 | Test Case Designer   | claude-opus-4-6   | Loads regression baseline; generates new test cases only for new-feature scenarios; always runs |
+| AGT-04 | Playwright Engineer  | claude-opus-4-6   | Inspects live app with headless Chromium to discover real `[data-testid]` selectors; UI pipeline: POM + fixture + spec; API pipeline: shared fixture + api.spec; merges new tests into existing specs |
+| AGT-05 | Coverage Auditor     | —                 | Separate UI + API traceability matrices; blocks if either type fails P0/P1 threshold |
+| AGT-06 | Test Executor        | claude-opus-4-6   | Playwright runner; auto-heal for script errors; classifies failures as script vs app |
+| AGT-07 | Report Architect     | claude-sonnet-4-6 | Indexes to 3 ES indices (`qa-test-runs`, `qa-failed-tests`, `qa-test-results`); HTML report artifact; SLA alerting |
 
 ---
 
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
 - Node.js 20+
-- PostgreSQL 15+ (for AGT-07 time-series reports)
+- Docker + Docker Compose (for the target app and observability stack)
 - Anthropic API key
 - JIRA API token (read-only)
 - Staging/sandbox environment URL (never production)
@@ -113,174 +128,471 @@ npm install
 
 # 2. Configure environment
 cp .env.example .env
-# Fill in your values — see .env.example for the full reference
+# Fill in: ANTHROPIC_API_KEY, JIRA_EMAIL, JIRA_TOKEN, JIRA_HOST, JIRA_PROJECT_KEY,
+#          BASE_URL, ALLOWED_TEST_URLS
 
-# 3. Set up the database
-npm run db:migrate
+# 3. Start the target app + observability stack
+docker compose up --build
 
-# 4. Run the full pipeline
+# 4. Run the pipeline
 npm run pipeline
 ```
 
-### PR Naming Convention
+### Services started by docker compose
 
-AGT-01 extracts the JIRA ticket from the PR title or branch name. The ticket format is:
+| Service | URL | Purpose |
+|---------|-----|---------|
+| Frontend | http://localhost:3000 | Employee Directory app (test target) |
+| Backend API | http://localhost:4000/api/health | Express REST API |
+| Elasticsearch | http://localhost:9200 | Report storage |
+| Kibana | http://localhost:5601 | Dashboard visualisation |
 
-```
-TGDEMO-XXXXX   (case-insensitive, 1–6 digits)
-```
+Kibana data views (`qa-test-runs`, `qa-failed-tests`, `qa-test-results`) are created automatically by the `kibana-setup` one-shot container on first start.
 
-Examples that will be detected:
+> **Azure / CI**: Kibana runs on a persistent Azure VM. Run `npm run kibana:setup:azure` once after provisioning to create all indices, data views, visualizations, and the dashboard.
 
-```
-# In PR title
-feat: TGDEMO-12345 add payment gateway integration
-fix: [TGDEMO-99] correct invoice rounding error
+---
 
-# In branch name
-feat/TGDEMO-12345-payment-gateway
-bugfix/TGDEMO-99-invoice-rounding
-```
+## Test type flag
 
-If no ticket is found in either the PR title or branch name, AGT-01 throws immediately and the pipeline halts before any LLM calls are made.
-
-### Targeted Runs (local / manual CI)
+The `--test-type` flag (or `TEST_TYPE` env var) controls the entire pipeline end-to-end:
 
 ```bash
-# Full pipeline from scratch
-npm run pipeline
+npm run pipeline                         # both UI and API (default)
+npm run pipeline -- --test-type=ui       # UI tests only
+npm run pipeline -- --test-type=api      # API tests only
+```
 
+| Flag | AGT-01 | AGT-03 | AGT-04 | AGT-05 | AGT-06 |
+|------|--------|--------|--------|--------|--------|
+| `both` (default) | UI + API scenarios | UI + API cases | `*.spec.ts` + `*.api.spec.ts` | Audits both separately | Chromium (UI) + Chromium (API) |
+| `ui` | UI scenarios only | UI cases only | `*.spec.ts` only | UI audit only | Chromium only (`testIgnore: *.api.spec.ts`) |
+| `api` | API scenarios only | API cases only | `*.api.spec.ts` only | API audit only | Chromium only (`testMatch: *.api.spec.ts`) |
+
+---
+
+## Regression baseline vs new-feature tests
+
+The pipeline separates concerns between stable regression coverage and new tests for each PR's code changes.
+
+### Regression scenarios (AGT-01)
+
+AGT-01 scans the full codebase and produces regression scenarios that cover existing behaviour. These are **stable across PR runs** — they do not change unless the app gains entirely new modules.
+
+On a normal PR run, AGT-01 is **skipped** if `pipeline-state/scenarios.json` already exists in the cache. The cached scenarios feed AGT-02 alongside the new-feature scenarios it generates.
+
+To force a fresh regression scan (e.g. after adding a new major module to the app):
+
+```bash
+# CLI
+npm run pipeline -- --regen-scenarios
+
+# Environment variable
+REGEN_SCENARIOS=true npm run pipeline
+
+# GitHub Actions — workflow_dispatch input
+regen_scenarios: true
+```
+
+### Regression baseline — frozen by default
+
+The regression baseline (`pipeline-state/regression-baseline.json`) is **frozen by default**. New regression modules detected by AGT-01 are skipped unless you explicitly opt in:
+
+```bash
+# Add new regression modules to the baseline (local)
+npm run pipeline:add-regression
+
+# GitHub Actions — workflow_dispatch input
+add_regression: true
+```
+
+This prevents the pipeline from silently expanding regression scope on every PR run.
+
+### New-feature scenarios (AGT-02)
+
+AGT-02 always runs. It reads the PR's changed files and JIRA story acceptance criteria to generate **new-feature scenarios** specific to this PR. These flow into AGT-03 and AGT-04, which append the new tests to existing spec files without touching the committed regression coverage.
+
+New-feature scenarios are deduplicated within each run (normalised title comparison) to prevent the LLM generating near-identical scenarios for the same JIRA story.
+
+### Promoting new-feature tests to regression
+
+New-feature test cases are **not** automatically promoted to regression during a PR run. They are staged in `pipeline-state/pending-promotion.json` and promoted only when the PR is merged:
+
+- **In CI**: The `promote-on-merge` job fires on `push` to `main`, reads `pending-promotion.json`, and appends those cases (with `caseScope: "regression"`) to `regression-baseline.json`.
+- **Locally**: Run `npm run promote` after a successful pipeline run, then commit the updated baseline before opening your PR.
+
+### How this prevents spec regeneration bugs
+
+Because regression scenarios are cached and spec files are never overwritten (only appended to), each PR run:
+
+1. Uses the committed regression spec files as-is
+2. Generates new-feature tests for only the new code changes
+3. Appends those tests to the existing spec files
+4. Deduplicates by test-case UUID before appending (prevents duplicate test titles)
+
+---
+
+## Auto-heal (AGT-06)
+
+When Playwright tests fail, AGT-06 classifies each failure before deciding whether to escalate:
+
+| Failure type | Examples | Action |
+|---|---|---|
+| `script` | `TimeoutError`, wrong selector, missing POM method, bad route pattern | LLM repairs the spec file and re-runs it |
+| `app` | `ECONNREFUSED`, `net::ERR_*`, 5xx response, `Internal Server Error` | Surfaced as a real failure — not healed |
+
+The heal cycle runs at most once per pipeline execution:
+
+1. Failures are classified as `script` or `app`
+2. Script failures are grouped by spec file
+3. Each failing spec is rewritten by Claude with the constraint: *fix only infrastructure problems (selectors, route patterns, navigation paths) — never weaken assertions*
+4. Only the healed spec files are re-run
+5. Results are merged: run-1 results for non-healed files + run-2 results for healed files
+
+**Guardrails:**
+- Skipped if `AUTO_HEAL_ENABLED=false`
+- Skipped if more than 50% of tests fail (app likely down, not a script issue)
+- Only spec files are rewritten — never POMs or fixtures
+
+Log output:
+```
+  [AGT-06] Auto-heal: 3 script errors (2 spec files) | 1 app error (skipped)
+  [AGT-06] Healing playwright-tests/specs/employee-drawer.spec.ts ...
+  [AGT-06] Re-running 2 healed spec file(s)...
+  [AGT-06] Post-heal: 9/10 passed (90.0%) — was 7/10 (70.0%)
+```
+
+---
+
+## Generated test files
+
+AGT-04 writes to `playwright-tests/specs/`. The naming convention determines which pipeline each file belongs to:
+
+```
+playwright-tests/
+  pages/        {module}.page.ts           — Page Object Models (UI pipeline only)
+  fixtures/     {module}.fixture.ts        — Route mocks (shared between UI + API)
+  specs/        {module}.spec.ts           — UI specs  (call POM methods only)
+                {module}.api.spec.ts       — API specs (page.evaluate fetch, no POM)
+```
+
+**Browser strategy:**
+
+| Environment | UI specs | API specs |
+|-------------|----------|-----------|
+| Local (`playwright.config.ts`) | Chromium + Firefox + WebKit | Chromium only |
+| CI (AGT-06 generated config) | Chromium only | Chromium only |
+
+**Live app inspection** — Before the pipeline starts, `shared/browser-inspector.ts` browses `BASE_URL` with headless Chromium and produces an `EnhancedAppStructure` with: all `[data-testid]` selectors, form defaults, validation error behaviour, dropdown options (exact values), full API response shapes, filter and search behaviour, route behaviour, and UI timings. Cached to `pipeline-state/app-observations.json` (30-min TTL; bypass with `--force-inspect`). AGT-04's `generateBehaviorContext()` converts these into compact verified-fact prompts, replacing ~1,000 lines of hardcoded rules. If the app is unreachable, AGT-04 falls back to a static selector reference.
+
+**UI spec rules** — enforced by AGT-04 prompt:
+- Import and instantiate the POM; call its methods only — never `page.click/fill/goto` directly in a test
+- Every test starts with `await setup{Module}Mocks(page)` then navigates via POM
+- Only navigate to `/` (the app's single frontend route)
+- Selectors use `data-testid` attributes
+
+**API spec rules** — enforced by AGT-04 prompt:
+- No POM import — no browser interaction
+- HTTP calls via `page.evaluate(async () => fetch(...))` — never `page.request.*` (which bypasses `page.route()` mocks)
+- Assert `response.status` and specific `response.body` fields
+- URL patterns use trailing `**` (e.g. `**/api/employees**`) to match paginated/filtered variants
+
+---
+
+## Coverage audit (AGT-05)
+
+Coverage is audited separately for UI and API:
+
+```
+[AGT-05] UI  — 18/20 covered (90.0%) | P0: 85.0% | P1: 88.0%
+[AGT-05] API — 12/15 covered (80.0%) | P0: 75.0% | P1: 83.3%
+```
+
+The `CoverageReport` contains both overall aggregates and per-type breakdowns:
+
+```typescript
+coverageReport.ui.coveragePercent      // UI-only coverage %
+coverageReport.api.p0CoveragePercent   // API P0 coverage %
+coverageReport.blocked                 // true if EITHER type fails threshold
+```
+
+The pipeline blocks if **either** type's P0 or P1 coverage falls below the configured threshold. AGT-04 is automatically re-invoked in remediation mode to fill gaps before AGT-06 runs.
+
+---
+
+## Kibana dashboards
+
+After the first pipeline run, open Kibana:
+
+- **Local**: http://localhost:5601
+- **Azure VM (CI)**: http://cbts-elastic-vm.eastus.cloudapp.azure.com:5601 (login: `elastic`)
+
+Run the setup script **once** to create all ES indices, Kibana data views, visualizations, and the dashboard:
+
+```bash
+# Local
+npm run kibana:setup
+
+# Azure VM (CI)
+npm run kibana:setup:azure
+```
+
+The script is idempotent — re-running it overwrites existing objects with stable IDs. It does **not** run on every pipeline execution; AGT-07 only indexes data.
+
+Three ES indices and data views are created:
+
+| Index | Time field | Contents |
+|-------|-----------|---------|
+| `qa-test-runs` | `@timestamp` | One doc per pipeline run: pass rate, coverage %, UI/API breakdown, heal metadata, SLA status |
+| `qa-failed-tests` | `@timestamp` | One doc per failed test: name, file, error (≤500 chars), `failureType`, `retried` flag |
+| `qa-test-results` | `@timestamp` | One doc per individual test result (pass + fail + skip): `testName`, `suite`, `file`, `testType`, `status`, `durationMs`, `retried` |
+
+**Dashboard panels:**
+
+| Panel | Type | Source index |
+|-------|------|-------------|
+| Overall / P0 / UI / API Coverage | Metric tiles | `qa-test-runs` |
+| Pass Rate Trend | Line chart | `qa-test-runs` |
+| Passed vs Failed per Run | Stacked bar | `qa-test-runs` |
+| Run Duration Trend | Line chart | `qa-test-runs` |
+| UI vs API Tests | Donut chart | `qa-test-results` |
+| Test Status Breakdown | Donut chart | `qa-test-results` |
+| Pass / Fail / Skip Over Time | Stacked bar (date histogram) | `qa-test-results` |
+| Slowest Tests | Table (avg durationMs) | `qa-test-results` |
+| Failures by Spec File | Horizontal bar | `qa-failed-tests` |
+| Flaky Tests Leaderboard | Table (`retried=true`) | `qa-failed-tests` |
+| SLA Breach History | Table (`slaBreached=true`) | `qa-test-runs` |
+
+---
+
+## Targeted runs
+
+```bash
 # Resume from a specific agent (e.g. after fixing a coverage gap)
 npm run pipeline -- --from=5
 
 # Run a single agent only (for debugging)
 npm run pipeline -- --agent=4
 
+# Force AGT-01 to regenerate regression scenarios
+npm run pipeline -- --regen-scenarios
+
+# Run pipeline and allow new regression modules to be added to the baseline
+npm run pipeline:add-regression
+
+# Promote staged new-feature cases to regression baseline (run locally before merging)
+npm run promote
+
+# Update CLAUDE.md and README.md from current source files
+npm run update-docs
+
 # Run only the Playwright specs (skip all AI agents)
 npm run test:specs
-
-# Serve the latest dashboard locally
-npm run report:serve
 ```
+
+---
+
+## PR naming convention
+
+AGT-02 looks for the JIRA ticket in the PR title or branch name:
+
+```
+TGDEMO-XXXXX   (case-insensitive, 1–6 digits)
+```
+
+Examples:
+```
+feat: TGDEMO-12345 add payment gateway integration   ← PR title
+feat/TGDEMO-12345-payment-gateway                    ← branch name
+```
+
+If no ticket is found, AGT-01 warns but continues. Regression analysis still runs; new-feature scenarios require a valid ticket for full traceability.
 
 ---
 
 ## CI/CD
 
-The workflow (`qa-pipeline.yml`) defines **two jobs**:
+The workflow (`.github/workflows/qa-pipeline.yml`) defines three jobs.
 
-### Job 1: `pr-pipeline` — Pull Request Gate (all 7 agents)
+### Job 1: `pr-pipeline` — Pull Request Gate
 
-Triggered on every PR open or update targeting `main` or `develop`. The PR status check only turns green after AGT-07 completes successfully. Timeout: 60 minutes.
+Triggered on every PR open/update targeting `main` or `develop`. Timeout: 60 minutes.
 
-**Blocking conditions — any of these fail the PR check:**
+**State caching:** `pipeline-state/` is cached per branch using GitHub Actions cache. This means:
+- **First push on a branch**: no cache → AGT-01 runs, generates regression scenarios and test cases, saves cache
+- **Subsequent pushes**: cache restored → AGT-01 skipped, AGT-02–07 run normally, new-feature tests generated for the code changes
 
-| Condition                   | Source | Detail                                             |
-| --------------------------- | ------ | -------------------------------------------------- |
-| Missing JIRA ticket         | AGT-01 | `TGDEMO-xxxxx` not found in PR title or branch     |
-| Alignment FAIL              | AGT-02 | Code contradicts or is unrelated to the JIRA story |
-| P0 coverage below threshold | AGT-05 | <80% P0 test coverage after gap remediation        |
-| P1 coverage below threshold | AGT-05 | <80% P1 test coverage after gap remediation        |
-| AGT-07 did not complete     | AGT-07 | Report Architect must finish for the check to pass |
+**Blocking conditions:**
 
-**PR comment behaviour:**
+| Condition | Source | Detail |
+|-----------|--------|--------|
+| Alignment FAIL | AGT-02 | Code contradicts or is unrelated to the JIRA story |
+| P0 UI coverage below threshold | AGT-05 | < 80% P0 coverage in UI specs after remediation |
+| P0 API coverage below threshold | AGT-05 | < 80% P0 coverage in API specs after remediation |
+| Pass rate below SLA | AGT-06 | `SLA_PASS_RATE=1` in CI — any test failure blocks the pipeline |
+| AGT-07 did not complete | AGT-07 | Report Architect must finish for the check to pass |
 
-- "Pipeline in progress" table posted immediately when the run starts
-- Replaced with the full report when the pipeline finishes (pass or fail)
-- Report includes: per-agent status, JIRA alignment verdict and findings, pass rate, coverage %, duration
+**PR comment** — posted immediately ("in progress") then updated with the full report:
 
-### Job 2: `full-pipeline` — Push / Nightly / Manual
+```
+| Test Type        | BOTH                       |
+| Pass Rate        | 97.8%                      |
+| Overall Coverage | 88.0%                      |
+| P0 Coverage      | 84.0%                      |
+| UI Coverage      | 90.0% (P0: 86.0%)          |
+| API Coverage     | 85.0% (P0: 82.0%)          |
+| Duration         | 127s                       |
+```
 
-| Trigger                      | Behaviour                                                   |
-| ---------------------------- | ----------------------------------------------------------- |
-| Push to `main` or `develop`  | Full pipeline; AGT-01 scopes to the commit diff             |
-| Nightly (`cron: 0 2 * * *`)  | Full pipeline at 02:00 UTC                                  |
-| Manual (`workflow_dispatch`) | Supports `--from=N` (resume) and `--agent=N` (single agent) |
+After the pipeline completes, the bot commits `regression-baseline.json`, `pending-promotion.json`, and generated specs back to the PR branch using `git push origin HEAD:${{ github.head_ref }}` with a `[skip ci]` message to prevent a commit loop.
+
+### Job 2: `full-pipeline` — Manual Dispatch
+
+Triggered via `workflow_dispatch`. Supports pipeline resume and scenario regeneration.
+
+### Job 3: `promote-on-merge` — Regression Promotion
+
+Triggered on `push` to `main` (i.e. when a PR is merged). Reads `pipeline-state/pending-promotion.json` left by the PR pipeline, promotes those new-feature test cases to `regression-baseline.json` (changing `caseScope` to `"regression"`), removes `pending-promotion.json`, and commits to main with `[skip ci]`.
+
+**Manual dispatch inputs:**
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `from_agent` | `1` | Resume pipeline from this agent number (1–7) |
+| `single_agent` | `0` | Run only this agent (0 = run all) |
+| `test_type` | `both` | `ui` \| `api` \| `both` |
+| `regen_scenarios` | `false` | Force AGT-01 to regenerate regression scenarios and rebuild all specs |
+| `add_regression` | `false` | Allow new regression modules to be added to the baseline |
+| `force_inspect` | `false` | Force fresh browser inspection — bypass app-observations.json cache |
+
+### Infrastructure in CI
+
+Elasticsearch and Kibana run on a **persistent Azure VM** (`cbts-elastic-vm.eastus.cloudapp.azure.com`), provisioned once via `infra/azure/vm-setup.sh`. The pipeline indexes results directly to this VM — no observability containers are started in CI.
+
+`docker compose` starts only the app services in CI:
+```bash
+docker compose up -d --build mongodb backend frontend
+```
+
+To provision or reprovision the Azure VM:
+```bash
+bash infra/azure/vm-setup.sh
+```
 
 ### Required GitHub Secrets
 
-| Secret              | Description                         |
-| ------------------- | ----------------------------------- |
-| `ANTHROPIC_API_KEY` | Anthropic API key                   |
-| `JIRA_TOKEN`        | JIRA API token (read-only)          |
-| `DB_PASSWORD`       | PostgreSQL password                 |
-| `SMTP_HOST`         | SMTP server hostname for SLA alerts |
-| `SMTP_USER`         | SMTP username                       |
-| `SMTP_PASS`         | SMTP password                       |
+| Secret | Description |
+|--------|-------------|
+| `ANTHROPIC_API_KEY` | Claude API key |
+| `JIRA_EMAIL` | Atlassian account email (used for Basic auth alongside `JIRA_TOKEN`) |
+| `JIRA_TOKEN` | JIRA API token — paired with `JIRA_EMAIL` for `Basic base64(email:token)` auth |
+| `MONGO_ROOT_PASSWORD` | MongoDB root password |
+| `ELASTICSEARCH_URL` | Full ES URL with credentials — `http://elastic:<pass>@cbts-elastic-vm.eastus.cloudapp.azure.com:9200` |
+| `SMTP_HOST` | SMTP server for SLA alert emails |
+| `SMTP_USER` | SMTP username |
+| `SMTP_PASS` | SMTP password |
 
 ### Required GitHub Variables
 
-| Variable             | Example                               |
-| -------------------- | ------------------------------------- |
-| `JIRA_HOST`          | `https://yourcompany.atlassian.net`   |
-| `JIRA_PROJECT_KEY`   | `TGDEMO`                              |
-| `STAGING_URL`        | `https://staging.yourapp.com`         |
+| Variable | Example |
+|----------|---------|
+| `JIRA_HOST` | `https://yourcompany.atlassian.net` |
+| `JIRA_PROJECT_KEY` | `TGDEMO` |
+| `STAGING_URL` | `http://localhost:3000` |
 | `STAKEHOLDER_EMAILS` | `qa@company.com,eng-lead@company.com` |
+| `AZ_ELASTIC_HOST` | `cbts-elastic-vm.eastus.cloudapp.azure.com` |
 
 ---
 
-## Project Structure
+## Environment variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes | Claude API key |
+| `JIRA_EMAIL` | Yes | Atlassian account email — used with `JIRA_TOKEN` for Basic auth |
+| `JIRA_TOKEN` | Yes | Atlassian API token — paired with `JIRA_EMAIL` |
+| `JIRA_HOST` | Yes | e.g. `https://yourco.atlassian.net` |
+| `JIRA_PROJECT_KEY` | Yes | e.g. `TGDEMO` |
+| `BASE_URL` | Yes | Staging app URL — also used by AGT-04 for live app inspection |
+| `ALLOWED_TEST_URLS` | Yes | Comma-separated allowed test targets (guardrail) |
+| `ELASTICSEARCH_URL` | Yes (in CI) | Azure VM URL with credentials; defaults to `http://localhost:9200` for local runs |
+| `TEST_TYPE` | No | `ui` \| `api` \| `both` (default `both`) |
+| `REGEN_SCENARIOS` | No | Set to `true` to force AGT-01 to regenerate regression scenarios |
+| `AUTO_HEAL_ENABLED` | No | Set to `false` to disable AGT-06 auto-heal (default: enabled) |
+| `REPO_PATH` | No | Path to scan (default `./`) |
+| `MAX_TEST_CASES` | No | Total case cap (default 500) |
+| `MAX_CASES_PER_SCENARIO` | No | Per-scenario cap (default 10) |
+| `MAX_CASES_PER_SPEC` | No | Per-module spec cap for AGT-04 (default 20) |
+| `MAX_REGRESSION_SCENARIOS_PER_CHUNK` | No | AGT-01 chunk size (default 20) |
+| `MIN_P0_COVERAGE` | No | Block threshold % (default 80) |
+| `MIN_P1_COVERAGE` | No | Block threshold % (default 80) |
+| `SLA_PASS_RATE` | No | Block threshold 0–1 (default `1` in CI = 100%; set `0.95` locally for lenient threshold) |
+| `STAKEHOLDER_EMAILS` | No | Comma-separated SLA alert recipients |
+| `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS` | No | Email transport for SLA alerts |
+
+---
+
+## Project structure
 
 ```
-qa-pipeline/
+.
 ├── agents/
-│   ├── 01-codebase-analyst/      # AGT-01: PR-scoped scan, JIRA ticket extraction
-│   ├── 02-jira-validator/        # AGT-02: Fetch story by key, deep alignment analysis
-│   ├── 03-test-case-designer/    # AGT-03: Scenario expansion to test cases
-│   ├── 04-playwright-engineer/   # AGT-04: POM + HTTP fixtures + spec generation
-│   ├── 05-coverage-auditor/      # AGT-05: Traceability matrix + gap remediation loop
-│   ├── 06-test-executor/         # AGT-06: Playwright execution + artifact capture
-│   └── 07-report-architect/      # AGT-07: PostgreSQL + HTML dashboard + SLA alerts
-│
+│   ├── 01-codebase-analyst/     AGT-01: codebase scan → regression scenarios (cached)
+│   ├── 02-jira-validator/       AGT-02: JIRA alignment + new-feature scenario generation (always runs)
+│   ├── 03-test-case-designer/   AGT-03: scenarios → typed test cases; regression baseline preserved
+│   ├── 04-playwright-engineer/  AGT-04: UI pipeline (POM+fixture+spec) + API pipeline (fixture+api.spec)
+│   ├── 05-coverage-auditor/     AGT-05: separate UI + API coverage audit; traceability matrix
+│   ├── 06-test-executor/        AGT-06: Playwright runner; auto-heal for script errors
+│   └── 07-report-architect/     AGT-07: Elasticsearch indexing + HTML report + SLA alerts
 ├── orchestrator/
-│   ├── index.ts                  # Main pipeline runner (--from=N, --agent=N)
-│   ├── config.ts                 # Zod-validated env config loader
-│   ├── logger.ts                 # Coloured terminal logger with elapsed time
-│   └── state.ts                  # JSON-based inter-agent state in pipeline-state/
-│
-├── db/
-│   ├── migrate.ts                # Migration runner
-│   └── migrations/
-│       └── 001_init.sql          # Schema: test_runs, test_failures, 90-day purge
-│
-├── playwright-tests/             # ← GENERATED by AGT-04 (not committed)
-│   ├── pages/                    # Page Object Models
-│   ├── fixtures/                 # HTTP mock fixtures
-│   └── specs/                    # Playwright spec files
-│
-├── pipeline-state/               # ← Inter-agent JSON state (not committed)
-├── test-results/                 # ← AGT-06 artifacts: screenshots, traces, videos
-├── reports/                      # ← AGT-07 HTML dashboards
-│
+│   ├── index.ts                 Pipeline entry point (--from=N, --agent=N, --test-type=X, --regen-scenarios)
+│   ├── config.ts                Zod-validated env config loader
+│   ├── logger.ts                Coloured terminal logger with elapsed timing
+│   └── state.ts                 JSON inter-agent state in pipeline-state/
+├── shared/
+│   ├── browser-inspector.ts     Headless Chromium inspection → EnhancedAppStructure (selectors, API schemas, form behavior)
+│   ├── browser-cache.ts         Cache EnhancedAppStructure to pipeline-state/app-observations.json (30-min TTL)
+│   └── types.ts                 Shared type definitions (EnhancedAppStructure + re-exports of agent types)
+├── mcp/
+│   └── server.ts                MCP server exposing pipeline agents as tools (stdio transport)
+├── playwright-tests/
+│   ├── pages/                   Page Object Models (generated by AGT-04)
+│   ├── fixtures/                Route mock fixtures (generated by AGT-04)
+│   ├── specs/                   UI specs (*.spec.ts) + API specs (*.api.spec.ts)
+│   └── playwright.config.ts     Playwright configuration
+├── pipeline-state/              Inter-agent JSON state (cached in CI)
+├── test-results/                AGT-06 artifacts: screenshots, traces, videos
+├── reports/                     AGT-07 HTML dashboards
+├── scripts/
+│   ├── setup-kibana.js          One-time setup: ES indices + Kibana data views + dashboard
+│   ├── promote-to-regression.js Promote pending new-feature cases to regression baseline locally
+│   └── update-docs.js           Update CLAUDE.md + README.md from source files via Claude API
+├── employee-app/                Target application (MongoDB + Express + React)
+├── infra/azure/                 Azure VM provisioning (Elastic Stack)
+├── docker-compose.yml           App (mongodb/backend/frontend) + ES + Kibana + kibana-setup
 ├── .github/workflows/
-│   └── qa-pipeline.yml           # pr-pipeline job + full-pipeline job
-│
-├── playwright.config.ts
-├── tsconfig.json
-├── package.json
-└── .env.example
+│   └── qa-pipeline.yml          pr-pipeline job + full-pipeline job
+└── .env.example                 All supported environment variables
 ```
 
 ---
 
-## Inter-Agent Data Flow
-
-All agents communicate through JSON files in `pipeline-state/`:
+## Inter-agent data flow
 
 ```
 pipeline-state/
-├── scenarios.json              # AGT-01 output → AGT-02 input
-│                               #   Contains: jiraTicket, prNumber, changedFiles
-├── validated-scenarios.json    # AGT-02 output → AGT-03 input
-│                               #   Adds: jiraRef, alignmentVerdict, alignmentFindings,
-│                               #         jiraSummary, jiraAcceptanceCriteria, coverageStatus
-├── test-cases.json             # AGT-03 output → AGT-04 + AGT-05 input
-├── coverage-report.json        # AGT-05 output → AGT-06 + AGT-07 input
-├── execution-result.json       # AGT-06 output → AGT-07 input
-└── traceability-matrix.json    # AGT-05 output (uploaded as CI artifact, 30-day retention)
+├── scenarios.json              AGT-01 → AGT-02  (regression; cached; skipped if exists)
+├── validated-scenarios.json    AGT-02 → AGT-03  (+ alignmentVerdict, jiraRef, new-feature scenarios)
+├── regression-baseline.json    AGT-03           (stable UUIDs; frozen by default; --add-regression to expand)
+├── pending-promotion.json      AGT-03           (new-feature cases staged for regression promotion on PR merge)
+├── test-cases.json             AGT-03 → AGT-04  (testType on every case)
+├── coverage-report.json        AGT-05 → AGT-07  (overall + ui + api breakdowns)
+├── execution-result.json       AGT-06 → AGT-07  (includes healAttempted, healedSpecs, scriptErrors, appErrors)
+├── traceability-matrix.json    AGT-05 artifact  (uploaded to CI; 30-day retention)
+└── app-observations.json       browser-inspector → AGT-01/04/06  (EnhancedAppStructure cache; 30-min TTL)
 ```
 
-The pipeline is **restartable at any agent**. If AGT-06 fails due to a flaky environment, fix the issue and run `--from=6` to resume without re-running the AI generation steps.
+The pipeline is **restartable at any agent**. Fix the issue and run `--from=6` to resume without re-running the AI generation steps.
 
 ---
 
@@ -289,62 +601,81 @@ The pipeline is **restartable at any agent**. If AGT-06 fails due to a flaky env
 ### Security
 
 - All secrets injected via environment variables — never hardcoded or logged
-- JIRA API is **read-only** — agents never modify tickets
-- AGT-01 redacts secrets (tokens, keys, passwords) from source code before any LLM call
-- Test execution strictly limited to URLs in `ALLOWED_TEST_URLS` — never production
-- Stakeholder report emails limited to the `STAKEHOLDER_EMAILS` allowlist
-- AGT-06 error messages truncated to 500 characters before database storage (PII protection)
+- JIRA API is read-only — agents never modify tickets
+- AGT-01 redacts secrets from source before any LLM call
+- Test execution limited to URLs in `ALLOWED_TEST_URLS` — never production
+- AGT-07 truncates error messages to 500 chars before Elasticsearch indexing (PII protection)
 
 ### Quality
 
-- Pipeline halts if P0/P1 Playwright coverage falls below 80% (configurable)
-- AGT-05 triggers a targeted AGT-04 **gap remediation pass** before halting
-- TypeScript strict-mode compilation verified after every generated spec file
-- Existing passing tests are **never overwritten** — AGT-04 uses a merge strategy
-- All external HTTP calls in tests must use `page.route()` mocks — no live API traffic
+- Pipeline blocks if P0/P1 coverage falls below 80% for **either** UI or API
+- AGT-05 triggers a targeted AGT-04 gap remediation pass before blocking
+- API calls in test files must use `page.evaluate(fetch)` — `page.request.*` bypasses `page.route()` mocks
+- URL pattern `**/api/foo**` (trailing `**`) required for paginated/filterable endpoints
+- AGT-04 validates generated TypeScript in three passes: (1) brace + paren depth — valid cut points are after `});` not just `}`, (2) `ts.transpileModule()` syntax check without import resolution, (3) second truncation pass if errors remain
+- AGT-04 deduplicates by test-case UUID before appending to existing specs — prevents duplicate test titles
+- AGT-02 uses `Authorization: Basic base64(email:token)` for Atlassian Cloud — Bearer tokens are rejected; if JIRA is unreachable the pipeline continues with a WARN verdict
+- `SLA_PASS_RATE=1` in CI — any test failure blocks the pipeline; use `SLA_PASS_RATE=0.95` locally for a 95% threshold
 
 ### Operational
 
-- AGT-01 scans at most `MAX_FILES_SCAN` files (default: 1,000) per run
-- Files larger than 500KB are skipped with a logged warning
-- AGT-03 generates at most `MAX_TEST_CASES` test cases (default: 500) per cycle
-- Playwright hard timeout: **30 minutes** total; **60 seconds** per individual test
-- Maximum **8 parallel workers**
-- Flaky tests retried at most **2 times** before recording as failed
-- Database auto-purges records older than 90 days (`purge_old_qa_data()`)
-
-### AGT-05 → AGT-04 Feedback Loop
-
-1. AGT-05 identifies test case IDs with no matching Playwright spec
-2. AGT-04 re-runs in `remediationMode` with only the gap cases
-3. AGT-05 re-checks coverage
-4. If still below threshold → `process.exit(1)` — pipeline fails, PR blocked
+- AGT-01 scans at most `MAX_FILES_SCAN` files (default 1,000) per run
+- AGT-03 generates at most `MAX_TEST_CASES` test cases (default 500) per cycle
+- Playwright suite timeout: 15 minutes total; 20 seconds per test; 4 parallel workers (max 8)
+- Auto-heal: 1 repair attempt per run; skipped if >50% of tests fail
+- Flaky tests retried twice in CI (once locally) before recording as failed
+- CI runs Chromium only (UI + API); multi-browser (Chromium/Firefox/WebKit) reserved for local development
+- Kibana setup (`npm run kibana:setup`) is a one-time operation — indices, data views, and dashboard are not recreated on every pipeline run
 
 ---
 
-## Database Schema
+## Employee Directory App
 
-AGT-07 stores run history in PostgreSQL:
+A full-stack demo bundled with this repo, serving as the **target application** for the pipeline.
 
-```sql
--- One row per pipeline execution
-test_runs (
-  id, run_id, started_at, finished_at,
-  total, passed, failed, flaky, skipped,
-  duration_ms, coverage_pct, p0_coverage_pct
-)
+### Stack
 
--- One row per failed test (error_msg capped at 500 chars)
-test_failures (
-  id, run_id, test_name, error_msg VARCHAR(500),
-  retried, created_at
-)
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18 + TypeScript + Vite + nginx |
+| Backend | Node.js 20 + Express + Mongoose |
+| Database | MongoDB 7 |
+| Spec | OpenAPI 3.1 (`employee-app/api-specs/openapi.yaml`) |
+
+### Running locally without the pipeline
+
+```bash
+docker compose up --build
+
+# App:        http://localhost:3000
+# API health: http://localhost:4000/api/health
+# Kibana:     http://localhost:5601
 ```
 
-**Views:**
+MongoDB is seeded automatically on first start with 12 realistic employee records.
 
-- `vw_recent_runs` — 90-day window with `pass_rate_pct`
-- `vw_flaky_tests` — flakiness index grouped by test name
+### API endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/health` | Health check |
+| `GET` | `/api/employees` | List with search/filter/pagination (`?page`, `?limit`, `?search`, `?department`, `?status`) |
+| `POST` | `/api/employees` | Create employee |
+| `GET` | `/api/employees/:id` | Get by ID |
+| `PATCH` | `/api/employees/:id` | Update fields |
+| `DELETE` | `/api/employees/:id` | Delete employee |
+
+List response shape (required by fixtures):
+```json
+{
+  "data": [ /* EmployeeListItem[] */ ],
+  "pagination": { "total": 42, "page": 1, "limit": 20, "pages": 3 }
+}
+```
+
+### Frontend routing
+
+The app has a single frontend route: `/`. React Router redirects all unknown paths back to `/`. Generated specs must **never navigate to `/employees`, `/employees/new`, or `/employees/:id`** — these do not exist as separate routes.
 
 ---
 
@@ -353,113 +684,5 @@ test_failures (
 1. Fork the repository
 2. Create a branch named with your ticket: `git checkout -b feat/TGDEMO-12345-description`
 3. Make your changes — agents are isolated modules in `agents/`
-4. Run `npm run typecheck && npm run lint` before committing
+4. Run `npm run typecheck` before committing
 5. Open a PR — the pipeline runs automatically and posts a full report comment
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE) for details.
-
----
-
-## Employee Directory App
-
-A full-stack demo application bundled with this repo. It serves as the **target application** that the 7-agent QA pipeline tests — giving the pipeline a real codebase to analyse, real API specs to reference, and a running service to execute Playwright tests against.
-
-### Stack
-
-| Layer    | Technology                                          |
-| -------- | --------------------------------------------------- |
-| Frontend | React 18 + TypeScript + Vite + nginx                |
-| Backend  | Node.js 20 + Express + Mongoose                     |
-| Database | MongoDB 7                                           |
-| Spec     | OpenAPI 3.1 (`employee-app/api-specs/openapi.yaml`) |
-
-### Running locally with Docker Compose
-
-```bash
-# 1. Copy and edit environment
-cp .env.example .env
-# Set MONGO_ROOT_PASSWORD to something secure
-
-# 2. Build and start all three services
-docker compose up --build
-
-# Services:
-#   Frontend  →  http://localhost:3000
-#   Backend   →  http://localhost:4000/api/health
-#   MongoDB   →  localhost:27017
-```
-
-MongoDB is seeded automatically on first start with 12 realistic employee records across multiple departments and countries.
-
-### Employee App Structure
-
-```
-employee-app/
-├── frontend/               # React SPA
-│   ├── src/
-│   │   ├── api/            # Typed fetch wrappers (employeeApi.ts)
-│   │   ├── components/     # EmployeesPage, EmployeeDrawer, EmployeeForm,
-│   │   │                   # EmployeeTable, StatusBadge, Avatar, ConfirmDialog
-│   │   ├── types/          # TypeScript interfaces matching OpenAPI schema
-│   │   └── App.tsx
-│   ├── nginx.conf          # SPA routing + /api proxy to backend
-│   └── Dockerfile
-│
-├── backend/                # Express REST API
-│   ├── src/
-│   │   ├── config/         # Zod-validated env config
-│   │   ├── models/         # Mongoose Employee model + enums
-│   │   ├── routes/         # employees.ts — GET/POST/PATCH/DELETE
-│   │   └── middleware/     # Zod validation, error handler
-│   └── Dockerfile
-│
-├── mongo-init/
-│   └── seed.js             # Auto-runs on first container start
-│
-└── api-specs/
-    └── openapi.yaml        # Full OpenAPI 3.1 specification
-```
-
-### API Endpoints
-
-| Method   | Path                 | Description                        |
-| -------- | -------------------- | ---------------------------------- |
-| `GET`    | `/api/health`        | Health check                       |
-| `GET`    | `/api/employees`     | List with search/filter/pagination |
-| `POST`   | `/api/employees`     | Create employee                    |
-| `GET`    | `/api/employees/:id` | Get by ID                          |
-| `PATCH`  | `/api/employees/:id` | Update fields                      |
-| `DELETE` | `/api/employees/:id` | Delete employee                    |
-
-Query parameters for `GET /api/employees`: `page`, `limit`, `search`, `department`, `status`.
-
-### Development without Docker
-
-```bash
-# Terminal 1 — Backend (requires MongoDB running)
-cd employee-app/backend
-npm install
-MONGODB_URI=mongodb://localhost:27017/employee_directory npm run dev
-
-# Terminal 2 — Frontend
-cd employee-app/frontend
-npm install
-npm run dev   # http://localhost:5173  (Vite proxies /api → localhost:4000)
-```
-
-### How the QA Pipeline uses this app
-
-The `OPEN_API_PATH` in `.env.example` points to `employee-app/api-specs/openapi.yaml`. When the pipeline runs against a PR that modifies the employee app:
-
-1. **AGT-01** scans changed files in `employee-app/`
-2. **AGT-02** validates changes against the linked JIRA story
-3. **AGT-03** designs test cases covering employee CRUD flows
-4. **AGT-04** generates Playwright specs using the OpenAPI spec for HTTP mocks
-5. **AGT-06** executes tests against `http://localhost:3000` (started by CI)
-6. **AGT-07** reports results — pass rate, coverage, trend
-
-The `ALLOWED_TEST_URLS` in `.env.example` includes `http://localhost:3000` so AGT-06's URL guardrail allows it.

@@ -5,7 +5,7 @@ name: 7-Agent QA Pipeline
 #                  PR only passes after AGT-07 (Report Architect) completes.
 #                  Blocks merge on: missing JIRA ticket, FAIL alignment verdict,
 #                  coverage below threshold, or test execution failures.
-#   push / schedule / manual -> Full 7-agent pipeline on the target branch.
+#   manual       -> Full 7-agent pipeline via workflow_dispatch (resume/single-agent supported).
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ on:
     branches: [main, develop]
 
   push:
-    branches: [main, develop]
+    branches: [main]
 
   # schedule:
   # - cron: "0 2 * * *"
@@ -28,6 +28,22 @@ on:
         description: "Run only this agent (0 = run all)"
         required: false
         default: "0"
+      test_type:
+        description: "Test types to generate and run (ui | api | both)"
+        required: false
+        default: "both"
+      regen_scenarios:
+        description: "Force AGT-01 to regenerate scenarios and rebuild all specs (true | false)"
+        required: false
+        default: "false"
+      force_inspect:
+        description: "Force fresh browser inspection — bypass app-observations.json cache (true | false)"
+        required: false
+        default: "false"
+      add_regression:
+        description: "Allow new regression modules to be added to the baseline (true | false)"
+        required: false
+        default: "false"
 
 # =============================================================================
 # JOB 1 - PR Pipeline (AGT-01 through AGT-07)
@@ -44,21 +60,7 @@ jobs:
 
     permissions:
       pull-requests: write
-      contents: read
-
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: qa_reports
-          POSTGRES_USER: qa_user
-          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+      contents: write
 
     steps:
       - name: Checkout PR branch
@@ -79,12 +81,19 @@ jobs:
         run: npm run typecheck
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: npx playwright install --with-deps chromium
 
-      - name: Run DB migrations
-        run: npm run db:migrate
-        env:
-          DATABASE_URL: postgresql://qa_user:${{ secrets.DB_PASSWORD }}@localhost:5432/qa_reports
+      - name: Restore pipeline state cache
+        uses: actions/cache@v4
+        with:
+          path: pipeline-state/
+          key: pipeline-state-pr-${{ github.event.pull_request.head.ref }}-${{ github.run_id }}
+          restore-keys: |
+            pipeline-state-pr-${{ github.event.pull_request.head.ref }}-
+            pipeline-state-pr-${{ github.base_ref }}-
+
+      - name: Use committed regression baseline (overrides cache)
+        run: git checkout HEAD -- pipeline-state/regression-baseline.json 2>/dev/null || true
 
       - name: Resolve changed files
         run: |
@@ -94,7 +103,7 @@ jobs:
           echo "$FILES"
 
       # Post a "pipeline in progress" comment immediately so the PR author
-      # knows the full run has started (it will be updated when complete).
+      # knows the full run has started (updated when complete).
       - name: Post pipeline started comment
         uses: actions/github-script@v7
         env:
@@ -107,7 +116,6 @@ jobs:
             const repo      = process.env.REPO_VAR       || '';
             const runId     = process.env.RUN_ID_VAR     || '';
             const serverUrl = process.env.SERVER_URL_VAR || '';
-            const prTitle   = process.env.PR_TITLE_VAR   || '';
             const runUrl    = serverUrl + '/' + repo + '/actions/runs/' + runId;
 
             const body = [
@@ -157,22 +165,36 @@ jobs:
               core.exportVariable('BOT_COMMENT_ID', String(resp.data.id));
             }
 
-      # Run the full pipeline. AGT-01 extracts the JIRA ticket from the PR
-      # title/branch. AGT-02 validates code vs story. AGT-03 to AGT-07
-      # generate tests, execute them, and publish the report.
-      # The pipeline exits non-zero on any failure (JIRA mismatch, coverage
-      # below threshold, SLA breach, etc.) which fails the PR check.
+      - name: Start employee-app (docker compose)
+        run: |
+          docker compose up -d --build mongodb backend frontend
+          echo "Waiting for frontend on http://localhost:3000 ..."
+          for i in $(seq 1 40); do
+            curl -sf http://localhost:3000 > /dev/null 2>&1 && echo "Frontend reachable after ${i} attempts" && break
+            echo "Attempt $i/40 — waiting 5s..."
+            sleep 5
+            if [ "$i" -eq 40 ]; then
+              echo "ERROR: Frontend not reachable after 200s"
+              docker compose logs frontend
+              docker compose logs backend
+              exit 1
+            fi
+          done
+        env:
+          MONGO_ROOT_PASSWORD: ${{ secrets.MONGO_ROOT_PASSWORD || 'changeme' }}
+
       - name: Run full 7-agent pipeline (AGT-01 to AGT-07)
         id: pipeline
         continue-on-error: true
         run: npm run pipeline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
           JIRA_HOST: ${{ vars.JIRA_HOST }}
           JIRA_HOST_ALLOWLIST: ${{ vars.JIRA_HOST }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
-          REPO_PATH: "./"
+          REPO_PATH: "./employee-app"
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BRANCH: ${{ github.head_ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -180,18 +202,44 @@ jobs:
           MAX_FILES_SCAN: "500"
           ALLOWED_TEST_URLS: ${{ vars.STAGING_URL }}
           BASE_URL: ${{ vars.STAGING_URL }}
-          SLA_PASS_RATE: "0.95"
+          SLA_PASS_RATE: "1"
           MIN_P0_COVERAGE: "80"
           MIN_P1_COVERAGE: "80"
           MAX_GAP_PERCENT: "20"
+          AUTO_HEAL_ENABLED: "true"
           STAKEHOLDER_EMAILS: ${{ vars.STAKEHOLDER_EMAILS }}
-          DATABASE_URL: postgresql://qa_user:${{ secrets.DB_PASSWORD }}@localhost:5432/qa_reports
+          ELASTICSEARCH_URL: ${{ secrets.ELASTICSEARCH_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          # Not set on PR runs — AGT-01 through AGT-04 will use cached state when available
+          REGEN_SCENARIOS: ""
 
-      # Post the final report comment regardless of pipeline outcome.
-      # This updates the "in progress" comment posted above.
+      - name: Commit updated baseline and generated specs
+        if: steps.pipeline.outcome == 'success' || steps.pipeline.outcome == 'failure'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # CI checks out a synthetic merge commit (refs/pull/N/merge) in detached HEAD.
+          # Switch to the actual PR branch before committing so the bot commit lands
+          # on the PR branch head — not on top of the merge commit.
+          git fetch origin ${{ github.head_ref }}
+          git checkout ${{ github.head_ref }}
+          git add pipeline-state/regression-baseline.json || true
+          git add pipeline-state/pending-promotion.json || true
+          git add playwright-tests/specs/ || true
+          git add playwright-tests/pages/ || true
+          git add playwright-tests/fixtures/ || true
+          git diff --cached --quiet || git commit -m "chore: update regression baseline and generated specs [skip ci]"
+          git push origin HEAD:${{ github.head_ref }} || true
+
+      - name: Save pipeline state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: pipeline-state/
+          key: pipeline-state-pr-${{ github.event.pull_request.head.ref }}-${{ github.run_id }}
+
       - name: Post final report to PR
         if: always()
         uses: actions/github-script@v7
@@ -212,7 +260,6 @@ jobs:
             const runUrl     = serverUrl + '/' + repo + '/actions/runs/' + runId;
             const succeeded  = outcome === 'success';
 
-            // Helper to safely read a JSON state file
             function readState(filename) {
               try {
                 return JSON.parse(fs.readFileSync('pipeline-state/' + filename, 'utf8'));
@@ -224,21 +271,12 @@ jobs:
             const validated  = readState('validated-scenarios.json');
             const coverage   = readState('coverage-report.json');
             const execution  = readState('execution-result.json');
-            const dashboard  = readState('dashboard-data.json');
 
             const first      = validated && validated[0] ? validated[0] : null;
             const verdict    = first ? (first.alignmentVerdict || 'UNKNOWN') : 'UNKNOWN';
             const ticket     = first ? (first.jiraRef || 'N/A') : 'N/A';
             const jiraSum    = first ? (first.jiraSummary || 'N/A') : 'N/A';
             const findings   = first ? (first.alignmentFindings || []) : [];
-
-            // Determine per-agent status icons
-            function agentIcon(stateFile, extraCheck) {
-              var data = readState(stateFile);
-              if (!data) return ':x: Failed';
-              if (extraCheck && !extraCheck(data)) return ':warning: Warning';
-              return ':white_check_mark: Passed';
-            }
 
             var agt01Icon = validated ? ':white_check_mark: Passed' : ':x: Failed';
             var agt02Icon = first
@@ -254,15 +292,17 @@ jobs:
               : ':x: Failed';
             var agt07Icon = succeeded ? ':white_check_mark: Passed' : ':x: Failed';
 
-            var passRate   = execution ? (execution.passRate * 100).toFixed(1) + '%' : 'N/A';
-            var covPct     = coverage  ? coverage.coveragePercent.toFixed(1) + '%' : 'N/A';
-            var p0Pct      = coverage  ? coverage.p0CoveragePercent.toFixed(1) + '%' : 'N/A';
-            var duration   = execution ? (execution.durationMs / 1000).toFixed(0) + 's' : 'N/A';
+            var passRate    = execution ? (execution.passRate * 100).toFixed(1) + '%' : 'N/A';
+            var testType    = execution ? execution.testType.toUpperCase() : 'N/A';
+            var covPct      = coverage  ? coverage.coveragePercent.toFixed(1) + '%' : 'N/A';
+            var p0Pct       = coverage  ? coverage.p0CoveragePercent.toFixed(1) + '%' : 'N/A';
+            var uiCov       = coverage && coverage.ui  ? coverage.ui.coveragePercent.toFixed(1) + '% (P0: ' + coverage.ui.p0CoveragePercent.toFixed(1) + '%)' : 'N/A';
+            var apiCov      = coverage && coverage.api ? coverage.api.coveragePercent.toFixed(1) + '% (P0: ' + coverage.api.p0CoveragePercent.toFixed(1) + '%)' : 'N/A';
+            var duration    = execution ? (execution.durationMs / 1000).toFixed(0) + 's' : 'N/A';
 
             var headerIcon = succeeded ? ':white_check_mark:' : ':x:';
             var headerText = succeeded ? 'QA Pipeline Passed' : 'QA Pipeline Failed';
 
-            // Alignment findings section
             var criticals = findings.filter(function(f) { return f.severity === 'critical'; });
             var majors    = findings.filter(function(f) { return f.severity === 'major'; });
 
@@ -308,9 +348,12 @@ jobs:
               '',
               '| Metric | Value |',
               '|--------|-------|',
+              '| Test Type | ' + testType + ' |',
               '| Pass Rate | ' + passRate + ' |',
               '| Overall Coverage | ' + covPct + ' |',
               '| P0 Coverage | ' + p0Pct + ' |',
+              '| UI Coverage | ' + uiCov + ' |',
+              '| API Coverage | ' + apiCov + ' |',
               '| Duration | ' + duration + ' |',
               '',
               critSection,
@@ -338,7 +381,6 @@ jobs:
 
             var body = parts.join('\n');
 
-            // Upsert the comment
             var listResp = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -365,6 +407,10 @@ jobs:
               });
             }
 
+      - name: Stop employee-app
+        if: always()
+        run: docker compose down --volumes
+
       - name: Upload pipeline state
         if: always()
         uses: actions/upload-artifact@v4
@@ -390,7 +436,7 @@ jobs:
           retention-days: 14
 
       # This step is what actually fails the PR check.
-      # It runs after the comment is posted so the author always gets feedback.
+      # Runs after the comment is posted so the author always gets feedback.
       - name: Enforce pipeline success (AGT-07 gate)
         if: steps.pipeline.outcome == 'failure'
         run: |
@@ -404,34 +450,36 @@ jobs:
           echo "## PR Pipeline Results" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           if [ -f pipeline-state/execution-result.json ]; then
-            node -e "var r=require('./pipeline-state/execution-result.json');var c=require('./pipeline-state/coverage-report.json');var v=require('./pipeline-state/validated-scenarios.json');var first=v[0]||{};console.log('| Metric | Value |');console.log('|--------|-------|');console.log('| JIRA Ticket | '+(first.jiraRef||'N/A')+' |');console.log('| Alignment Verdict | '+(first.alignmentVerdict||'N/A')+' |');console.log('| Pass Rate | '+(r.passRate*100).toFixed(1)+'% |');console.log('| Passed | '+r.passed+'/'+r.totalTests+' |');console.log('| P0 Coverage | '+c.p0CoveragePercent.toFixed(1)+'% |');console.log('| Duration | '+(r.durationMs/1000).toFixed(0)+'s |');" >> "$GITHUB_STEP_SUMMARY"
+            node -e "
+              var r = require('./pipeline-state/execution-result.json');
+              var c = require('./pipeline-state/coverage-report.json');
+              var v = require('./pipeline-state/validated-scenarios.json');
+              var first = v[0] || {};
+              console.log('| Metric | Value |');
+              console.log('|--------|-------|');
+              console.log('| JIRA Ticket | ' + (first.jiraRef || 'N/A') + ' |');
+              console.log('| Alignment Verdict | ' + (first.alignmentVerdict || 'N/A') + ' |');
+              console.log('| Test Type | ' + r.testType.toUpperCase() + ' |');
+              console.log('| Pass Rate | ' + (r.passRate * 100).toFixed(1) + '% |');
+              console.log('| Passed | ' + r.passed + '/' + r.totalTests + ' |');
+              console.log('| P0 Coverage | ' + c.p0CoveragePercent.toFixed(1) + '% |');
+              console.log('| UI Coverage | ' + c.ui.coveragePercent.toFixed(1) + '% |');
+              console.log('| API Coverage | ' + c.api.coveragePercent.toFixed(1) + '% |');
+              console.log('| Duration | ' + (r.durationMs / 1000).toFixed(0) + 's |');
+            " >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Pipeline did not reach AGT-06 execution stage" >> "$GITHUB_STEP_SUMMARY"
           fi
 
   # =============================================================================
-  # JOB 2 - Full Pipeline on push / schedule / manual dispatch
+  # JOB 2 - Full Pipeline on manual dispatch / schedule
   # =============================================================================
 
   full-pipeline:
     name: "Full QA Pipeline (AGT-01 to AGT-07)"
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: qa_reports
-          POSTGRES_USER: qa_user
-          POSTGRES_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout
@@ -452,12 +500,7 @@ jobs:
         run: npm run typecheck
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox webkit
-
-      - name: Run DB migrations
-        run: npm run db:migrate
-        env:
-          DATABASE_URL: postgresql://qa_user:${{ secrets.DB_PASSWORD }}@localhost:5432/qa_reports
+        run: npx playwright install --with-deps chromium
 
       - name: Restore pipeline state (resume runs only)
         if: github.event.inputs.from_agent != '' && github.event.inputs.from_agent != '1'
@@ -473,37 +516,76 @@ jobs:
           FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
           printf 'PR_CHANGED_FILES<<EOF\n%s\nEOF\n' "$FILES" >> "$GITHUB_ENV"
 
+      - name: Start employee-app (docker compose)
+        run: |
+          docker compose up -d --build mongodb backend frontend
+          echo "Waiting for frontend on http://localhost:3000 ..."
+          for i in $(seq 1 40); do
+            curl -sf http://localhost:3000 > /dev/null 2>&1 && echo "Frontend reachable after ${i} attempts" && break
+            echo "Attempt $i/40 — waiting 5s..."
+            sleep 5
+            if [ "$i" -eq 40 ]; then
+              echo "ERROR: Frontend not reachable after 200s"
+              docker compose logs frontend
+              docker compose logs backend
+              exit 1
+            fi
+          done
+        env:
+          MONGO_ROOT_PASSWORD: ${{ secrets.MONGO_ROOT_PASSWORD || 'changeme' }}
+
       - name: Run 7-Agent QA Pipeline
         run: |
           FROM="${{ github.event.inputs.from_agent || '1' }}"
           SINGLE="${{ github.event.inputs.single_agent || '0' }}"
+          TYPE="${{ github.event.inputs.test_type || 'both' }}"
+          EXTRA=""
+          [ "${{ github.event.inputs.force_inspect }}" = "true" ] && EXTRA="$EXTRA --force-inspect"
+          [ "${{ github.event.inputs.add_regression }}" = "true" ] && EXTRA="$EXTRA --add-regression"
           if [ "$SINGLE" != "0" ]; then
-            npm run pipeline -- --agent="$SINGLE"
+            npm run pipeline -- --agent="$SINGLE" --test-type="$TYPE" $EXTRA
           else
-            npm run pipeline -- --from="$FROM"
+            npm run pipeline -- --from="$FROM" --test-type="$TYPE" $EXTRA
           fi
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REGEN_SCENARIOS: ${{ github.event.inputs.regen_scenarios == 'true' && 'true' || '' }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
           JIRA_HOST: ${{ vars.JIRA_HOST }}
           JIRA_HOST_ALLOWLIST: ${{ vars.JIRA_HOST }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
-          REPO_PATH: "./"
+          REPO_PATH: "./employee-app"
           PR_TITLE: ${{ github.event.head_commit.message }}
           PR_BRANCH: ${{ github.ref_name }}
           PR_NUMBER: ${{ github.run_number }}
           GITHUB_BASE_REF: "main"
           ALLOWED_TEST_URLS: ${{ vars.STAGING_URL }}
           BASE_URL: ${{ vars.STAGING_URL }}
-          SLA_PASS_RATE: "0.95"
+          SLA_PASS_RATE: "1"
           MIN_P0_COVERAGE: "80"
           MIN_P1_COVERAGE: "80"
           MAX_GAP_PERCENT: "20"
           STAKEHOLDER_EMAILS: ${{ vars.STAKEHOLDER_EMAILS }}
-          DATABASE_URL: postgresql://qa_user:${{ secrets.DB_PASSWORD }}@localhost:5432/qa_reports
+          ELASTICSEARCH_URL: ${{ secrets.ELASTICSEARCH_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+
+      - name: Commit updated baseline and generated specs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pipeline-state/regression-baseline.json || true
+          git add playwright-tests/specs/ || true
+          git add playwright-tests/pages/ || true
+          git add playwright-tests/fixtures/ || true
+          git diff --cached --quiet || git commit -m "chore: update regression baseline and generated specs [skip ci]"
+          git push origin HEAD:${{ github.ref_name }} || true
+
+      - name: Stop employee-app
+        if: always()
+        run: docker compose down --volumes
 
       - name: Save pipeline state
         if: always()
@@ -542,7 +624,85 @@ jobs:
           echo "## 7-Agent QA Pipeline Results" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           if [ -f pipeline-state/execution-result.json ]; then
-            node -e "var r=require('./pipeline-state/execution-result.json');var c=require('./pipeline-state/coverage-report.json');console.log('| Metric | Value |');console.log('|--------|-------|');console.log('| Pass Rate | '+(r.passRate*100).toFixed(1)+'% |');console.log('| Passed | '+r.passed+'/'+r.totalTests+' |');console.log('| Failed | '+r.failed+' |');console.log('| P0 Coverage | '+c.p0CoveragePercent.toFixed(1)+'% |');console.log('| Overall Coverage | '+c.coveragePercent.toFixed(1)+'% |');console.log('| Duration | '+(r.durationMs/1000).toFixed(0)+'s |');" >> "$GITHUB_STEP_SUMMARY"
+            node -e "
+              var r = require('./pipeline-state/execution-result.json');
+              var c = require('./pipeline-state/coverage-report.json');
+              console.log('| Metric | Value |');
+              console.log('|--------|-------|');
+              console.log('| Test Type | ' + r.testType.toUpperCase() + ' |');
+              console.log('| Pass Rate | ' + (r.passRate * 100).toFixed(1) + '% |');
+              console.log('| Passed | ' + r.passed + '/' + r.totalTests + ' |');
+              console.log('| Failed | ' + r.failed + ' |');
+              console.log('| P0 Coverage | ' + c.p0CoveragePercent.toFixed(1) + '% |');
+              console.log('| Overall Coverage | ' + c.coveragePercent.toFixed(1) + '% |');
+              console.log('| UI Coverage | ' + c.ui.coveragePercent.toFixed(1) + '% |');
+              console.log('| API Coverage | ' + c.api.coveragePercent.toFixed(1) + '% |');
+              console.log('| Duration | ' + (r.durationMs / 1000).toFixed(0) + 's |');
+            " >> "$GITHUB_STEP_SUMMARY"
           else
             echo "No execution results found - pipeline may not have reached AGT-06" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # =============================================================================
+  # JOB 3 - Promote new-feature cases to regression on PR merge
+  # Runs only on push to main (i.e. when a PR is merged).
+  # Reads pending-promotion.json committed by the PR pipeline and merges those
+  # test cases (with caseScope changed to "regression") into regression-baseline.json.
+  # =============================================================================
+
+  promote-on-merge:
+    name: "Promote new-feature cases to regression baseline"
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Promote pending new-feature cases to regression
+        run: |
+          PENDING="pipeline-state/pending-promotion.json"
+          BASELINE="pipeline-state/regression-baseline.json"
+
+          if [ ! -f "$PENDING" ]; then
+            echo "No pending-promotion.json found — nothing to promote."
+            exit 0
+          fi
+
+          node -e "
+            const fs = require('fs');
+            const pending  = JSON.parse(fs.readFileSync('$PENDING',  'utf8'));
+            const baseline = fs.existsSync('$BASELINE')
+              ? JSON.parse(fs.readFileSync('$BASELINE', 'utf8'))
+              : [];
+
+            const baselineIds = new Set(baseline.map(tc => tc.id));
+            const toPromote   = pending.filter(tc => !baselineIds.has(tc.id));
+
+            if (toPromote.length === 0) {
+              console.log('All pending cases already in baseline — nothing to promote.');
+              process.exit(0);
+            }
+
+            const promoted = toPromote.map(tc => ({ ...tc, caseScope: 'regression' }));
+            const updated  = [...baseline, ...promoted];
+            fs.writeFileSync('$BASELINE', JSON.stringify(updated, null, 2));
+            console.log('Promoted ' + promoted.length + ' case(s) to regression baseline (total: ' + updated.length + ')');
+          "
+
+          rm -f "$PENDING"
+
+      - name: Commit promoted baseline
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pipeline-state/regression-baseline.json || true
+          git rm --cached pipeline-state/pending-promotion.json 2>/dev/null || true
+          git diff --cached --quiet || git commit -m "chore: promote new-feature cases to regression baseline [skip ci]"
+          git push origin HEAD:main || true
