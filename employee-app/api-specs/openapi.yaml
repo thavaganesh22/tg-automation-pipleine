@@ -122,6 +122,11 @@ components:
           maxLength: 30
           example: "+1-416-555-0192"
           nullable: true
+        cellPhone:
+          type: string
+          maxLength: 30
+          example: "+1-416-555-0193"
+          nullable: true
         designation:
           type: string
           maxLength: 150
@@ -202,6 +207,9 @@ components:
         phone:
           type: string
           maxLength: 30
+        cellPhone:
+          type: string
+          maxLength: 30
         designation:
           type: string
           minLength: 1
@@ -237,6 +245,9 @@ components:
           type: string
           format: email
         phone:
+          type: string
+          maxLength: 30
+        cellPhone:
           type: string
           maxLength: 30
         designation:
@@ -455,6 +466,7 @@ paths:
               lastName: "Gopal"
               email: "thava.gopal@company.com"
               phone: "+1-416-555-0192"
+              cellPhone: "+1-416-555-0193"
               designation: "Senior QA Engineer"
               department: "QA"
               employmentType: "Full-Time"

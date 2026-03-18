@@ -200,7 +200,7 @@ MANDATORY RULES:
 2. Include at least: 1 positive (happy path), 1 negative (error/rejection), 1 edge (boundary)
 3. Each test case needs 3–20 concrete, independently reproducible steps
 4. Steps must reference real routes/endpoints/files from the scenario context
-5. Flag requiresPII: true if any step involves personal data (names, emails, phone, SSN)
+5. Flag requiresPII: true if any step involves personal data (names, emails, phone, cellPhone, SSN)
 6. THIS APP HAS NO AUTHENTICATION — do NOT generate any test case involving 401, 403, login, logout, tokens, sessions, or authorization headers. All endpoints are publicly accessible.
 7. Return ONLY a valid JSON array — no markdown, no explanation text
 8. NEVER hardcode specific employee names in steps (e.g. do NOT write "search for John Doe" or "click the row for Alice Smith").

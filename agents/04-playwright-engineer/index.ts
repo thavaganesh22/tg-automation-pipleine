@@ -119,8 +119,10 @@ export interface PlaywrightEngineerOutput {
 }
 
 // ── Data-testid reference (authoritative — shared across all prompts) ────────
+// The FORM section is generated dynamically from live browser observations so
+// new fields are picked up automatically without any code changes here.
 
-const DATA_TESTID_REFERENCE = `
+const DATA_TESTID_STATIC_PREFIX = `
 AUTHORITATIVE data-testid REFERENCE — use ONLY these exact attribute values:
 
 PAGE / TABLE:
@@ -148,44 +150,65 @@ DRAWER:
   [data-testid="employee-drawer"]         — slide-in drawer panel
   [data-testid="drawer-overlay"]          — backdrop (click closes drawer)
   [data-testid="close-drawer-btn"]        — X close button in drawer header
-  [data-testid="drawer-error"]            — error message inside drawer
+  [data-testid="drawer-error"]            — error message inside drawer`.trim();
 
-FORM (inside drawer):
-  [data-testid="firstName-input"]
-  [data-testid="lastName-input"]
-  [data-testid="email-input"]
-  [data-testid="phone-input"]
-  [data-testid="designation-input"]
-  [data-testid="department-select"]       — <select> for department
-  [data-testid="employmentType-select"]   — <select> for employment type
-  [data-testid="employmentStatus-select"] — <select> for employment status
-  [data-testid="startDate-input"]
-  [data-testid="street-input"]
-  [data-testid="city-input"]
-  [data-testid="state-input"]
-  [data-testid="postalCode-input"]
-  [data-testid="country-input"]
-  [data-testid="firstName-error"]
-  [data-testid="lastName-error"]
-  [data-testid="email-error"]
-  [data-testid="designation-error"]
-  [data-testid="department-error"]
-  [data-testid="employmentType-error"]
-  [data-testid="employmentStatus-error"]
-  [data-testid="startDate-error"]
-  [data-testid="address-street-error"]
-  [data-testid="address-city-error"]
-  [data-testid="address-country-error"]
-  [data-testid="delete-btn"]              — Delete (edit mode only)
-  [data-testid="cancel-btn"]              — Cancel / close form
-  [data-testid="submit-btn"]              — Save / Add Employee submit
-
+const DATA_TESTID_STATIC_SUFFIX = `
 CONFIRM DIALOG:
   [data-testid="confirm-dialog"]
   [data-testid="modal-overlay"]
   [data-testid="confirm-cancel-btn"]
-  [data-testid="confirm-delete-btn"]
-`.trim();
+  [data-testid="confirm-delete-btn"]`.trim();
+
+// Non-field drawer selectors excluded from the dynamic FORM listing
+const DRAWER_NON_FIELD_IDS = new Set([
+  "employee-drawer", "drawer-overlay", "close-drawer-btn", "drawer-error",
+  "delete-btn", "cancel-btn", "submit-btn",
+]);
+
+function buildDataTestidReference(obs?: EnhancedAppStructure | null): string {
+  // Build the FORM section from live observations when available
+  const drawerSelectors = obs?.observations?.addDrawerFields ?? [];
+  const formInputs = drawerSelectors.filter(
+    (id) => !DRAWER_NON_FIELD_IDS.has(id) && (id.endsWith("-input") || id.endsWith("-select"))
+  );
+  const formErrors = drawerSelectors.filter((id) => id.endsWith("-error"));
+  const formButtons = ["delete-btn", "cancel-btn", "submit-btn"].filter((id) =>
+    drawerSelectors.includes(id)
+  );
+
+  // Fall back to a minimal hardcoded list only when the inspector hasn't run yet
+  const inputs = formInputs.length > 0
+    ? formInputs.map((id) => `  [data-testid="${id}"]`).join("\n")
+    : [
+        "firstName-input", "lastName-input", "email-input", "phone-input", "cellPhone-input",
+        "designation-input", "department-select", "employmentType-select",
+        "employmentStatus-select", "startDate-input",
+        "street-input", "city-input", "state-input", "postalCode-input", "country-input",
+      ].map((id) => `  [data-testid="${id}"]`).join("\n");
+
+  const errors = formErrors.length > 0
+    ? formErrors.map((id) => `  [data-testid="${id}"]`).join("\n")
+    : [
+        "firstName-error", "lastName-error", "email-error", "designation-error",
+        "department-error", "employmentType-error", "employmentStatus-error",
+        "startDate-error", "address-street-error", "address-city-error", "address-country-error",
+        "phone-error", "cellPhone-error",
+      ].map((id) => `  [data-testid="${id}"]`).join("\n");
+
+  const buttons = formButtons.length > 0
+    ? formButtons.map((id) => `  [data-testid="${id}"]`).join("\n")
+    : [
+        `  [data-testid="delete-btn"]              — Delete (edit mode only)`,
+        `  [data-testid="cancel-btn"]              — Cancel / close form`,
+        `  [data-testid="submit-btn"]              — Save / Add Employee submit`,
+      ].join("\n");
+
+  return [
+    DATA_TESTID_STATIC_PREFIX,
+    `\nFORM (inside drawer):\n${inputs}\n${errors}\n${buttons}`,
+    `\n${DATA_TESTID_STATIC_SUFFIX}`,
+  ].join("\n");
+}
 
 // ── Live App Structure (discovered by Playwright browser inspection) ─────────
 
@@ -336,12 +359,14 @@ async function inspectAppStructure(baseUrl: string): Promise<AppStructure | null
           );
         } catch { /* may not populate in time — continue anyway */ }
 
-        // Capture prefilled input values
-        const inputIds = [
-          "firstName-input", "lastName-input", "email-input", "phone-input",
-          "designation-input", "department-select", "employmentType-select",
-          "employmentStatus-select", "startDate-input",
-        ];
+        // Dynamically discover all form inputs/selects in the add drawer from the live DOM
+        // so new fields are picked up automatically without any code changes here
+        const inputIds = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>('[data-testid$="-input"],[data-testid$="-select"]'))
+            .filter((el) => el instanceof HTMLInputElement || el instanceof HTMLSelectElement)
+            .map((el) => el.getAttribute("data-testid")!)
+            .filter(Boolean)
+        );
         for (const id of inputIds) {
           try {
             const el = page.locator(`[data-testid="${id}"]`);
@@ -1026,7 +1051,7 @@ STRICT PAGE OBJECT MODEL RULES — follow every rule exactly:
    - TypeScript strict mode — no 'any' types
    - Start with: import { Page } from '@playwright/test';
 
-${DATA_TESTID_REFERENCE}`,
+${buildDataTestidReference(enhancedObs)}`,
     messages: [
       {
         role: "user",
@@ -1526,7 +1551,7 @@ RULES:
 - TypeScript strict mode — no 'any'
 - Return ONLY the complete updated TypeScript class, no markdown fences
 
-${DATA_TESTID_REFERENCE}`,
+${buildDataTestidReference(enhancedObs)}`,
     messages: [
       {
         role: "user",

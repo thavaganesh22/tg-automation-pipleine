@@ -113,13 +113,11 @@ export async function inspectAppComprehensive(
         addDrawerFields.push(...allSelectors.filter((s) => !pageSelectors.includes(s)));
         addDrawerSnap = await ariaSnap(page);
 
-        // Capture form field defaults
-        const formFields = [
-          "firstName-input", "lastName-input", "email-input", "phone-input",
-          "designation-input", "department-select", "employmentType-select",
-          "employmentStatus-select", "startDate-input",
-          "street-input", "city-input", "state-input", "postalCode-input", "country-input",
-        ];
+        // Capture form field defaults — derived from dynamically discovered drawer selectors
+        // so new fields are picked up automatically without any code changes here
+        const formFields = addDrawerFields.filter(
+          (id) => id.endsWith("-input") || id.endsWith("-select")
+        );
         for (const id of formFields) {
           try {
             const el = page.locator(`[data-testid="${id}"]`);
@@ -215,12 +213,14 @@ export async function inspectAppComprehensive(
           );
         } catch { /* may not populate in time */ }
 
-        const inputIds = [
-          "firstName-input", "lastName-input", "email-input", "phone-input",
-          "designation-input", "department-select", "employmentType-select",
-          "employmentStatus-select", "startDate-input",
-          "street-input", "city-input", "state-input", "postalCode-input", "country-input",
-        ];
+        // Dynamically discover all form inputs/selects in the edit drawer from the live DOM
+        // so new fields are picked up automatically without any code changes here
+        const inputIds = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>('[data-testid$="-input"],[data-testid$="-select"]'))
+            .filter((el) => el instanceof HTMLInputElement || el instanceof HTMLSelectElement)
+            .map((el) => el.getAttribute("data-testid")!)
+            .filter(Boolean)
+        );
         for (const id of inputIds) {
           try {
             const el = page.locator(`[data-testid="${id}"]`);

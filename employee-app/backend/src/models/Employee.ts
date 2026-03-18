@@ -34,6 +34,7 @@ export interface IEmployee extends Document {
   lastName:         string;
   email:            string;
   phone:            string;
+  cellPhone:        string;
   designation:      string;
   department:       Department;
   employmentType:   EmploymentType;
@@ -59,6 +60,7 @@ const EmployeeSchema = new Schema<IEmployee>(
     lastName:         { type: String, required: true, trim: true, maxlength: 100 },
     email:            { type: String, required: true, trim: true, lowercase: true, unique: true, maxlength: 254 },
     phone:            { type: String, trim: true, maxlength: 30, default: "" },
+    cellPhone:        { type: String, trim: true, maxlength: 30, default: "" },
     designation:      { type: String, required: true, trim: true, maxlength: 150 },
     department:       { type: String, required: true, enum: DEPARTMENTS },
     employmentType:   { type: String, required: true, enum: EMPLOYMENT_TYPES },
