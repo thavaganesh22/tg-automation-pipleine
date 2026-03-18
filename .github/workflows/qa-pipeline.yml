@@ -207,6 +207,9 @@ jobs:
           MIN_P1_COVERAGE: "80"
           MAX_GAP_PERCENT: "20"
           AUTO_HEAL_ENABLED: "true"
+          MAX_REGRESSION_CASES: "50"
+          MAX_NEW_FEATURE_CASES: "10"
+          MAX_JIRA_SCENARIOS: "10"
           STAKEHOLDER_EMAILS: ${{ vars.STAKEHOLDER_EMAILS }}
           ELASTICSEARCH_URL: ${{ secrets.ELASTICSEARCH_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
@@ -611,6 +614,9 @@ jobs:
           MIN_P0_COVERAGE: "80"
           MIN_P1_COVERAGE: "80"
           MAX_GAP_PERCENT: "20"
+          MAX_REGRESSION_CASES: "50"
+          MAX_NEW_FEATURE_CASES: "10"
+          MAX_JIRA_SCENARIOS: "10"
           STAKEHOLDER_EMAILS: ${{ vars.STAKEHOLDER_EMAILS }}
           ELASTICSEARCH_URL: ${{ secrets.ELASTICSEARCH_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
