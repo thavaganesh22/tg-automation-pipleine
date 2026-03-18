@@ -124,7 +124,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
   );
 
   const err = (k: keyof Errors) =>
-    errors[k] ? <p className="form-error">{errors[k]}</p> : null;
+    errors[k] ? <p data-testid={`${String(k).replace(".", "-")}-error`} className="form-error">{errors[k]}</p> : null;
 
   return (
     <form onSubmit={handleSubmit} noValidate style={{ display: "contents" }}>
@@ -135,7 +135,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
           <div className="form-grid">
             <F id="firstName" label="First name" required>
               <input
-                id="firstName" className={`form-input${errors.firstName ? " invalid" : ""}`}
+                id="firstName" data-testid="firstName-input" className={`form-input${errors.firstName ? " invalid" : ""}`}
                 value={form.firstName} onChange={(e) => set("firstName", e.target.value)}
                 placeholder="Thava" autoFocus
               />
@@ -143,7 +143,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             </F>
             <F id="lastName" label="Last name" required>
               <input
-                id="lastName" className={`form-input${errors.lastName ? " invalid" : ""}`}
+                id="lastName" data-testid="lastName-input" className={`form-input${errors.lastName ? " invalid" : ""}`}
                 value={form.lastName} onChange={(e) => set("lastName", e.target.value)}
                 placeholder="Gopal"
               />
@@ -151,7 +151,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             </F>
             <F id="email" label="Email" required>
               <input
-                id="email" type="email" className={`form-input${errors.email ? " invalid" : ""}`}
+                id="email" data-testid="email-input" type="email" className={`form-input${errors.email ? " invalid" : ""}`}
                 value={form.email} onChange={(e) => set("email", e.target.value)}
                 placeholder="name@company.com"
               />
@@ -159,7 +159,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             </F>
             <F id="phone" label="Phone">
               <input
-                id="phone" className="form-input"
+                id="phone" data-testid="phone-input" className="form-input"
                 value={form.phone} onChange={(e) => set("phone", e.target.value)}
                 placeholder="+1-416-555-0192"
               />
@@ -173,7 +173,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
           <div className="form-grid">
             <F id="designation" label="Designation" required>
               <input
-                id="designation" className={`form-input${errors.designation ? " invalid" : ""}`}
+                id="designation" data-testid="designation-input" className={`form-input${errors.designation ? " invalid" : ""}`}
                 value={form.designation} onChange={(e) => set("designation", e.target.value)}
                 placeholder="Senior QA Engineer"
               />
@@ -181,7 +181,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             </F>
             <F id="department" label="Department" required>
               <select
-                id="department" className={`form-select${errors.department ? " invalid" : ""}`}
+                id="department" data-testid="department-select" className={`form-select${errors.department ? " invalid" : ""}`}
                 value={form.department} onChange={(e) => set("department", e.target.value)}
               >
                 <option value="">Select department</option>
@@ -193,7 +193,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             </F>
             <F id="employmentType" label="Employment type" required>
               <select
-                id="employmentType" className={`form-select${errors.employmentType ? " invalid" : ""}`}
+                id="employmentType" data-testid="employmentType-select" className={`form-select${errors.employmentType ? " invalid" : ""}`}
                 value={form.employmentType} onChange={(e) => set("employmentType", e.target.value)}
               >
                 <option value="">Select type</option>
@@ -205,7 +205,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             </F>
             <F id="employmentStatus" label="Status" required>
               <select
-                id="employmentStatus" className={`form-select${errors.employmentStatus ? " invalid" : ""}`}
+                id="employmentStatus" data-testid="employmentStatus-select" className={`form-select${errors.employmentStatus ? " invalid" : ""}`}
                 value={form.employmentStatus} onChange={(e) => set("employmentStatus", e.target.value)}
               >
                 {EMPLOYMENT_STATUSES.map((s) => (
@@ -216,7 +216,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             </F>
             <F id="startDate" label="Start date" required>
               <input
-                id="startDate" type="date" className={`form-input${errors.startDate ? " invalid" : ""}`}
+                id="startDate" data-testid="startDate-input" type="date" className={`form-input${errors.startDate ? " invalid" : ""}`}
                 value={form.startDate} onChange={(e) => set("startDate", e.target.value)}
               />
               {err("startDate")}
@@ -231,7 +231,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             <div className="form-grid-full">
               <F id="street" label="Street address" required>
                 <input
-                  id="street" className={`form-input${errors["address.street"] ? " invalid" : ""}`}
+                  id="street" data-testid="street-input" className={`form-input${errors["address.street"] ? " invalid" : ""}`}
                   value={form.address.street} onChange={(e) => setAddr("street", e.target.value)}
                   placeholder="123 Innovation Drive"
                 />
@@ -240,7 +240,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             </div>
             <F id="city" label="City" required>
               <input
-                id="city" className={`form-input${errors["address.city"] ? " invalid" : ""}`}
+                id="city" data-testid="city-input" className={`form-input${errors["address.city"] ? " invalid" : ""}`}
                 value={form.address.city} onChange={(e) => setAddr("city", e.target.value)}
                 placeholder="Toronto"
               />
@@ -248,21 +248,21 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             </F>
             <F id="state" label="State / Province">
               <input
-                id="state" className="form-input"
+                id="state" data-testid="state-input" className="form-input"
                 value={form.address.state} onChange={(e) => setAddr("state", e.target.value)}
                 placeholder="Ontario"
               />
             </F>
             <F id="postalCode" label="Postal code">
               <input
-                id="postalCode" className="form-input"
+                id="postalCode" data-testid="postalCode-input" className="form-input"
                 value={form.address.postalCode} onChange={(e) => setAddr("postalCode", e.target.value)}
                 placeholder="M5V 3A8"
               />
             </F>
             <F id="country" label="Country" required>
               <input
-                id="country" className={`form-input${errors["address.country"] ? " invalid" : ""}`}
+                id="country" data-testid="country-input" className={`form-input${errors["address.country"] ? " invalid" : ""}`}
                 value={form.address.country} onChange={(e) => setAddr("country", e.target.value)}
                 placeholder="Canada"
               />
@@ -277,6 +277,7 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
         {isEdit && onDelete && (
           <button
             type="button"
+            data-testid="delete-btn"
             className="btn btn-danger btn-sm"
             onClick={onDelete}
             disabled={saving}
@@ -285,10 +286,10 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
             Delete
           </button>
         )}
-        <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={saving}>
+        <button data-testid="cancel-btn" type="button" className="btn btn-ghost" onClick={onCancel} disabled={saving}>
           Cancel
         </button>
-        <button type="submit" className="btn btn-primary" disabled={saving}>
+        <button data-testid="submit-btn" type="submit" className="btn btn-primary" disabled={saving}>
           {saving ? "Saving…" : isEdit ? "Save changes" : "Add employee"}
         </button>
       </div>

@@ -1,0 +1,2896 @@
+[
+  {
+    "id": "4fdded8b-0d33-5f27-c59a-bffe9d992106",
+    "scenarioId": "b1560d14-3341-5097-bf11-68633f9ba3c6",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] health: GET /api/health returns 200 with ok status",
+    "module": "health",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "Backend server is started and MongoDB is connected."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send GET /api/health with header Accept: application/json",
+        "expectedResult": "HTTP status code is 200",
+        "testData": ""
+      },
+      {
+        "stepNumber": 2,
+        "action": "Inspect the response Content-Type header",
+        "expectedResult": "Content-Type header contains 'application/json'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 3,
+        "action": "Parse the response JSON body and inspect the 'status' field",
+        "expectedResult": "Response JSON contains field 'status' with value 'ok'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 4,
+        "action": "Inspect the response JSON body for a 'mongo' or 'db' connectivity field (if present)",
+        "expectedResult": "If a database connectivity field is present, its value indicates a connected/healthy state (e.g. 'connected', true, or 'ok')",
+        "testData": ""
+      },
+      {
+        "stepNumber": 5,
+        "action": "Re-send GET /api/health a second time immediately after step 1",
+        "expectedResult": "HTTP status code is still 200 and 'status' field is still 'ok', confirming idempotency of the health endpoint",
+        "testData": ""
+      }
+    ],
+    "expectedOutcome": "GET /api/health consistently returns HTTP 200 with a JSON body containing status: 'ok', confirming both the API server and MongoDB connection are healthy.",
+    "requiresPII": false,
+    "tags": [
+      "health",
+      "regression",
+      "api"
+    ]
+  },
+  {
+    "id": "f132058b-78a9-548a-11e7-1a3f70bd72bf",
+    "scenarioId": "b1560d14-3341-5097-bf11-68633f9ba3c6",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] health: GET /api/health does not accept unsupported HTTP methods",
+    "module": "health",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "Backend server is started and MongoDB is connected."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send POST /api/health with header Content-Type: application/json and an empty JSON body {}",
+        "expectedResult": "HTTP status code is 404 or 405 (Method Not Allowed), confirming POST is not a supported method on this endpoint",
+        "testData": "{}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Send DELETE /api/health with no request body",
+        "expectedResult": "HTTP status code is 404 or 405, confirming DELETE is not a supported method on this endpoint",
+        "testData": ""
+      },
+      {
+        "stepNumber": 3,
+        "action": "Send PUT /api/health with header Content-Type: application/json and body {}",
+        "expectedResult": "HTTP status code is 404 or 405, confirming PUT is not a supported method on this endpoint",
+        "testData": "{}"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Send GET /api/health again to confirm the endpoint is still operational after the unsupported method attempts",
+        "expectedResult": "HTTP status code is 200 and response JSON contains 'status': 'ok', confirming the health endpoint was not affected by the invalid method calls",
+        "testData": ""
+      }
+    ],
+    "expectedOutcome": "Unsupported HTTP methods (POST, DELETE, PUT) against GET /api/health are rejected with 404 or 405, while a subsequent valid GET still returns 200 with status 'ok'.",
+    "requiresPII": false,
+    "tags": [
+      "health",
+      "regression",
+      "api",
+      "negative"
+    ]
+  },
+  {
+    "id": "f4265755-c2dc-54ca-dbca-6d2cac5600a3",
+    "scenarioId": "b330df58-50c1-5130-7db0-7d00e37d8fa1",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-list: Page loads and renders employee table with data",
+    "module": "employee-list",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "At least one employee record exists in the database (seeded data).",
+      "No authentication required — app is publicly accessible."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Open a browser and navigate to /",
+        "expectedResult": "The Employees page loads without any error banners or crash screens; the page title or heading containing 'Employee' is visible",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Wait for the employee table to finish loading (spinner or skeleton disappears)",
+        "expectedResult": "A table element is visible on the page with at least one data row rendered; no 'loading' indicator remains",
+        "testData": "selector: [data-testid=employee-table] or <table>"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Inspect the table header row",
+        "expectedResult": "Column headers are visible and include labels such as 'Name', 'Email', 'Department', and 'Position' (or equivalent column headings defined in EmployeeTable.tsx)",
+        "testData": "selector: thead tr th"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Count the number of data rows rendered in the table body",
+        "expectedResult": "At least one <tr> element is present inside <tbody>; the row count matches the number of employees returned by GET /api/employees for the current page",
+        "testData": "selector: tbody tr"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Verify the first data row contains non-empty text in each visible column cell",
+        "expectedResult": "Each cell in the first row displays a non-blank value (name, email, department, position); no cell shows 'undefined', 'null', or is visually empty",
+        "testData": "selector: tbody tr:first-child td"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Scroll to the bottom of the page and check for a pagination control or row-count summary",
+        "expectedResult": "A pagination component or a record-count label (e.g. 'Showing 1–10 of N employees') is visible, confirming the table is data-bound and paginated correctly",
+        "testData": "selector: [data-testid=pagination] or text matching /showing/i"
+      }
+    ],
+    "expectedOutcome": "The employee list page renders successfully on first load, displaying a populated table with correct column headers, at least one employee row with valid field values, and a pagination or count indicator — confirming end-to-end data flow from GET /api/employees to the UI.",
+    "requiresPII": false,
+    "tags": [
+      "employee-list",
+      "regression",
+      "ui",
+      "smoke",
+      "table-render"
+    ]
+  },
+  {
+    "id": "a9e256b0-6aa1-5b4a-5596-b4384aa01c85",
+    "scenarioId": "b330df58-50c1-5130-7db0-7d00e37d8fa1",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-list: Table displays empty-state message when no employees match a filter",
+    "module": "employee-list",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "The employee list page has a search or filter input available.",
+      "No authentication required — app is publicly accessible."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Open a browser and navigate to /",
+        "expectedResult": "The Employees page loads and the employee table is visible with at least one row",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Wait for the employee table to finish loading (spinner or skeleton disappears)",
+        "expectedResult": "Table body contains at least one data row; no loading indicator is present",
+        "testData": "selector: [data-testid=employee-table] tbody tr"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Locate the search or filter input field on the page",
+        "expectedResult": "A text input for searching or filtering employees is visible and interactive",
+        "testData": "selector: [data-testid=search-input] or input[placeholder*='Search' i]"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Click the search/filter input and type a string that is guaranteed to match no employee — use a random UUID-like string (e.g. 'zzz-no-match-99999')",
+        "expectedResult": "The input field accepts the typed text and displays it",
+        "testData": "value: 'zzz-no-match-99999' (a string with no realistic match in seeded data)"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Wait for the table to re-render or for a network request to complete after typing",
+        "expectedResult": "The table body no longer shows any employee data rows; the previous rows have been removed from the DOM",
+        "testData": "selector: tbody tr — expected count: 0"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Inspect the area where table rows were previously displayed",
+        "expectedResult": "An empty-state message is visible (e.g. 'No employees found', 'No results', or equivalent text defined in EmployeeTable.tsx); no error banner or crash screen is shown",
+        "testData": "selector: [data-testid=empty-state] or text matching /no employees/i or /no results/i"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Clear the search input field completely (select all and delete, or click a clear button if present)",
+        "expectedResult": "The input field is empty",
+        "testData": "action: clear input"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Wait for the table to re-render after clearing the search",
+        "expectedResult": "The employee table repopulates with the original seeded employee rows; the empty-state message is no longer visible",
+        "testData": "selector: tbody tr — expected count: ≥ 1"
+      }
+    ],
+    "expectedOutcome": "When a search term matching no employees is entered, the table gracefully displays an empty-state message instead of crashing or showing stale data. Clearing the search restores the full employee list, confirming the filter is reactive and non-destructive.",
+    "requiresPII": false,
+    "tags": [
+      "employee-list",
+      "regression",
+      "ui",
+      "empty-state",
+      "search",
+      "filter"
+    ]
+  },
+  {
+    "id": "7efd9af0-46b2-5377-7bb4-955d22bb9b3d",
+    "scenarioId": "b19f2fdb-6d9d-54fa-25c6-c9216944a094",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-list: GET /api/employees returns paginated first page with correct response shape",
+    "module": "employee-list",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "At least one employee record exists in the database."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send GET /api/employees with no query parameters",
+        "expectedResult": "Response status is 200",
+        "testData": ""
+      },
+      {
+        "stepNumber": 2,
+        "action": "Assert response Content-Type header contains 'application/json'",
+        "expectedResult": "Content-Type header value includes 'application/json'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 3,
+        "action": "Assert response body is a JSON object (not a raw array)",
+        "expectedResult": "Response body is a JSON object with top-level keys",
+        "testData": ""
+      },
+      {
+        "stepNumber": 4,
+        "action": "Assert response body contains a top-level 'data' field that is an array",
+        "expectedResult": "'data' field exists and is an array with length >= 1",
+        "testData": ""
+      },
+      {
+        "stepNumber": 5,
+        "action": "Assert response body contains a top-level 'total' field that is a number",
+        "expectedResult": "'total' field exists and is a number >= 1",
+        "testData": ""
+      },
+      {
+        "stepNumber": 6,
+        "action": "Assert response body contains a top-level 'page' field",
+        "expectedResult": "'page' field exists and equals 1 (or the default first page value)",
+        "testData": ""
+      },
+      {
+        "stepNumber": 7,
+        "action": "Assert response body contains a top-level 'limit' (or 'pageSize') field that is a positive integer",
+        "expectedResult": "'limit' or 'pageSize' field exists and is a positive integer (e.g. 10 or 20)",
+        "testData": ""
+      },
+      {
+        "stepNumber": 8,
+        "action": "Inspect the first element of the 'data' array and assert it contains the required employee fields: '_id', 'firstName', 'lastName', 'email', 'designation', 'department', 'employmentType', 'employmentStatus', 'startDate'",
+        "expectedResult": "First element of 'data' array contains all required fields with non-null, non-empty values",
+        "testData": ""
+      },
+      {
+        "stepNumber": 9,
+        "action": "Assert the length of the 'data' array does not exceed the value of the 'limit' (or 'pageSize') field",
+        "expectedResult": "data.length <= limit, confirming pagination is applied and the response is not returning all records unbounded",
+        "testData": ""
+      },
+      {
+        "stepNumber": 10,
+        "action": "Send GET /api/employees?page=1&limit=5",
+        "expectedResult": "Response status is 200 and 'data' array length is <= 5",
+        "testData": "page=1&limit=5"
+      }
+    ],
+    "expectedOutcome": "GET /api/employees returns HTTP 200 with a JSON object containing a paginated 'data' array, a 'total' count, and pagination metadata. Each employee record in 'data' contains all required fields. The number of records returned does not exceed the page limit.",
+    "requiresPII": false,
+    "tags": [
+      "employee-list",
+      "regression",
+      "api",
+      "pagination",
+      "response-shape"
+    ]
+  },
+  {
+    "id": "59672e2b-f616-5e47-085a-65f2218d7a97",
+    "scenarioId": "b19f2fdb-6d9d-54fa-25c6-c9216944a094",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-list: GET /api/employees rejects invalid pagination parameters with 400",
+    "module": "employee-list",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send GET /api/employees?page=0&limit=10",
+        "expectedResult": "Response status is 400 or 422; response body contains an error message indicating 'page' must be >= 1",
+        "testData": "page=0&limit=10"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Assert response Content-Type header contains 'application/json'",
+        "expectedResult": "Content-Type header value includes 'application/json'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 3,
+        "action": "Assert response body contains an 'error' or 'message' field with a non-empty string describing the validation failure",
+        "expectedResult": "'error' or 'message' field is present and non-empty",
+        "testData": ""
+      },
+      {
+        "stepNumber": 4,
+        "action": "Send GET /api/employees?page=1&limit=0",
+        "expectedResult": "Response status is 400 or 422; response body contains an error message indicating 'limit' must be >= 1",
+        "testData": "page=1&limit=0"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Send GET /api/employees?page=-1&limit=10",
+        "expectedResult": "Response status is 400 or 422; response body contains an error message indicating 'page' must be a positive integer",
+        "testData": "page=-1&limit=10"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Send GET /api/employees?page=abc&limit=10",
+        "expectedResult": "Response status is 400 or 422; response body contains an error message indicating 'page' must be a valid integer",
+        "testData": "page=abc&limit=10"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Send GET /api/employees?page=1&limit=abc",
+        "expectedResult": "Response status is 400 or 422; response body contains an error message indicating 'limit' must be a valid integer",
+        "testData": "page=1&limit=abc"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Send GET /api/employees?page=1&limit=10 (valid baseline request) to confirm the endpoint is healthy after the invalid requests",
+        "expectedResult": "Response status is 200 and 'data' array is present, confirming the server did not enter an error state",
+        "testData": "page=1&limit=10"
+      }
+    ],
+    "expectedOutcome": "GET /api/employees returns HTTP 400 or 422 for invalid pagination parameters (zero, negative, or non-numeric values for 'page' or 'limit'), with a JSON error body describing the validation failure. A subsequent valid request returns 200, confirming server stability.",
+    "requiresPII": false,
+    "tags": [
+      "employee-list",
+      "regression",
+      "api",
+      "pagination",
+      "validation",
+      "negative"
+    ]
+  },
+  {
+    "id": "98810032-b079-5fe7-1a32-fb48bec7a145",
+    "scenarioId": "7d11224a-02fa-541e-d08a-02ab7da9d460",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-create: POST /api/employees with all valid fields returns 201 and persists employee",
+    "module": "employee-create",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "POST /api/employees endpoint is reachable.",
+      "A unique email is generated using a timestamp suffix (e.g. test+<timestamp>@example.com) to avoid DUPLICATE_EMAIL conflicts on repeated runs."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send POST /api/employees with Content-Type: application/json and a complete valid JSON body containing all required fields.",
+        "expectedResult": "HTTP 201 Created is returned. Response Content-Type header is application/json.",
+        "testData": "{\"firstName\":\"Test\",\"lastName\":\"User\",\"email\":\"test+<timestamp>@example.com\",\"designation\":\"Engineer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-01-15\",\"address\":{\"street\":\"123 Test St\",\"city\":\"Test City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Assert the response body contains a top-level `_id` field that is a non-empty string.",
+        "expectedResult": "`_id` is present and non-empty, confirming the record was persisted with a database-generated identifier.",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Assert the response body field `firstName` equals the value sent in the request.",
+        "expectedResult": "`firstName` in response matches the submitted value exactly.",
+        "testData": "Expected: \"Test\""
+      },
+      {
+        "stepNumber": 4,
+        "action": "Assert the response body field `lastName` equals the value sent in the request.",
+        "expectedResult": "`lastName` in response matches the submitted value exactly.",
+        "testData": "Expected: \"User\""
+      },
+      {
+        "stepNumber": 5,
+        "action": "Assert the response body field `email` equals the unique email sent in the request.",
+        "expectedResult": "`email` in response matches the submitted unique email exactly.",
+        "testData": "Expected: \"test+<timestamp>@example.com\""
+      },
+      {
+        "stepNumber": 6,
+        "action": "Assert the response body fields `designation`, `department`, `employmentType`, `employmentStatus`, and `startDate` match the submitted values.",
+        "expectedResult": "All five fields are present in the response and equal the submitted values.",
+        "testData": "designation: \"Engineer\", department: \"Engineering\", employmentType: \"Full-Time\", employmentStatus: \"Active\", startDate: \"2024-01-15\""
+      },
+      {
+        "stepNumber": 7,
+        "action": "Assert the response body contains an `address` object with `street`, `city`, and `country` matching the submitted values.",
+        "expectedResult": "`address.street` = \"123 Test St\", `address.city` = \"Test City\", `address.country` = \"United States\".",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Using the `_id` returned in step 1, send GET /api/employees/<_id> to confirm the record was persisted.",
+        "expectedResult": "HTTP 200 OK is returned. Response body `_id` matches the created employee's ID and `email` matches the unique email used in step 1.",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 9,
+        "action": "Send DELETE /api/employees/<_id> to clean up the test employee created in step 1.",
+        "expectedResult": "HTTP 200 or 204 is returned, confirming the test employee has been removed and will not pollute subsequent test runs.",
+        "testData": "N/A"
+      }
+    ],
+    "expectedOutcome": "POST /api/employees with a fully valid payload returns HTTP 201, a JSON body containing the persisted employee document with a database-generated `_id`, and all submitted fields reflected accurately. A subsequent GET confirms persistence. Cleanup DELETE removes the test record.",
+    "requiresPII": false,
+    "tags": [
+      "employee-create",
+      "regression",
+      "api",
+      "happy-path",
+      "P0"
+    ]
+  },
+  {
+    "id": "6a7ca48c-ece1-57cf-7768-8697d292a4ce",
+    "scenarioId": "7d11224a-02fa-541e-d08a-02ab7da9d460",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-create: POST /api/employees with missing required fields returns 400 and descriptive error",
+    "module": "employee-create",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "POST /api/employees endpoint is reachable.",
+      "No prior state setup is required; this test sends intentionally invalid payloads and does not persist any data."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send POST /api/employees with Content-Type: application/json and an empty JSON body `{}`.",
+        "expectedResult": "HTTP 400 Bad Request is returned. Response Content-Type is application/json.",
+        "testData": "{}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Assert the response body contains an error message or validation errors array indicating that required fields are missing.",
+        "expectedResult": "Response body includes a non-empty `message`, `error`, or `errors` field describing the missing required fields (e.g. firstName, lastName, email, etc.).",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Send POST /api/employees with Content-Type: application/json and a body that includes all required fields EXCEPT `email`.",
+        "expectedResult": "HTTP 400 Bad Request is returned. Response Content-Type is application/json.",
+        "testData": "{\"firstName\":\"Test\",\"lastName\":\"User\",\"designation\":\"Engineer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-01-15\",\"address\":{\"street\":\"123 Test St\",\"city\":\"Test City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Assert the response body references `email` as the missing or invalid field.",
+        "expectedResult": "Response body error message or errors array explicitly mentions `email` as a required field that is absent or invalid.",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Send POST /api/employees with Content-Type: application/json and a body that includes all required fields but sets `email` to a non-email string (e.g. \"not-an-email\").",
+        "expectedResult": "HTTP 400 or 422 is returned. Response Content-Type is application/json.",
+        "testData": "{\"firstName\":\"Test\",\"lastName\":\"User\",\"email\":\"not-an-email\",\"designation\":\"Engineer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-01-15\",\"address\":{\"street\":\"123 Test St\",\"city\":\"Test City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Assert the response body references `email` as the invalid field and does NOT return a 201 or include an `_id`.",
+        "expectedResult": "Response body error message mentions `email` format validation failure. No `_id` field is present in the response.",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Send POST /api/employees with Content-Type: application/json and a body that omits the `address` field entirely.",
+        "expectedResult": "HTTP 400 Bad Request is returned. Response Content-Type is application/json.",
+        "testData": "{\"firstName\":\"Test\",\"lastName\":\"User\",\"email\":\"test+missing_address_<timestamp>@example.com\",\"designation\":\"Engineer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-01-15\"}"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Assert the response body references `address` as a missing or required field and does NOT include an `_id`.",
+        "expectedResult": "Response body error message or errors array mentions `address`. No `_id` is present, confirming no record was created.",
+        "testData": "N/A"
+      }
+    ],
+    "expectedOutcome": "POST /api/employees with missing or malformed required fields consistently returns HTTP 400 (or 422) with a JSON error body that identifies the offending fields. No employee record is created for any of the invalid payloads.",
+    "requiresPII": false,
+    "tags": [
+      "employee-create",
+      "regression",
+      "api",
+      "negative",
+      "validation",
+      "P1"
+    ]
+  },
+  {
+    "id": "f1b75045-4c97-583e-3b53-08f1ad465f2a",
+    "scenarioId": "3d181a74-34b5-5a27-6a57-ccc037cbe66a",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-create: Add employee drawer opens and successfully saves a new employee",
+    "module": "employee-create",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "No prior test employee with the same email exists.",
+      "User is on the Employees page at /employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /employees in the browser.",
+        "expectedResult": "The Employees page loads and the employee list is visible. An 'Add Employee' button is present on the page.",
+        "testData": "route: /employees"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the 'Add Employee' button identified by [data-testid=add-employee-btn].",
+        "expectedResult": "The Add Employee drawer slides open. The employee form is fully visible with all input fields (e.g. First Name, Last Name, Email, Department, Role) rendered and interactive.",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Verify the form is in an empty/blank state with no pre-filled values.",
+        "expectedResult": "All form fields are empty. No validation error messages are shown.",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Fill in the First Name field with a test value.",
+        "expectedResult": "The First Name field accepts and displays the entered text.",
+        "testData": "First Name: 'Test', selector: [data-testid=input-first-name]"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Fill in the Last Name field with a test value.",
+        "expectedResult": "The Last Name field accepts and displays the entered text.",
+        "testData": "Last Name: 'Employee', selector: [data-testid=input-last-name]"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Fill in the Email field with a unique timestamped email address.",
+        "expectedResult": "The Email field accepts and displays the entered email.",
+        "testData": "Email: test+<timestamp>@example.com, selector: [data-testid=input-email]"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Select or fill in the Department field with a valid department value.",
+        "expectedResult": "The Department field reflects the selected/entered value.",
+        "testData": "Department: 'Engineering', selector: [data-testid=input-department]"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Select or fill in the Role field with a valid role value.",
+        "expectedResult": "The Role field reflects the selected/entered value.",
+        "testData": "Role: 'Engineer', selector: [data-testid=input-role]"
+      },
+      {
+        "stepNumber": 9,
+        "action": "Click the Save (or Submit) button inside the drawer.",
+        "expectedResult": "The form submits without client-side validation errors. A loading/spinner state may briefly appear on the button.",
+        "testData": "selector: [data-testid=save-employee-btn]"
+      },
+      {
+        "stepNumber": 10,
+        "action": "Wait for the submission to complete and observe the UI response.",
+        "expectedResult": "The drawer closes automatically. A success toast notification or confirmation message is displayed (e.g. 'Employee added successfully' or similar).",
+        "testData": "selector: [data-testid=toast-success] or equivalent"
+      },
+      {
+        "stepNumber": 11,
+        "action": "Search or filter the employee list for the newly created employee by the first and last name entered in steps 4–5.",
+        "expectedResult": "The newly created employee appears in the employee list with the correct name and email visible in their row.",
+        "testData": "Search term: 'Test Employee', selector: [data-testid=search-input]"
+      },
+      {
+        "stepNumber": 12,
+        "action": "Via API, delete the test employee created in this test to clean up (using the employee ID retrieved from the list or API).",
+        "expectedResult": "The test employee is removed and no longer appears in the list on refresh.",
+        "testData": "DELETE /api/employees/:id where :id is the ID of the employee created in this test"
+      }
+    ],
+    "expectedOutcome": "A new employee is successfully created via the Add Employee drawer form. The drawer closes, a success notification is shown, and the new employee appears in the employee list.",
+    "requiresPII": true,
+    "tags": [
+      "employee-create",
+      "regression",
+      "ui",
+      "happy-path",
+      "drawer",
+      "form-submit"
+    ]
+  },
+  {
+    "id": "eb39b4a1-46b0-519e-3f92-1daacaf1068a",
+    "scenarioId": "3d181a74-34b5-5a27-6a57-ccc037cbe66a",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-create: Add employee form shows validation errors when submitted with missing required fields",
+    "module": "employee-create",
+    "priority": "P0",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "User is on the Employees page at /employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /employees in the browser.",
+        "expectedResult": "The Employees page loads and the employee list is visible. An 'Add Employee' button is present.",
+        "testData": "route: /employees"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the 'Add Employee' button identified by [data-testid=add-employee-btn].",
+        "expectedResult": "The Add Employee drawer slides open. The employee form is fully visible with all input fields rendered and empty.",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Leave all form fields blank (do not enter any data).",
+        "expectedResult": "All form fields remain empty. No validation messages are shown yet.",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Click the Save (or Submit) button inside the drawer without filling in any fields.",
+        "expectedResult": "The form does NOT submit. Client-side validation is triggered immediately.",
+        "testData": "selector: [data-testid=save-employee-btn]"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Observe the form for inline validation error messages on required fields.",
+        "expectedResult": "Validation error messages appear beneath or beside each required field (e.g. 'First name is required', 'Last name is required', 'Email is required'). The drawer remains open.",
+        "testData": "selectors: [data-testid=error-first-name], [data-testid=error-last-name], [data-testid=error-email] or equivalent"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Fill in only the First Name field with a valid value and click Save again.",
+        "expectedResult": "The First Name validation error clears. Validation errors for the remaining empty required fields (Last Name, Email, etc.) are still displayed. The form does not submit.",
+        "testData": "First Name: 'Partial', selector: [data-testid=input-first-name]"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Fill in the Email field with an invalid email format (e.g. 'notanemail') and click Save.",
+        "expectedResult": "An email format validation error is displayed (e.g. 'Please enter a valid email address'). The form does not submit.",
+        "testData": "Email: 'notanemail', selector: [data-testid=input-email]"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Click the Cancel or close (X) button on the drawer.",
+        "expectedResult": "The drawer closes without saving any data. The employee list is unchanged and no new employee has been added.",
+        "testData": "selector: [data-testid=close-drawer-btn] or [data-testid=cancel-btn]"
+      },
+      {
+        "stepNumber": 9,
+        "action": "Confirm the employee list does not contain a partially-created entry by scanning the visible list for the first name used in step 6.",
+        "expectedResult": "No employee with the partial test data appears in the list. The total employee count is unchanged.",
+        "testData": "Search term: 'Partial', selector: [data-testid=search-input]"
+      }
+    ],
+    "expectedOutcome": "The Add Employee form enforces required-field and format validation on submit. No employee record is created when the form is incomplete or contains invalid data. The drawer remains open until the user explicitly cancels.",
+    "requiresPII": false,
+    "tags": [
+      "employee-create",
+      "regression",
+      "ui",
+      "negative",
+      "validation",
+      "drawer",
+      "form-validation"
+    ]
+  },
+  {
+    "id": "5c603fbe-5e22-5983-c920-f58c6f495799",
+    "scenarioId": "1ef663d8-9d85-51a8-ca77-786d15261d3e",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-delete: DELETE /api/employees/:id successfully removes an existing employee",
+    "module": "employee-delete",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with the employees API accessible at /api/employees",
+      "Create a dedicated test employee via API before the test; delete it after (cleanup handled within test steps)"
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send POST /api/employees with a complete JSON body to create a dedicated test employee",
+        "expectedResult": "Response status 201 with JSON body containing '_id', 'firstName', 'lastName', and 'email' fields",
+        "testData": "{\"firstName\":\"Delete\",\"lastName\":\"Target\",\"email\":\"delete.target+<timestamp>@example.com\",\"designation\":\"Engineer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-01-15\",\"address\":{\"street\":\"123 Test St\",\"city\":\"Test City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Extract and store the '_id' value from the POST response body as <employeeId>",
+        "expectedResult": "'_id' is a non-empty string",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Send GET /api/employees/<employeeId> to confirm the employee exists before deletion",
+        "expectedResult": "Response status 200 with JSON body containing '_id' equal to <employeeId>",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Send DELETE /api/employees/<employeeId> with header 'Content-Type: application/json'",
+        "expectedResult": "Response status 204 with an empty response body",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Send GET /api/employees/<employeeId> to verify the employee record no longer exists",
+        "expectedResult": "Response status 404; response body contains an error message indicating the employee was not found",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Send GET /api/employees and inspect the returned array to confirm <employeeId> is absent",
+        "expectedResult": "Response status 200 with a JSON array that does not contain any object with '_id' equal to <employeeId>",
+        "testData": "N/A"
+      }
+    ],
+    "expectedOutcome": "DELETE /api/employees/:id returns HTTP 204 with no body, and subsequent GET requests for the same ID return 404, confirming the record is permanently removed from the data store",
+    "requiresPII": false,
+    "tags": [
+      "employee-delete",
+      "regression",
+      "api",
+      "P0",
+      "positive"
+    ]
+  },
+  {
+    "id": "61ed95d1-acb2-5e9c-44c8-effb09190633",
+    "scenarioId": "1ef663d8-9d85-51a8-ca77-786d15261d3e",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-delete: DELETE /api/employees/:id returns 404 for a non-existent or already-deleted employee ID",
+    "module": "employee-delete",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with the employees API accessible at /api/employees",
+      "Create a dedicated test employee via API before the test to obtain a valid ID format, then delete it to produce a known-deleted ID for the second deletion attempt"
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send DELETE /api/employees/000000000000000000000000 using a well-formed but non-existent ObjectId",
+        "expectedResult": "Response status 404; response body is JSON containing an error or message field indicating the employee was not found",
+        "testData": "id: 000000000000000000000000 (valid ObjectId format, guaranteed not to exist)"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Assert the response Content-Type header contains 'application/json'",
+        "expectedResult": "Content-Type header value includes 'application/json'",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Send POST /api/employees to create a dedicated test employee",
+        "expectedResult": "Response status 201 with JSON body containing '_id', 'firstName', and 'email'",
+        "testData": "{\"firstName\":\"Double\",\"lastName\":\"Delete\",\"email\":\"double.delete+<timestamp>@example.com\",\"designation\":\"Analyst\",\"department\":\"Operations\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-03-01\",\"address\":{\"street\":\"456 Edge Ave\",\"city\":\"Edge City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Extract and store the '_id' value from the POST response body as <newEmployeeId>",
+        "expectedResult": "'_id' is a non-empty string",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Send DELETE /api/employees/<newEmployeeId> to perform the first (valid) deletion",
+        "expectedResult": "Response status 204 with an empty response body",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Send DELETE /api/employees/<newEmployeeId> a second time to attempt deletion of the already-deleted employee",
+        "expectedResult": "Response status 404; response body is JSON containing an error or message field indicating the employee was not found",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Assert the response Content-Type header for the second DELETE contains 'application/json'",
+        "expectedResult": "Content-Type header value includes 'application/json'",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Send DELETE /api/employees/not-a-valid-id using a malformed (non-ObjectId) string as the ID",
+        "expectedResult": "Response status 400 or 404; response body is JSON containing an error or message field — must NOT return 500",
+        "testData": "id: not-a-valid-id"
+      }
+    ],
+    "expectedOutcome": "DELETE /api/employees/:id returns HTTP 404 (with a JSON error body) when the target ID does not exist or has already been deleted, and returns 400 or 404 (not 500) for a malformed ID, demonstrating correct error handling and idempotency-safe rejection",
+    "requiresPII": false,
+    "tags": [
+      "employee-delete",
+      "regression",
+      "api",
+      "P1",
+      "negative",
+      "edge"
+    ]
+  },
+  {
+    "id": "9860ba1a-4eb3-5973-2a7a-b4e6470c16fe",
+    "scenarioId": "fe17d8a9-088b-5fd8-d3ac-a29ae0c7b4f6",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-delete: Confirm dialog delete button removes employee from list",
+    "module": "employee-delete",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running and accessible at /",
+      "Create a dedicated test employee via API before the test (use a unique email such as test+<timestamp>@example.com); delete it in cleanup after the test"
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Create a dedicated test employee via API (POST /api/employees) with a unique email (e.g. test+<timestamp>@example.com) and record the employee's full name and ID",
+        "expectedResult": "Employee is created successfully and their name and ID are available for use in subsequent steps",
+        "testData": "email: test+<timestamp>@example.com, firstName: 'Test', lastName: 'DeleteUser<timestamp>'"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Navigate to / in the browser",
+        "expectedResult": "The Employees page loads and the employee list table is visible",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Locate the search or filter input on the Employees page and type the full name of the dedicated test employee created in step 1",
+        "expectedResult": "The employee list filters down and the dedicated test employee's row is visible on the current page",
+        "testData": "selector: [data-testid=employee-search-input] or equivalent filter field"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Locate the row for the dedicated test employee and click the Delete (or trash/remove) action button on that row",
+        "expectedResult": "A confirmation dialog appears on screen with a message asking the user to confirm deletion of the employee",
+        "testData": "selector: [data-testid=delete-employee-btn] or equivalent per-row delete trigger"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Inspect the confirmation dialog and verify it displays the employee's name and a warning message about the deletion being irreversible",
+        "expectedResult": "The dialog contains the test employee's name and a clear deletion warning; both a Cancel button and a Confirm/Delete button are visible",
+        "testData": "selector: [data-testid=confirm-dialog] or equivalent"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Click the Confirm (or Delete) button inside the confirmation dialog",
+        "expectedResult": "The dialog closes and a success toast/notification appears indicating the employee was deleted",
+        "testData": "selector: [data-testid=confirm-dialog-confirm-btn] or equivalent"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Observe the employee list after the dialog closes",
+        "expectedResult": "The deleted test employee's row is no longer present in the employee list",
+        "testData": "Verify by name or ID that the row is absent from the rendered list"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Re-apply the same search/filter used in step 3 to confirm the employee does not reappear",
+        "expectedResult": "No row matching the deleted employee's name or ID is shown; the list is empty or shows only unrelated employees",
+        "testData": "Same search term as step 3"
+      }
+    ],
+    "expectedOutcome": "After confirming deletion in the dialog, the employee is permanently removed from the list, the confirmation dialog closes, and a success notification is displayed — the employee does not reappear on any subsequent search or page load",
+    "requiresPII": false,
+    "tags": [
+      "employee-delete",
+      "confirm-dialog",
+      "regression",
+      "ui",
+      "P0",
+      "positive"
+    ]
+  },
+  {
+    "id": "6be062eb-e65f-522c-ecb0-521aff4c5e04",
+    "scenarioId": "fe17d8a9-088b-5fd8-d3ac-a29ae0c7b4f6",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-delete: Cancelling the confirm dialog does not remove the employee",
+    "module": "employee-delete",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running and accessible at /",
+      "Application is running with seeded employees (read-only test — no employee is created or deleted)"
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Retrieve the first seeded employee's ID and full name programmatically via GET /api/employees and record the name",
+        "expectedResult": "At least one employee record is returned; the first employee's name and ID are available for use in subsequent steps",
+        "testData": "GET /api/employees — use first result"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Navigate to / in the browser",
+        "expectedResult": "The Employees page loads and the employee list table is visible",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Locate the search or filter input and type the full name of the first seeded employee retrieved in step 1",
+        "expectedResult": "The employee list filters and the target employee's row is visible on the current page",
+        "testData": "selector: [data-testid=employee-search-input] or equivalent filter field"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Locate the row for the target employee and click the Delete (or trash/remove) action button on that row",
+        "expectedResult": "A confirmation dialog appears on screen with a message asking the user to confirm deletion",
+        "testData": "selector: [data-testid=delete-employee-btn] or equivalent per-row delete trigger"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Verify the confirmation dialog is visible and contains both a Cancel button and a Confirm/Delete button",
+        "expectedResult": "Both buttons are rendered and interactive within the dialog",
+        "testData": "selector: [data-testid=confirm-dialog] or equivalent"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Click the Cancel button inside the confirmation dialog",
+        "expectedResult": "The confirmation dialog closes without any deletion action being triggered; no success or error toast is shown",
+        "testData": "selector: [data-testid=confirm-dialog-cancel-btn] or equivalent"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Observe the employee list after the dialog closes",
+        "expectedResult": "The target employee's row is still present in the employee list exactly as it was before the dialog was opened",
+        "testData": "Verify by name or ID that the row is still visible"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Re-apply the same search/filter used in step 3 to confirm the employee is still present",
+        "expectedResult": "The target employee's row is returned in the filtered results; no data has changed",
+        "testData": "Same search term as step 3"
+      }
+    ],
+    "expectedOutcome": "Clicking Cancel in the confirmation dialog dismisses the dialog without deleting the employee; the employee remains visible in the list and no destructive API call is made",
+    "requiresPII": false,
+    "tags": [
+      "employee-delete",
+      "confirm-dialog",
+      "cancel",
+      "regression",
+      "ui",
+      "P1",
+      "negative"
+    ]
+  },
+  {
+    "id": "339d11b9-0ef3-5920-49b4-2343bcd30750",
+    "scenarioId": "d3cf9a40-6ea8-5275-4f5a-c9342db4712e",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-validation: POST /api/employees returns 400 when required fields are missing",
+    "module": "employee-validation",
+    "priority": "P0",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "POST /api/employees endpoint is publicly accessible with no authentication required."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send POST /api/employees with a JSON body that omits both 'firstName' and 'email' fields but includes all other required fields",
+        "expectedResult": "Response HTTP status code is 400",
+        "testData": "{\"lastName\":\"ValidationUser\",\"designation\":\"Engineer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-01-15\",\"address\":{\"street\":\"123 Test St\",\"city\":\"Test City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Inspect the response Content-Type header",
+        "expectedResult": "Content-Type header contains 'application/json'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 3,
+        "action": "Inspect the response JSON body for an error or errors field",
+        "expectedResult": "Response body contains an 'error' or 'errors' field (or equivalent) indicating validation failure; the message references the missing 'firstName' field",
+        "testData": ""
+      },
+      {
+        "stepNumber": 4,
+        "action": "Inspect the response JSON body for a reference to the missing 'email' field",
+        "expectedResult": "Response body also references the missing 'email' field in the validation error details",
+        "testData": ""
+      },
+      {
+        "stepNumber": 5,
+        "action": "Confirm no employee resource was created by sending GET /api/employees and verifying no record exists with lastName 'ValidationUser'",
+        "expectedResult": "GET /api/employees returns 200 and the response list does not contain any employee with lastName 'ValidationUser'",
+        "testData": ""
+      }
+    ],
+    "expectedOutcome": "POST /api/employees with missing 'firstName' and 'email' fields returns HTTP 400 with a JSON body that identifies both missing fields via Zod validation errors, and no employee record is persisted.",
+    "requiresPII": false,
+    "tags": [
+      "employee-validation",
+      "regression",
+      "api",
+      "validation",
+      "400",
+      "zod"
+    ]
+  },
+  {
+    "id": "f8610e8d-fe9c-5978-eb67-c6385e56ac06",
+    "scenarioId": "d3cf9a40-6ea8-5275-4f5a-c9342db4712e",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-validation: POST /api/employees returns 201 with complete valid payload (happy path)",
+    "module": "employee-validation",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "POST /api/employees endpoint is publicly accessible with no authentication required.",
+      "A unique email is generated using a timestamp suffix (e.g. test+<timestamp>@example.com) to avoid DUPLICATE_EMAIL 409 errors on repeated runs.",
+      "Create a dedicated test employee via API before the test; delete it after."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Generate a unique email address by appending the current Unix timestamp, e.g. test+<timestamp>@example.com",
+        "expectedResult": "A unique email string is available for use in subsequent steps",
+        "testData": "email = \"test+\" + Date.now() + \"@example.com\""
+      },
+      {
+        "stepNumber": 2,
+        "action": "Send POST /api/employees with a complete JSON body containing all required fields: firstName, lastName, email (unique from step 1), designation, department, employmentType, employmentStatus, startDate, and address",
+        "expectedResult": "Response HTTP status code is 201",
+        "testData": "{\"firstName\":\"Test\",\"lastName\":\"ApiUser\",\"email\":\"test+<timestamp>@example.com\",\"designation\":\"Engineer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-01-15\",\"address\":{\"street\":\"123 Test St\",\"city\":\"Test City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Inspect the response Content-Type header",
+        "expectedResult": "Content-Type header contains 'application/json'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 4,
+        "action": "Inspect the response JSON body for the presence of '_id', 'firstName', and 'email' fields",
+        "expectedResult": "Response body contains '_id' (non-empty string), 'firstName' equal to 'Test', and 'email' equal to the unique email generated in step 1",
+        "testData": ""
+      },
+      {
+        "stepNumber": 5,
+        "action": "Store the '_id' value from the response body for use in cleanup",
+        "expectedResult": "'_id' is a non-empty string that uniquely identifies the newly created employee",
+        "testData": ""
+      },
+      {
+        "stepNumber": 6,
+        "action": "Send GET /api/employees/<_id> using the stored ID to confirm the employee was persisted",
+        "expectedResult": "Response HTTP status code is 200 and the body contains 'firstName' equal to 'Test' and 'email' equal to the unique email",
+        "testData": ""
+      },
+      {
+        "stepNumber": 7,
+        "action": "Send DELETE /api/employees/<_id> using the stored ID to clean up the test employee",
+        "expectedResult": "Response HTTP status code is 200 or 204, confirming the test employee has been deleted",
+        "testData": ""
+      }
+    ],
+    "expectedOutcome": "POST /api/employees with a fully valid payload returns HTTP 201 with a JSON body containing the new employee's '_id', 'firstName', and 'email'. The employee is retrievable via GET and is successfully deleted in cleanup.",
+    "requiresPII": false,
+    "tags": [
+      "employee-validation",
+      "regression",
+      "api",
+      "happy-path",
+      "201",
+      "zod"
+    ]
+  },
+  {
+    "id": "867dc601-9a25-57e4-9077-ef3b3ec96bd4",
+    "scenarioId": "066e24b1-2323-5416-ddf4-1e1954e143df",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-validation: Empty form submission shows all required field validation errors",
+    "module": "employee-validation",
+    "priority": "P0",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "User is on the main employee list page at route /."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to / in the browser",
+        "expectedResult": "The employee list page loads and is fully visible with at least one employee row rendered",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the Add Employee button",
+        "expectedResult": "The employee form drawer or modal opens and all form fields (e.g. First Name, Last Name, Email, Department, etc.) are visible and empty",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Without filling in any form fields, click the Submit (or Save) button",
+        "expectedResult": "The form is NOT submitted; the drawer/modal remains open",
+        "testData": "selector: [data-testid=submit-btn] or [data-testid=save-btn]"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Inspect the First Name field area",
+        "expectedResult": "A required-field validation error message is displayed beneath or adjacent to the First Name field (e.g. 'First name is required' or similar)",
+        "testData": "selector: [data-testid=first-name-error] or aria-describedby on the First Name input"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Inspect the Last Name field area",
+        "expectedResult": "A required-field validation error message is displayed beneath or adjacent to the Last Name field",
+        "testData": "selector: [data-testid=last-name-error]"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Inspect the Email field area",
+        "expectedResult": "A required-field validation error message is displayed beneath or adjacent to the Email field (e.g. 'Email is required')",
+        "testData": "selector: [data-testid=email-error]"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Inspect all other fields marked as required in the form (e.g. Department, Role, or Phone if applicable)",
+        "expectedResult": "Each required field that was left empty displays its own inline validation error message; no required field silently passes",
+        "testData": "Source reference: frontend/src/components/EmployeeForm.tsx — check all fields with required validation rules"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Verify the employee list in the background (or after closing the drawer without saving)",
+        "expectedResult": "No new employee record was added to the list; the total employee count is unchanged from step 1",
+        "testData": "selector: [data-testid=employee-list] or [data-testid=employee-count]"
+      }
+    ],
+    "expectedOutcome": "Submitting a completely empty employee form triggers inline client-side validation errors for every required field, the form is not submitted, no new employee is created, and all error messages are visible to the user without a page reload.",
+    "requiresPII": false,
+    "tags": [
+      "employee-validation",
+      "regression",
+      "ui",
+      "form-validation",
+      "negative"
+    ]
+  },
+  {
+    "id": "752dfe8f-59a8-5ef8-3ec3-9c78de39d4a2",
+    "scenarioId": "066e24b1-2323-5416-ddf4-1e1954e143df",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-validation: Filling all required fields clears validation errors and enables successful submission",
+    "module": "employee-validation",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Create a dedicated test employee via API before the test; delete it after.",
+      "Application is running with seeded employees.",
+      "User is on the main employee list page at route /."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to / in the browser",
+        "expectedResult": "The employee list page loads successfully and is fully visible",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the Add Employee button",
+        "expectedResult": "The employee form drawer or modal opens with all fields empty and no validation errors shown",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Click the Submit button immediately without filling any fields to trigger validation errors",
+        "expectedResult": "Inline validation error messages appear for all required fields",
+        "testData": "selector: [data-testid=submit-btn] or [data-testid=save-btn]"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Type a valid first name into the First Name field",
+        "expectedResult": "The First Name validation error disappears as soon as valid input is entered (or on blur)",
+        "testData": "value: 'Test'; selector: [data-testid=first-name-input]"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Type a valid last name into the Last Name field",
+        "expectedResult": "The Last Name validation error disappears",
+        "testData": "value: 'User'; selector: [data-testid=last-name-input]"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Type a unique valid email address into the Email field using a timestamp suffix",
+        "expectedResult": "The Email validation error disappears",
+        "testData": "value: test+<timestamp>@example.com; selector: [data-testid=email-input]"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Fill in any remaining required fields (e.g. Department, Role) with valid values as defined in frontend/src/components/EmployeeForm.tsx",
+        "expectedResult": "All remaining required-field validation errors disappear; no error messages are visible anywhere on the form",
+        "testData": "Source reference: frontend/src/components/EmployeeForm.tsx — use any valid option for select/dropdown fields"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Click the Submit (or Save) button",
+        "expectedResult": "The form is submitted without any validation errors; the drawer/modal closes or a success toast/banner appears confirming the employee was created",
+        "testData": "selector: [data-testid=submit-btn]; expected toast/banner: 'Employee created' or similar success message"
+      },
+      {
+        "stepNumber": 9,
+        "action": "Search or filter the employee list for the newly created employee by the name entered in steps 4–5",
+        "expectedResult": "The newly created employee row appears in the list with the correct name and email",
+        "testData": "selector: [data-testid=search-input] or [data-testid=employee-search]; search term: the first and last name entered above"
+      },
+      {
+        "stepNumber": 10,
+        "action": "Delete the test employee created in this test via the UI or API cleanup step",
+        "expectedResult": "The test employee is removed from the list; the employee count returns to its pre-test value",
+        "testData": "selector: [data-testid=delete-employee-btn] or via API DELETE call using the employee ID obtained after creation"
+      }
+    ],
+    "expectedOutcome": "After triggering validation errors on an empty form, filling all required fields with valid data clears every inline error, allows successful form submission, and the new employee appears in the employee list — confirming that client-side validation gates empty submissions but permits valid ones.",
+    "requiresPII": false,
+    "tags": [
+      "employee-validation",
+      "regression",
+      "ui",
+      "form-validation",
+      "positive",
+      "happy-path"
+    ]
+  },
+  {
+    "id": "26e9240d-e9f3-50f0-c8a0-6d4a654d2a54",
+    "scenarioId": "5ce5cad6-e1dd-5e91-1e53-69fc7ab9a484",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-create: POST returns 409 DUPLICATE_EMAIL when email already exists",
+    "module": "employee-create",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "POST /api/employees endpoint is publicly accessible with no authentication required."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send POST /api/employees with a complete valid JSON body using a unique timestamped email to create the first employee.",
+        "expectedResult": "Response HTTP 201 with Content-Type application/json. Body contains '_id', 'firstName', 'lastName', and 'email' fields matching the submitted values.",
+        "testData": "{\"firstName\":\"Duplicate\",\"lastName\":\"EmailTest\",\"email\":\"duplicate+<timestamp>@example.com\",\"designation\":\"Engineer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-01-15\",\"address\":{\"street\":\"123 Test St\",\"city\":\"Test City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Store the '_id' value from the step 1 response for cleanup later.",
+        "expectedResult": "The '_id' string is captured successfully.",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Send a second POST /api/employees request using the SAME email address used in step 1, but with different firstName and lastName values.",
+        "expectedResult": "Response HTTP 409 with Content-Type application/json. Body contains an error code or message equal to 'DUPLICATE_EMAIL' (or equivalent duplicate-email error string as defined in backend/src/middleware/errorHandler.ts).",
+        "testData": "{\"firstName\":\"Another\",\"lastName\":\"Person\",\"email\":\"duplicate+<timestamp>@example.com\",\"designation\":\"Analyst\",\"department\":\"Finance\",\"employmentType\":\"Part-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-03-01\",\"address\":{\"street\":\"456 Other Ave\",\"city\":\"Other City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Assert that the 409 response body does NOT contain an '_id' field (no employee record was created).",
+        "expectedResult": "Response body has no '_id' field, confirming the duplicate employee was not persisted.",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Send DELETE /api/employees/{id} using the '_id' captured in step 2 to clean up the first created employee.",
+        "expectedResult": "Response HTTP 200 or 204, confirming the test employee was successfully deleted.",
+        "testData": "id = value captured in step 2"
+      }
+    ],
+    "expectedOutcome": "The second POST with a duplicate email returns HTTP 409 with a DUPLICATE_EMAIL error in the response body, and no new employee record is created in the system.",
+    "requiresPII": false,
+    "tags": [
+      "employee-create",
+      "regression",
+      "api",
+      "duplicate-email",
+      "409",
+      "error-handling"
+    ]
+  },
+  {
+    "id": "c1862a69-782f-5859-a5fc-b4f8f68e9413",
+    "scenarioId": "5ce5cad6-e1dd-5e91-1e53-69fc7ab9a484",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-create: POST returns 409 on duplicate email regardless of surrounding whitespace or case variation",
+    "module": "employee-create",
+    "priority": "P1",
+    "type": "edge",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "POST /api/employees endpoint is publicly accessible with no authentication required.",
+      "Create a dedicated test employee via API before the test; delete it after."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send POST /api/employees with a complete valid JSON body using a unique lowercase timestamped email to establish the baseline employee.",
+        "expectedResult": "Response HTTP 201 with Content-Type application/json. Body contains '_id' and 'email' fields. Store the '_id' for cleanup.",
+        "testData": "{\"firstName\":\"Edge\",\"lastName\":\"CaseTest\",\"email\":\"edgecase+<timestamp>@example.com\",\"designation\":\"Developer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-06-01\",\"address\":{\"street\":\"789 Edge Blvd\",\"city\":\"Edge City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Store the '_id' from the step 1 response for cleanup.",
+        "expectedResult": "The '_id' string is captured successfully.",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Send POST /api/employees using the same email as step 1 but with all characters converted to UPPERCASE (e.g. 'EDGECASE+<timestamp>@EXAMPLE.COM').",
+        "expectedResult": "Response is either HTTP 409 with a DUPLICATE_EMAIL error (if the backend enforces case-insensitive uniqueness) OR HTTP 201 (if the backend treats emails as case-sensitive). Record the actual status code for assertion.",
+        "testData": "{\"firstName\":\"Edge\",\"lastName\":\"UpperCase\",\"email\":\"EDGECASE+<timestamp>@EXAMPLE.COM\",\"designation\":\"Developer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-06-01\",\"address\":{\"street\":\"789 Edge Blvd\",\"city\":\"Edge City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Send POST /api/employees using the same email as step 1 but with leading and trailing whitespace added (e.g. '  edgecase+<timestamp>@example.com  ').",
+        "expectedResult": "Response is HTTP 409 with a DUPLICATE_EMAIL error (if the backend trims whitespace before uniqueness check) OR HTTP 422/400 with a validation error (if whitespace is rejected as invalid email format). The response must NOT be HTTP 201 — no new employee should be silently created with a whitespace-padded duplicate email.",
+        "testData": "{\"firstName\":\"Edge\",\"lastName\":\"WhiteSpace\",\"email\":\"  edgecase+<timestamp>@example.com  \",\"designation\":\"Developer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-06-01\",\"address\":{\"street\":\"789 Edge Blvd\",\"city\":\"Edge City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Assert that the response body for both step 3 and step 4 does NOT contain an '_id' field (or if step 3 returned 201, capture that '_id' for cleanup as well).",
+        "expectedResult": "No unintended duplicate employee records exist. Any 409 response body contains the DUPLICATE_EMAIL error code as defined in backend/src/middleware/errorHandler.ts.",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Send DELETE /api/employees/{id} using the '_id' from step 2 (and step 3 if it returned 201) to clean up all created test employees.",
+        "expectedResult": "Response HTTP 200 or 204 for each DELETE call, confirming all test employees are removed.",
+        "testData": "id = values captured in steps 2 and optionally 3"
+      }
+    ],
+    "expectedOutcome": "The API enforces the duplicate email constraint consistently: a second POST with the same email (exact, uppercased, or whitespace-padded) never silently creates a duplicate employee. Any 409 response includes the DUPLICATE_EMAIL error identifier in the response body.",
+    "requiresPII": false,
+    "tags": [
+      "employee-create",
+      "regression",
+      "api",
+      "duplicate-email",
+      "409",
+      "edge-case",
+      "case-sensitivity",
+      "whitespace",
+      "error-handling"
+    ]
+  },
+  {
+    "id": "fa99e7a2-e5ec-5477-c633-1787a0285a98",
+    "scenarioId": "6510eb52-e062-5506-7a4a-53a0613f6bb0",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-edit: Edit drawer pre-populates all fields with existing employee data",
+    "module": "employee-edit",
+    "priority": "P1",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "At least one employee exists in the system (use getFirstEmployeeId() to retrieve the first seeded employee's ID and name)."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Retrieve the first seeded employee's ID and full name programmatically via getFirstEmployeeId() and store both values for later assertions.",
+        "expectedResult": "A valid employee ID and full name are available for use in subsequent steps.",
+        "testData": "GET /api/employees — read first record; store id, firstName, lastName, email, department, role"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Navigate to the root route '/'.",
+        "expectedResult": "The employee list page renders and the employee table is visible.",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Locate the search or filter input on the employee list page and type the full name of the first seeded employee retrieved in step 1.",
+        "expectedResult": "The employee table filters down and the target employee's row becomes visible on page 1.",
+        "testData": "selector: [data-testid=employee-search-input] or equivalent filter field"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Click the table row corresponding to the first seeded employee.",
+        "expectedResult": "The employee edit drawer slides open and is fully visible.",
+        "testData": "selector: [data-testid=employee-row] (first visible row after filtering)"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Inspect the First Name field inside the open drawer.",
+        "expectedResult": "The First Name input is pre-populated with the employee's existing first name (matches value stored in step 1).",
+        "testData": "selector: [data-testid=input-firstName] or equivalent"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Inspect the Last Name field inside the open drawer.",
+        "expectedResult": "The Last Name input is pre-populated with the employee's existing last name (matches value stored in step 1).",
+        "testData": "selector: [data-testid=input-lastName] or equivalent"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Inspect the Email field inside the open drawer.",
+        "expectedResult": "The Email input is pre-populated with the employee's existing email address (matches value stored in step 1).",
+        "testData": "selector: [data-testid=input-email] or equivalent"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Inspect the Department field inside the open drawer.",
+        "expectedResult": "The Department selector or input reflects the employee's existing department value (matches value stored in step 1).",
+        "testData": "selector: [data-testid=input-department] or equivalent"
+      },
+      {
+        "stepNumber": 9,
+        "action": "Inspect the Role field inside the open drawer.",
+        "expectedResult": "The Role selector or input reflects the employee's existing role value (matches value stored in step 1).",
+        "testData": "selector: [data-testid=input-role] or equivalent"
+      },
+      {
+        "stepNumber": 10,
+        "action": "Verify the drawer heading or title text indicates edit mode (e.g. 'Edit Employee') rather than create mode (e.g. 'Add Employee').",
+        "expectedResult": "The drawer title clearly indicates that an existing employee is being edited, not a new one being created.",
+        "testData": "selector: [data-testid=drawer-title] or equivalent heading element"
+      },
+      {
+        "stepNumber": 11,
+        "action": "Press the Escape key or click the close/cancel button on the drawer without making any changes.",
+        "expectedResult": "The drawer closes and the employee list is visible again with no data modified.",
+        "testData": "selector: [data-testid=drawer-close-btn] or Escape key"
+      }
+    ],
+    "expectedOutcome": "When a user clicks an existing employee row, the edit drawer opens with every form field pre-populated with that employee's current data, confirming that EmployeeDrawer.tsx correctly passes existing employee data into EmployeeForm.tsx for editing.",
+    "requiresPII": true,
+    "tags": [
+      "employee-edit",
+      "regression",
+      "ui",
+      "drawer",
+      "pre-populate"
+    ]
+  },
+  {
+    "id": "b38c4b78-4e84-53ed-e9de-7428e55e1194",
+    "scenarioId": "6510eb52-e062-5506-7a4a-53a0613f6bb0",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-edit: Edit drawer discards unsaved changes and restores original data on cancel",
+    "module": "employee-edit",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Create a dedicated test employee via API before the test; delete it after.",
+      "The test employee is created with a unique email (e.g. test+<timestamp>@example.com) and known field values stored for assertion.",
+      "Application is running and the employee list page is accessible at '/'."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Create a dedicated test employee via the API with a unique email (append a timestamp suffix, e.g. test+<timestamp>@example.com) and store the employee's original firstName, lastName, email, department, and role for later assertions.",
+        "expectedResult": "The test employee is created successfully and its original field values are stored.",
+        "testData": "POST /api/employees — body: { firstName, lastName, email: test+<timestamp>@example.com, department, role }"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Navigate to the root route '/'.",
+        "expectedResult": "The employee list page renders and the employee table is visible.",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Locate the search or filter input and type the full name of the dedicated test employee created in step 1.",
+        "expectedResult": "The employee table filters and the test employee's row is visible on page 1.",
+        "testData": "selector: [data-testid=employee-search-input] or equivalent filter field"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Click the test employee's row in the table.",
+        "expectedResult": "The employee edit drawer opens and all fields are pre-populated with the test employee's original data.",
+        "testData": "selector: [data-testid=employee-row] (first visible row after filtering)"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Clear the First Name field and type a different, temporary first name value (e.g. 'UNSAVED_EDIT').",
+        "expectedResult": "The First Name field now displays the new temporary value.",
+        "testData": "selector: [data-testid=input-firstName]; new value: 'UNSAVED_EDIT'"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Clear the Email field and type a different, temporary email value (e.g. unsaved+<timestamp>@example.com).",
+        "expectedResult": "The Email field now displays the new temporary email value.",
+        "testData": "selector: [data-testid=input-email]; new value: unsaved+<timestamp>@example.com"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Click the Cancel or Close button on the drawer WITHOUT clicking Save or Submit.",
+        "expectedResult": "The drawer closes without saving. No success toast or confirmation message is shown. The employee list is visible again.",
+        "testData": "selector: [data-testid=drawer-cancel-btn] or [data-testid=drawer-close-btn]"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Search for the test employee by name again using the filter input.",
+        "expectedResult": "The test employee's row is still visible in the list.",
+        "testData": "selector: [data-testid=employee-search-input]"
+      },
+      {
+        "stepNumber": 9,
+        "action": "Click the test employee's row again to reopen the edit drawer.",
+        "expectedResult": "The edit drawer opens again.",
+        "testData": "selector: [data-testid=employee-row]"
+      },
+      {
+        "stepNumber": 10,
+        "action": "Inspect the First Name field in the reopened drawer.",
+        "expectedResult": "The First Name field shows the original first name (stored in step 1), NOT the temporary 'UNSAVED_EDIT' value, confirming the cancelled changes were not persisted.",
+        "testData": "selector: [data-testid=input-firstName]; expected value: original firstName from step 1"
+      },
+      {
+        "stepNumber": 11,
+        "action": "Inspect the Email field in the reopened drawer.",
+        "expectedResult": "The Email field shows the original email (stored in step 1), NOT the temporary unsaved email, confirming no data was mutated.",
+        "testData": "selector: [data-testid=input-email]; expected value: original email from step 1"
+      },
+      {
+        "stepNumber": 12,
+        "action": "Close the drawer and delete the dedicated test employee via the API as cleanup.",
+        "expectedResult": "The test employee is removed from the system, leaving no residual test data.",
+        "testData": "DELETE /api/employees/:id using the ID stored in step 1"
+      }
+    ],
+    "expectedOutcome": "Cancelling the edit drawer discards all in-progress field changes and does not persist them. On reopening the drawer for the same employee, all fields are restored to their original pre-edit values, confirming that EmployeeDrawer.tsx and EmployeeForm.tsx do not mutate the underlying employee record on cancel.",
+    "requiresPII": true,
+    "tags": [
+      "employee-edit",
+      "regression",
+      "ui",
+      "drawer",
+      "cancel",
+      "discard-changes"
+    ]
+  },
+  {
+    "id": "a875272a-dd50-5ada-d715-c638d540c263",
+    "scenarioId": "dd7e59c2-7abf-5497-6a72-d602b1e6d25a",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-edit: PATCH /api/employees/:id successfully updates designation and employmentStatus",
+    "module": "employee-edit",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "Create a dedicated test employee via API before the test; delete it after."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send POST /api/employees with a complete JSON body to create a dedicated test employee",
+        "expectedResult": "Response status 201; JSON body contains '_id', 'firstName', 'lastName', 'email', 'designation', 'employmentStatus' fields",
+        "testData": "{\"firstName\":\"Patch\",\"lastName\":\"Target\",\"email\":\"patch.target+<timestamp>@example.com\",\"designation\":\"Junior Engineer\",\"department\":\"Engineering\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-01-15\",\"address\":{\"street\":\"1 Test Ave\",\"city\":\"Test City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Capture the '_id' value from the POST response body and store it as {employeeId}",
+        "expectedResult": "'{employeeId}' is a non-empty string",
+        "testData": ""
+      },
+      {
+        "stepNumber": 3,
+        "action": "Send PATCH /api/employees/{employeeId} with Content-Type: application/json and a partial JSON body containing only 'designation' and 'employmentStatus'",
+        "expectedResult": "Response status 200; Content-Type header is 'application/json'",
+        "testData": "{\"designation\":\"Senior Engineer\",\"employmentStatus\":\"Inactive\"}"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Assert that the response JSON body field 'designation' equals 'Senior Engineer'",
+        "expectedResult": "response.body.designation === 'Senior Engineer'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 5,
+        "action": "Assert that the response JSON body field 'employmentStatus' equals 'Inactive'",
+        "expectedResult": "response.body.employmentStatus === 'Inactive'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 6,
+        "action": "Assert that unchanged fields ('firstName', 'lastName', 'email', 'department', 'employmentType', 'startDate') in the response body retain their original values from step 1",
+        "expectedResult": "All unpatched fields match the values submitted in the POST request in step 1",
+        "testData": ""
+      },
+      {
+        "stepNumber": 7,
+        "action": "Send GET /api/employees/{employeeId} to confirm persistence of the patched values",
+        "expectedResult": "Response status 200; JSON body field 'designation' equals 'Senior Engineer' and 'employmentStatus' equals 'Inactive'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 8,
+        "action": "Send DELETE /api/employees/{employeeId} to clean up the dedicated test employee",
+        "expectedResult": "Response status 200 or 204; employee is removed",
+        "testData": ""
+      }
+    ],
+    "expectedOutcome": "PATCH /api/employees/:id returns 200 with the updated designation and employmentStatus reflected in the response body and confirmed via a subsequent GET; all other fields remain unchanged.",
+    "requiresPII": false,
+    "tags": [
+      "employee-edit",
+      "regression",
+      "api",
+      "patch"
+    ]
+  },
+  {
+    "id": "79d11d4b-83e0-587e-e51e-186f243e2cbd",
+    "scenarioId": "dd7e59c2-7abf-5497-6a72-d602b1e6d25a",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-edit: PATCH /api/employees/:id rejects invalid field values with 400/422",
+    "module": "employee-edit",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "Create a dedicated test employee via API before the test; delete it after."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send POST /api/employees with a complete JSON body to create a dedicated test employee",
+        "expectedResult": "Response status 201; JSON body contains '_id', 'firstName', 'email' fields",
+        "testData": "{\"firstName\":\"Invalid\",\"lastName\":\"PatchTarget\",\"email\":\"invalid.patch+<timestamp>@example.com\",\"designation\":\"Analyst\",\"department\":\"Finance\",\"employmentType\":\"Full-Time\",\"employmentStatus\":\"Active\",\"startDate\":\"2024-03-01\",\"address\":{\"street\":\"99 Edge Rd\",\"city\":\"Edge City\",\"country\":\"United States\"}}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Capture the '_id' value from the POST response body and store it as {employeeId}",
+        "expectedResult": "'{employeeId}' is a non-empty string",
+        "testData": ""
+      },
+      {
+        "stepNumber": 3,
+        "action": "Send PATCH /api/employees/{employeeId} with Content-Type: application/json and a body containing an invalid 'employmentStatus' value not in the allowed enum",
+        "expectedResult": "Response status 400 or 422; Content-Type header is 'application/json'",
+        "testData": "{\"employmentStatus\":\"INVALID_STATUS\"}"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Assert that the response JSON body contains an error message field (e.g. 'message', 'error', or 'errors') indicating the value is invalid or not allowed",
+        "expectedResult": "Response body includes a non-empty error description referencing 'employmentStatus' or validation failure",
+        "testData": ""
+      },
+      {
+        "stepNumber": 5,
+        "action": "Send PATCH /api/employees/{employeeId} with Content-Type: application/json and a body containing an empty string for 'designation'",
+        "expectedResult": "Response status 400 or 422; JSON body contains an error message indicating 'designation' is invalid or required",
+        "testData": "{\"designation\":\"\"}"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Send GET /api/employees/{employeeId} to confirm the employee record was NOT mutated by either rejected PATCH request",
+        "expectedResult": "Response status 200; 'employmentStatus' equals 'Active' and 'designation' equals 'Analyst' — original values unchanged",
+        "testData": ""
+      },
+      {
+        "stepNumber": 7,
+        "action": "Send PATCH /api/employees/nonexistent-id-000000000000 with Content-Type: application/json and a valid partial body",
+        "expectedResult": "Response status 404; JSON body contains an error message indicating the employee was not found",
+        "testData": "{\"designation\":\"Senior Analyst\"}"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Send DELETE /api/employees/{employeeId} to clean up the dedicated test employee",
+        "expectedResult": "Response status 200 or 204; employee is removed",
+        "testData": ""
+      }
+    ],
+    "expectedOutcome": "PATCH /api/employees/:id returns 400 or 422 for invalid enum values and empty required fields, leaves the record unchanged (confirmed via GET), and returns 404 for a non-existent employee ID.",
+    "requiresPII": false,
+    "tags": [
+      "employee-edit",
+      "regression",
+      "api",
+      "patch",
+      "validation",
+      "error-handling"
+    ]
+  },
+  {
+    "id": "061ddd3c-015b-5c9e-7dea-a8f50b9d5eb0",
+    "scenarioId": "d7d417d3-3f2b-53eb-5429-65833987a6c2",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-search: Typing a valid name filters the employee list",
+    "module": "employee-search",
+    "priority": "P1",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "At least one employee exists in the system (use getFirstEmployeeId() to retrieve the first seeded employee's name programmatically)."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "The Employees page loads and the employee list is visible with at least one row rendered",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Locate the search input field on the page",
+        "expectedResult": "A text input with a search-related placeholder or label is visible and enabled",
+        "testData": "selector: [data-testid=employee-search-input] or input[type=search]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Record the total number of employee rows currently displayed in the list before typing anything",
+        "expectedResult": "A baseline row count is captured (e.g. N rows visible)",
+        "testData": "selector: [data-testid=employee-row] or equivalent list item selector"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Retrieve the full name of the first seeded employee programmatically via GET /api/employees (take the first result's name field)",
+        "expectedResult": "A real employee name string is available for use as the search term",
+        "testData": "API: GET /api/employees — use response[0].name (or firstName + lastName)"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Click into the search input and type the first 3 characters of the retrieved employee's name",
+        "expectedResult": "The typed characters appear in the search input field",
+        "testData": "Input value: first 3 chars of the employee name obtained in step 4"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Wait for the debounce delay to elapse (approximately 300–500 ms) without pressing Enter",
+        "expectedResult": "The application automatically triggers a filtered reload of the employee list without any manual submission",
+        "testData": "Wait: ~500 ms after last keystroke"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Observe the employee list after the debounce fires",
+        "expectedResult": "The list reloads and displays only employees whose names match the typed search term; the row count is less than or equal to the baseline count recorded in step 3",
+        "testData": "Assert: all visible rows contain the typed substring in the employee name column"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Verify that the target employee (whose name was used as the search term) is present in the filtered results",
+        "expectedResult": "At least one row is visible and its name column contains the typed substring",
+        "testData": "Assert: at least 1 row visible; row text includes the search substring"
+      },
+      {
+        "stepNumber": 9,
+        "action": "Clear the search input completely (select all and delete, or click a clear button if present)",
+        "expectedResult": "The search input is empty",
+        "testData": "Action: Ctrl+A then Backspace, or click clear icon"
+      },
+      {
+        "stepNumber": 10,
+        "action": "Wait for the debounce delay to elapse again after clearing",
+        "expectedResult": "The employee list reloads and returns to the full unfiltered list",
+        "testData": "Wait: ~500 ms; Assert: row count equals or exceeds the baseline count from step 3"
+      }
+    ],
+    "expectedOutcome": "Typing a partial employee name into the search input triggers a debounced filtered reload of the employee list showing only matching employees; clearing the input restores the full list.",
+    "requiresPII": false,
+    "tags": [
+      "employee-search",
+      "regression",
+      "ui",
+      "debounce",
+      "filter"
+    ]
+  },
+  {
+    "id": "fa292360-2e1c-55d7-1192-86af4f8c7ac5",
+    "scenarioId": "d7d417d3-3f2b-53eb-5429-65833987a6c2",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-search: Typing a search term that matches no employees shows an empty state",
+    "module": "employee-search",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "The search term used must be a string that is guaranteed not to match any existing employee name (e.g. a random UUID-like string)."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "The Employees page loads and the employee list is visible with at least one row rendered",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Locate the search input field on the page",
+        "expectedResult": "A text input with a search-related placeholder or label is visible and enabled",
+        "testData": "selector: [data-testid=employee-search-input] or input[type=search]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Click into the search input and type a nonsense string that is guaranteed to match no employee name",
+        "expectedResult": "The typed string appears in the search input field",
+        "testData": "Input value: 'ZZZNOMATCH_xq9' (a string with no plausible name match)"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Wait for the debounce delay to elapse (approximately 300–500 ms) without pressing Enter",
+        "expectedResult": "The application automatically triggers a filtered reload of the employee list",
+        "testData": "Wait: ~500 ms after last keystroke"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Observe the employee list area after the debounce fires",
+        "expectedResult": "No employee rows are rendered in the list",
+        "testData": "Assert: 0 rows matching [data-testid=employee-row] or equivalent"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Check for an empty-state message or indicator in the list area",
+        "expectedResult": "A user-friendly empty state is displayed (e.g. 'No employees found', 'No results', or equivalent text) — no error banner or crash is shown",
+        "testData": "Assert: visible text contains 'no' and 'found'/'results' (case-insensitive), OR a dedicated empty-state element is rendered"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Verify that no error toast, error banner, or JavaScript exception overlay is visible on the page",
+        "expectedResult": "The page remains stable with only the empty state shown; no error UI is present",
+        "testData": "Assert: absence of [data-testid=error-banner], error toast, or any red error text"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Clear the search input completely",
+        "expectedResult": "The search input is empty",
+        "testData": "Action: Ctrl+A then Backspace"
+      },
+      {
+        "stepNumber": 9,
+        "action": "Wait for the debounce delay to elapse after clearing",
+        "expectedResult": "The employee list reloads and the full seeded employee list is restored with at least one row visible",
+        "testData": "Wait: ~500 ms; Assert: at least 1 employee row visible"
+      }
+    ],
+    "expectedOutcome": "When a search term matches no employees, the list renders zero rows and displays a clear empty-state message without any error UI; clearing the search restores the full list.",
+    "requiresPII": false,
+    "tags": [
+      "employee-search",
+      "regression",
+      "ui",
+      "empty-state",
+      "no-results",
+      "debounce"
+    ]
+  },
+  {
+    "id": "1ade99ab-1e5b-56a6-6c85-2a268b5a30ad",
+    "scenarioId": "85efe79e-4a8a-5734-b0cd-e1eed49741dc",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-search: GET /api/employees?department=Engineering returns only Engineering employees",
+    "module": "employee-search",
+    "priority": "P1",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "At least one employee with department='Engineering' exists in the database (seeded data).",
+      "At least one employee with a department other than 'Engineering' exists in the database (seeded data)."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send GET /api/employees with no query params to confirm the unfiltered list contains employees from multiple departments",
+        "expectedResult": "Response 200 with Content-Type application/json; body is a JSON array (or object with an employees array) containing employees from at least two distinct departments",
+        "testData": "Method: GET, URL: /api/employees, Headers: { Content-Type: application/json }"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Send GET /api/employees?department=Engineering",
+        "expectedResult": "Response 200 with Content-Type application/json",
+        "testData": "Method: GET, URL: /api/employees?department=Engineering, Headers: { Content-Type: application/json }"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Assert the response body is a JSON array (or contains an employees array) and is non-empty",
+        "expectedResult": "The returned collection has at least one employee record",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Iterate over every employee object in the response and assert that each record's 'department' field equals exactly 'Engineering'",
+        "expectedResult": "Every employee in the response has department === 'Engineering'; no employee from any other department is present",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Assert that the count of employees returned is strictly less than the total count returned in step 1 (confirming filtering actually reduced the result set)",
+        "expectedResult": "Filtered result count < unfiltered total count, proving the filter is applied server-side and not returning all employees",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Assert each employee object in the response contains at minimum the fields: _id, firstName, lastName, email, department",
+        "expectedResult": "All required fields are present and non-null on every returned employee record",
+        "testData": "N/A"
+      }
+    ],
+    "expectedOutcome": "GET /api/employees?department=Engineering returns HTTP 200 with a non-empty JSON collection where every record has department='Engineering' and no records from other departments are included.",
+    "requiresPII": false,
+    "tags": [
+      "employee-search",
+      "regression",
+      "api",
+      "filter",
+      "department"
+    ]
+  },
+  {
+    "id": "4345b9e6-4c25-5a2e-2386-f13389c46e31",
+    "scenarioId": "85efe79e-4a8a-5734-b0cd-e1eed49741dc",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-search: GET /api/employees?department= with unknown/non-existent department returns empty result set",
+    "module": "employee-search",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "No employee in the database has department='NonExistentDept_XYZ' (guaranteed by using a deliberately nonsensical value)."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send GET /api/employees?department=NonExistentDept_XYZ",
+        "expectedResult": "Response status is 200 (not 404 or 500); Content-Type is application/json",
+        "testData": "Method: GET, URL: /api/employees?department=NonExistentDept_XYZ, Headers: { Content-Type: application/json }"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Assert the response body is a JSON array (or an object containing an employees array) and that the collection is empty (length === 0)",
+        "expectedResult": "The response returns an empty array [] or equivalent empty collection — no employee records are returned",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Assert the response body does NOT contain any employee objects (no _id, firstName, or email fields at the top level of any array element)",
+        "expectedResult": "Zero employee records present; the server does not leak data from other departments when the filter matches nothing",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Send GET /api/employees?department= (empty string value) to test blank department filter",
+        "expectedResult": "Response status is 200 or 400; if 200, body is either all employees (filter ignored) or an empty array; if 400, body contains a descriptive error message — in no case should the server return 500",
+        "testData": "Method: GET, URL: /api/employees?department=, Headers: { Content-Type: application/json }"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Assert the response status from step 4 is not 500 and the Content-Type is application/json",
+        "expectedResult": "Server handles an empty department query param gracefully without an internal server error",
+        "testData": "N/A"
+      }
+    ],
+    "expectedOutcome": "GET /api/employees?department=NonExistentDept_XYZ returns HTTP 200 with an empty result set. GET /api/employees?department= (blank) returns 200 or 400 but never 500. The API handles non-matching and malformed department filters gracefully.",
+    "requiresPII": false,
+    "tags": [
+      "employee-search",
+      "regression",
+      "api",
+      "filter",
+      "department",
+      "edge",
+      "negative"
+    ]
+  },
+  {
+    "id": "25aead61-fbbd-5711-caa6-8677f1d15100",
+    "scenarioId": "1ab7e601-7efe-5427-2bd7-f1bb17e531c0",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-filters: Department dropdown filters table rows to matching department",
+    "module": "employee-filters",
+    "priority": "P1",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "Seeded data includes employees belonging to at least two distinct departments (e.g. Engineering and Marketing).",
+      "No authentication required — page is publicly accessible."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to / (the Employees page)",
+        "expectedResult": "The Employees page loads and the employee table is visible with at least one row rendered",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Locate the Department filter dropdown (data-testid=department-filter or equivalent label 'Department') and note the total number of rows currently displayed in the table",
+        "expectedResult": "The Department dropdown is visible and enabled; the unfiltered row count is captured for comparison",
+        "testData": "selector: [data-testid=department-filter]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Click the Department dropdown to open it and inspect the available options",
+        "expectedResult": "A list of department options is displayed, including at least two distinct department names and an 'All' or blank default option",
+        "testData": "selector: [data-testid=department-filter] option"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Select the first non-default department option from the Department dropdown (e.g. the first named department in the list)",
+        "expectedResult": "The dropdown reflects the selected department; the table immediately re-renders (or a loading indicator appears briefly then resolves)",
+        "testData": "select index: 1 (first non-default option)"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Observe the rows now displayed in the employee table",
+        "expectedResult": "Every visible row in the table shows the selected department value in the Department column; rows belonging to other departments are no longer visible",
+        "testData": "column: Department"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Verify the row count after filtering is less than or equal to the unfiltered row count captured in step 2",
+        "expectedResult": "The filtered row count is ≤ the total unfiltered count, confirming the filter reduced or maintained the result set",
+        "testData": "N/A"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Reset the Department dropdown back to the default 'All' (or blank) option",
+        "expectedResult": "The table re-renders and displays the same total number of rows as captured in step 2, confirming the filter was cleared",
+        "testData": "select index: 0 (default/All option)"
+      }
+    ],
+    "expectedOutcome": "Selecting a department from the Department dropdown filters the employee table to show only employees in that department, and resetting the filter restores the full unfiltered list.",
+    "requiresPII": false,
+    "tags": [
+      "employee-filters",
+      "regression",
+      "ui",
+      "department-filter",
+      "dropdown"
+    ]
+  },
+  {
+    "id": "7f21f24a-3135-5eaf-e74c-63910b4d2e03",
+    "scenarioId": "1ab7e601-7efe-5427-2bd7-f1bb17e531c0",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-filters: Combining Department and Status dropdowns shows only matching employees, empty state shown when no results",
+    "module": "employee-filters",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "Seeded data includes employees with at least two statuses (e.g. Active and Inactive) spread across multiple departments.",
+      "At least one combination of department + status is known to yield zero results (e.g. a department that has no Inactive employees), OR the tester selects a department with only Active employees and then filters by Inactive.",
+      "No authentication required — page is publicly accessible."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to / (the Employees page)",
+        "expectedResult": "The Employees page loads and the employee table is visible with at least one row",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Locate both the Department filter dropdown and the Status filter dropdown on the page",
+        "expectedResult": "Both dropdowns are visible, enabled, and set to their default 'All' (or blank) values",
+        "testData": "selectors: [data-testid=department-filter], [data-testid=status-filter]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Open the Status dropdown and select 'Active'",
+        "expectedResult": "The table re-renders showing only employees whose Status column reads 'Active'",
+        "testData": "status value: Active"
+      },
+      {
+        "stepNumber": 4,
+        "action": "While Status is still set to 'Active', open the Department dropdown and select a department that is visible in the current filtered results",
+        "expectedResult": "The table re-renders applying both filters simultaneously; only employees matching both the selected department AND 'Active' status are shown",
+        "testData": "select first named department option from [data-testid=department-filter]"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Verify every visible row satisfies both filter criteria: the Department column matches the selected department and the Status column reads 'Active'",
+        "expectedResult": "All displayed rows match both filter values; no row from a different department or with a non-Active status is visible",
+        "testData": "columns: Department, Status"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Change the Status dropdown to 'Inactive' while keeping the same department selected",
+        "expectedResult": "The table re-renders; if no employees in that department have Inactive status, the table body shows an empty-state message (e.g. 'No employees found' or similar) and zero data rows are rendered",
+        "testData": "status value: Inactive"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Confirm the empty-state UI element is displayed and no employee data rows are present in the table",
+        "expectedResult": "An empty-state message or indicator is visible; the table contains zero employee rows, confirming the combined filter correctly returns no results",
+        "testData": "selector: [data-testid=empty-state] or equivalent empty-state element"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Reset both the Department and Status dropdowns to their default 'All' values",
+        "expectedResult": "The table re-renders and displays the full unfiltered employee list with multiple rows, confirming both filters were cleared successfully",
+        "testData": "both dropdowns set to index 0 (default/All)"
+      }
+    ],
+    "expectedOutcome": "Combining the Department and Status dropdowns correctly narrows the table to only employees matching both criteria. When the combination yields no results, an empty-state message is displayed instead of a broken or blank table, and resetting both filters restores the full list.",
+    "requiresPII": false,
+    "tags": [
+      "employee-filters",
+      "regression",
+      "ui",
+      "department-filter",
+      "status-filter",
+      "empty-state",
+      "combined-filters"
+    ]
+  },
+  {
+    "id": "54d4ddc7-2a2f-51bd-16a1-f9228a742aa2",
+    "scenarioId": "d5a0ccb6-22f9-5b03-1ee2-3185da56b94e",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-validation: GET /api/employees/:id returns 400 for malformed ObjectId",
+    "module": "employee-validation",
+    "priority": "P1",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send GET /api/employees/invalid-id with header Accept: application/json",
+        "expectedResult": "Response status is 400",
+        "testData": "URL param id = 'invalid-id'"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Assert response Content-Type header contains 'application/json'",
+        "expectedResult": "Content-Type is application/json",
+        "testData": ""
+      },
+      {
+        "stepNumber": 3,
+        "action": "Assert response JSON body contains a field 'code' with value 'INVALID_ID'",
+        "expectedResult": "Response body: { \"code\": \"INVALID_ID\", ... }",
+        "testData": ""
+      },
+      {
+        "stepNumber": 4,
+        "action": "Assert response JSON body contains a non-empty 'message' string field describing the validation error",
+        "expectedResult": "Response body includes a human-readable error message string",
+        "testData": ""
+      },
+      {
+        "stepNumber": 5,
+        "action": "Assert response JSON body does NOT contain any employee data fields such as '_id', 'firstName', 'lastName', or 'email'",
+        "expectedResult": "No employee data is leaked in the error response",
+        "testData": ""
+      }
+    ],
+    "expectedOutcome": "GET /api/employees/invalid-id returns HTTP 400 with JSON body containing code INVALID_ID and an error message, with no employee data in the response.",
+    "requiresPII": false,
+    "tags": [
+      "employee-validation",
+      "regression",
+      "api"
+    ]
+  },
+  {
+    "id": "2078db68-1ddf-562b-8ee6-681a4d19732e",
+    "scenarioId": "d5a0ccb6-22f9-5b03-1ee2-3185da56b94e",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] employee-validation: GET /api/employees/:id returns 400 for various malformed ObjectId formats",
+    "module": "employee-validation",
+    "priority": "P1",
+    "type": "edge",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send GET /api/employees/000000000000000000000000z with header Accept: application/json (25-char string — one character longer than a valid 24-hex ObjectId)",
+        "expectedResult": "Response status is 400 with JSON body containing code 'INVALID_ID'",
+        "testData": "URL param id = '000000000000000000000000z'"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Send GET /api/employees/12345 with header Accept: application/json (too-short numeric string)",
+        "expectedResult": "Response status is 400 with JSON body containing code 'INVALID_ID'",
+        "testData": "URL param id = '12345'"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Send GET /api/employees/null with header Accept: application/json (literal string 'null')",
+        "expectedResult": "Response status is 400 with JSON body containing code 'INVALID_ID'",
+        "testData": "URL param id = 'null'"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Send GET /api/employees/undefined with header Accept: application/json (literal string 'undefined')",
+        "expectedResult": "Response status is 400 with JSON body containing code 'INVALID_ID'",
+        "testData": "URL param id = 'undefined'"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Send GET /api/employees/../../etc/passwd with header Accept: application/json (path traversal attempt)",
+        "expectedResult": "Response status is 400 with JSON body containing code 'INVALID_ID', confirming the value is rejected as a malformed id and no server error (500) is returned",
+        "testData": "URL param id = '../../etc/passwd'"
+      },
+      {
+        "stepNumber": 6,
+        "action": "For each of the above responses, assert Content-Type header contains 'application/json' and the body does NOT contain employee data fields ('_id', 'firstName', 'email')",
+        "expectedResult": "All five requests return 400 application/json with no employee data exposed",
+        "testData": ""
+      }
+    ],
+    "expectedOutcome": "All malformed and boundary-case id values (too long, too short, non-hex, reserved words, path traversal) consistently return HTTP 400 with code INVALID_ID and no employee data, confirming robust input validation across edge formats.",
+    "requiresPII": false,
+    "tags": [
+      "employee-validation",
+      "regression",
+      "api",
+      "edge",
+      "boundary"
+    ]
+  },
+  {
+    "id": "a4c91f7a-6fa1-5b1c-b5b0-960e33223a86",
+    "scenarioId": "6e47af03-c318-5359-66ce-5662f5c53625",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-pagination: Clicking next page loads the second page of employees",
+    "module": "employee-pagination",
+    "priority": "P1",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "At least 11 employees exist in the system so that a second page is available (assuming 10 per page default).",
+      "User is on the Employees page at /employees (page 1)."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /employees in the browser.",
+        "expectedResult": "The Employees page loads successfully. The employee table is visible and populated with the first page of employees.",
+        "testData": "route: /employees"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Observe and record the names (or any unique identifiers) of all employees currently displayed in the table on page 1.",
+        "expectedResult": "A list of employees is visible in the EmployeeTable component. The page indicator or pagination control shows 'Page 1' or equivalent.",
+        "testData": "selector: [data-testid=employee-table-row] or equivalent row selector in EmployeeTable.tsx"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Locate the pagination controls at the bottom of the employee table and verify the 'Next' (or '>' / 'Page 2') button is enabled and visible.",
+        "expectedResult": "The next-page button is rendered and not disabled, indicating more pages exist.",
+        "testData": "selector: [data-testid=pagination-next-btn] or equivalent"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Click the 'Next' page button.",
+        "expectedResult": "The table re-renders. A loading indicator may briefly appear. The table then displays a new set of employees different from those on page 1.",
+        "testData": "selector: [data-testid=pagination-next-btn]"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Observe the pagination control or page indicator after the table updates.",
+        "expectedResult": "The current page indicator now shows 'Page 2' or equivalent (e.g., '11–20 of N').",
+        "testData": "selector: [data-testid=pagination-page-indicator] or equivalent"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Verify that none of the employee rows now displayed in the table match the employee rows recorded from page 1 in step 2.",
+        "expectedResult": "All visible employee rows are distinct from the page-1 employees, confirming the correct page-2 data has been fetched and rendered.",
+        "testData": "selector: [data-testid=employee-table-row]"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Verify the 'Previous' (or '<') pagination button is now enabled.",
+        "expectedResult": "The previous-page button is rendered and clickable, confirming the UI correctly reflects that the user is no longer on the first page.",
+        "testData": "selector: [data-testid=pagination-prev-btn] or equivalent"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Click the 'Previous' page button.",
+        "expectedResult": "The table re-renders and displays the same set of employees that were visible on page 1 in step 2, confirming bidirectional navigation works correctly.",
+        "testData": "selector: [data-testid=pagination-prev-btn]"
+      }
+    ],
+    "expectedOutcome": "Clicking the next-page control fetches and renders the correct second page of employees, distinct from page 1. The page indicator updates accordingly, and navigating back to page 1 restores the original employee set.",
+    "requiresPII": false,
+    "tags": [
+      "employee-pagination",
+      "regression",
+      "ui",
+      "positive",
+      "P1"
+    ]
+  },
+  {
+    "id": "e650c350-3d4e-5f1e-f485-13c251103578",
+    "scenarioId": "6e47af03-c318-5359-66ce-5662f5c53625",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-pagination: Previous button is disabled on the first page and next button is disabled on the last page",
+    "module": "employee-pagination",
+    "priority": "P1",
+    "type": "edge",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "At least 11 employees exist so that multiple pages are present (assuming 10 per page default).",
+      "User is on the Employees page at /employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /employees in the browser.",
+        "expectedResult": "The Employees page loads. The employee table is visible and shows the first page of results.",
+        "testData": "route: /employees"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Locate the pagination controls and inspect the state of the 'Previous' (or '<') button.",
+        "expectedResult": "The 'Previous' button is disabled or visually inactive (e.g., greyed out, aria-disabled='true'), because the user is already on page 1 and there is no prior page.",
+        "testData": "selector: [data-testid=pagination-prev-btn] or equivalent"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Attempt to click the disabled 'Previous' button.",
+        "expectedResult": "Nothing happens — the table does not re-render, no navigation occurs, and no error is shown. The page remains on page 1.",
+        "testData": "selector: [data-testid=pagination-prev-btn]"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Determine the total number of pages from the pagination control (e.g., 'Page 1 of N') or by counting available page number buttons.",
+        "expectedResult": "The total page count N is visible in the pagination UI.",
+        "testData": "selector: [data-testid=pagination-page-indicator] or page-number buttons"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Click the 'Next' button (or the last page number button) repeatedly until the last page is reached, or click the last page number directly if available.",
+        "expectedResult": "The table updates on each click to show the next page's employees. The page indicator increments with each click until the final page N is displayed.",
+        "testData": "selector: [data-testid=pagination-next-btn] or last page number button"
+      },
+      {
+        "stepNumber": 6,
+        "action": "On the last page, inspect the state of the 'Next' (or '>') button.",
+        "expectedResult": "The 'Next' button is disabled or visually inactive (e.g., greyed out, aria-disabled='true'), because there are no further pages.",
+        "testData": "selector: [data-testid=pagination-next-btn]"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Attempt to click the disabled 'Next' button on the last page.",
+        "expectedResult": "Nothing happens — the table does not re-render, no navigation occurs, and no error is shown. The page remains on the last page.",
+        "testData": "selector: [data-testid=pagination-next-btn]"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Verify the 'Previous' button is enabled on the last page.",
+        "expectedResult": "The 'Previous' button is active and clickable, confirming the UI correctly reflects that the user can navigate back from the last page.",
+        "testData": "selector: [data-testid=pagination-prev-btn]"
+      }
+    ],
+    "expectedOutcome": "The 'Previous' pagination button is disabled on page 1 and the 'Next' pagination button is disabled on the last page. Clicking either disabled button produces no navigation or error. Boundary page states are correctly enforced in the UI.",
+    "requiresPII": false,
+    "tags": [
+      "employee-pagination",
+      "regression",
+      "ui",
+      "edge",
+      "P1",
+      "boundary"
+    ]
+  },
+  {
+    "id": "040b8a4a-5400-579e-8f1d-d1bc7a6e2eba",
+    "scenarioId": "8350d347-cc97-51d5-fddf-92c7a61fd162",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-delete: Escape key closes confirm dialog without deleting employee",
+    "module": "employee-delete",
+    "priority": "P2",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "At least one employee exists in the list."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to / (the employee list page)",
+        "expectedResult": "The employee list is visible with at least one employee row rendered",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Retrieve the first employee's name programmatically (e.g. via getFirstEmployeeId()) and search/filter for that employee by name so their row is visible on page 1",
+        "expectedResult": "The target employee row is visible in the list",
+        "testData": "selector: [data-testid=search-input] or equivalent filter control"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Locate the delete button (e.g. trash/delete icon) on the target employee's row and click it",
+        "expectedResult": "A confirm dialog (ConfirmDialog component) appears on screen with a confirmation message and at least a Cancel and a Confirm/Delete button",
+        "testData": "selector: [data-testid=delete-employee-btn] or equivalent per row"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Verify the confirm dialog is fully visible and focused",
+        "expectedResult": "The confirm dialog is rendered in the DOM and visible; its content (warning message, action buttons) is displayed",
+        "testData": "selector: [data-testid=confirm-dialog] or role=dialog"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Press the Escape key on the keyboard while the confirm dialog is open",
+        "expectedResult": "The confirm dialog closes immediately and is no longer visible in the DOM or is hidden",
+        "testData": "key: Escape"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Verify the confirm dialog is no longer present on the page",
+        "expectedResult": "No dialog overlay or modal is visible; the employee list page is fully interactive again",
+        "testData": "selector: [data-testid=confirm-dialog] should not exist or not be visible"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Verify the employee row that triggered the delete dialog is still present in the list",
+        "expectedResult": "The target employee's row is still rendered in the employee list, confirming no deletion occurred",
+        "testData": "Assert employee row is still visible after Escape dismissal"
+      }
+    ],
+    "expectedOutcome": "Pressing Escape while the confirm delete dialog is open closes the dialog without deleting the employee; the employee remains in the list and the UI returns to its normal state",
+    "requiresPII": false,
+    "tags": [
+      "employee-delete",
+      "confirm-dialog",
+      "keyboard",
+      "escape",
+      "regression",
+      "ui"
+    ]
+  },
+  {
+    "id": "1e52ec0d-c64b-5ade-9b1b-4c39d34ede7c",
+    "scenarioId": "8350d347-cc97-51d5-fddf-92c7a61fd162",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-delete: Escape key on confirm dialog does not delete; subsequent explicit confirm does delete",
+    "module": "employee-delete",
+    "priority": "P2",
+    "type": "edge",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Create a dedicated test employee via API before the test using a unique email (e.g. test+<timestamp>@example.com); delete it in cleanup after the test if not already deleted by the test itself.",
+      "Application is running and the employee list page is accessible."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Create a dedicated test employee via API with a unique email (append a timestamp suffix, e.g. test+<timestamp>@example.com) and note the employee's full name",
+        "expectedResult": "Test employee is created successfully and exists in the system",
+        "testData": "unique email: test+<timestamp>@example.com; store employee name for search"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Navigate to / (the employee list page)",
+        "expectedResult": "The employee list page loads and is visible",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Search or filter for the newly created test employee by their name so their row appears on page 1",
+        "expectedResult": "The test employee's row is visible in the filtered list",
+        "testData": "selector: [data-testid=search-input] or equivalent; value: test employee's name"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Click the delete button on the test employee's row",
+        "expectedResult": "The confirm dialog (ConfirmDialog component) opens and is visible with a confirmation prompt",
+        "testData": "selector: [data-testid=delete-employee-btn] or equivalent per row"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Press the Escape key while the confirm dialog is open",
+        "expectedResult": "The confirm dialog closes and is no longer visible; no deletion has occurred",
+        "testData": "key: Escape"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Verify the confirm dialog is dismissed and the test employee's row is still present in the list",
+        "expectedResult": "Dialog is gone; the test employee row remains visible in the employee list",
+        "testData": "selector: [data-testid=confirm-dialog] should not exist; employee row should still be present"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Click the delete button on the test employee's row again to reopen the confirm dialog",
+        "expectedResult": "The confirm dialog opens again correctly, showing the confirmation prompt",
+        "testData": "selector: [data-testid=delete-employee-btn] or equivalent per row"
+      },
+      {
+        "stepNumber": 8,
+        "action": "This time, click the Confirm/Delete button inside the dialog to proceed with deletion",
+        "expectedResult": "The dialog closes and a success notification or toast is displayed confirming the employee was deleted",
+        "testData": "selector: [data-testid=confirm-dialog-confirm-btn] or equivalent"
+      },
+      {
+        "stepNumber": 9,
+        "action": "Verify the test employee's row is no longer present in the employee list",
+        "expectedResult": "The deleted test employee no longer appears in the list, confirming the deletion was successful only after explicit confirmation — not after Escape",
+        "testData": "Assert employee row is absent from the list"
+      }
+    ],
+    "expectedOutcome": "Pressing Escape on the confirm dialog cancels the deletion (employee remains); reopening the dialog and clicking Confirm successfully deletes the employee — proving Escape is a safe no-op and the dialog can be re-triggered correctly",
+    "requiresPII": false,
+    "tags": [
+      "employee-delete",
+      "confirm-dialog",
+      "keyboard",
+      "escape",
+      "edge",
+      "regression",
+      "ui"
+    ]
+  },
+  {
+    "id": "2b3497e5-6bc7-5966-3633-562e8754c3be",
+    "scenarioId": "a65867b4-ff0d-53b0-7e84-c5c3528ad22c",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] error-handling: GET unknown route returns 404 NOT_FOUND",
+    "module": "error-handling",
+    "priority": "P0",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "No authentication required — all endpoints are publicly accessible."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send GET /api/unknown with header Accept: application/json",
+        "expectedResult": "Response HTTP status code is 404",
+        "testData": "Method: GET, URL: /api/unknown, Headers: {\"Accept\": \"application/json\"}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Assert the response Content-Type header contains 'application/json'",
+        "expectedResult": "Content-Type header value includes 'application/json'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 3,
+        "action": "Assert the response JSON body contains a field indicating the route was not found (e.g. 'message', 'error', or 'status' field with a NOT_FOUND or 404 indicator)",
+        "expectedResult": "Response body is valid JSON and contains at least one field describing the not-found error (e.g. {\"message\": \"Not Found\"} or {\"error\": \"NOT_FOUND\"})",
+        "testData": ""
+      },
+      {
+        "stepNumber": 4,
+        "action": "Confirm the response body does NOT contain any stack trace or internal server error details",
+        "expectedResult": "Response body does not expose stack traces, file paths, or internal implementation details",
+        "testData": ""
+      }
+    ],
+    "expectedOutcome": "GET /api/unknown returns HTTP 404 with a JSON body describing the not-found error and no internal server details leaked",
+    "requiresPII": false,
+    "tags": [
+      "error-handling",
+      "regression",
+      "api",
+      "404",
+      "unknown-route"
+    ]
+  },
+  {
+    "id": "7b8d2ab9-445d-50fa-4bfa-5a685b5dbfa0",
+    "scenarioId": "a65867b4-ff0d-53b0-7e84-c5c3528ad22c",
+    "jiraRef": "TGDEMO-1",
+    "title": "[API] error-handling: deeply nested unknown route returns 404 NOT_FOUND",
+    "module": "error-handling",
+    "priority": "P1",
+    "type": "edge",
+    "caseScope": "regression",
+    "testType": "api",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "No authentication required — all endpoints are publicly accessible."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Send GET /api/unknown/nested/path/that/does/not/exist with header Accept: application/json",
+        "expectedResult": "Response HTTP status code is 404",
+        "testData": "Method: GET, URL: /api/unknown/nested/path/that/does/not/exist, Headers: {\"Accept\": \"application/json\"}"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Assert the response Content-Type header contains 'application/json'",
+        "expectedResult": "Content-Type header value includes 'application/json'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 3,
+        "action": "Assert the response JSON body contains a field indicating the route was not found (e.g. 'message', 'error', or 'status' field with a NOT_FOUND or 404 indicator)",
+        "expectedResult": "Response body is valid JSON and contains at least one field describing the not-found error",
+        "testData": ""
+      },
+      {
+        "stepNumber": 4,
+        "action": "Send GET /api/ (trailing slash only, no resource) with header Accept: application/json",
+        "expectedResult": "Response HTTP status code is 404",
+        "testData": "Method: GET, URL: /api/, Headers: {\"Accept\": \"application/json\"}"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Assert the response Content-Type header for the /api/ request contains 'application/json'",
+        "expectedResult": "Content-Type header value includes 'application/json'",
+        "testData": ""
+      },
+      {
+        "stepNumber": 6,
+        "action": "Assert the response JSON body for the /api/ request contains a not-found error indicator and does NOT return HTTP 200 or 500",
+        "expectedResult": "Response body is valid JSON describing a not-found error; status is 404 and not 200 or 500",
+        "testData": ""
+      }
+    ],
+    "expectedOutcome": "Both a deeply nested unknown path and a bare /api/ route consistently return HTTP 404 with a JSON error body, confirming the catch-all unknown-route handler works for any unmatched API path",
+    "requiresPII": false,
+    "tags": [
+      "error-handling",
+      "regression",
+      "api",
+      "404",
+      "unknown-route",
+      "edge"
+    ]
+  },
+  {
+    "id": "33b1c8d7-ae04-51a6-f8ef-5c60fd4a6d0a",
+    "scenarioId": "fa68f85e-d6d3-57db-f95e-8822b16fdd05",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-list: Empty state message displayed when search yields no results",
+    "module": "employee-list",
+    "priority": "P2",
+    "type": "negative",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "The employee list page is accessible at /.",
+      "At least one employee exists in the system so the table renders in its default state before searching."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "The employee list page loads and the EmployeeTable is visible with at least one employee row rendered.",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Locate the search input field (e.g. selector: [data-testid=employee-search-input] or the visible search bar) and confirm it is empty and interactive.",
+        "expectedResult": "The search input is visible, focused or focusable, and currently contains no text.",
+        "testData": "selector: [data-testid=employee-search-input]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Type a search string that is guaranteed to match no existing employee, such as 'ZZZNOMATCH_99999_XQWERTY', into the search input.",
+        "expectedResult": "The input field displays the typed string and a search/filter action is triggered (either on keystroke or after a debounce delay).",
+        "testData": "searchTerm: ZZZNOMATCH_99999_XQWERTY"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Wait for the employee table area to finish loading/updating (any loading spinner or skeleton disappears).",
+        "expectedResult": "The loading indicator is no longer visible and the table content area has settled.",
+        "testData": "selector: [data-testid=employee-table] or [data-testid=loading-spinner]"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Observe the employee table body / results area.",
+        "expectedResult": "No employee rows are rendered in the table body.",
+        "testData": "selector: [data-testid=employee-table-row] — count should be 0"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Observe the empty state element rendered inside or below the table.",
+        "expectedResult": "An empty state message is visible. The message should communicate that no employees were found (e.g. text such as 'No employees found', 'No results', or similar copy defined in EmployeeTable.tsx).",
+        "testData": "selector: [data-testid=empty-state] or text assertion: /no (employees|results) found/i"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Clear the search input by selecting all text and deleting it (or clicking a clear/reset button if present).",
+        "expectedResult": "The search input is empty again.",
+        "testData": "selector: [data-testid=employee-search-input]"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Wait for the employee table to reload and observe the results area.",
+        "expectedResult": "Employee rows are rendered again (the seeded employees are visible), and the empty state message is no longer displayed — confirming the empty state is conditional on the search filter.",
+        "testData": "selector: [data-testid=employee-table-row] — count should be > 0"
+      }
+    ],
+    "expectedOutcome": "When a search term that matches no employees is entered, the EmployeeTable renders zero rows and displays a visible empty state message. When the search is cleared, the employee list is restored and the empty state is hidden.",
+    "requiresPII": false,
+    "tags": [
+      "employee-list",
+      "regression",
+      "ui",
+      "empty-state",
+      "search",
+      "filter"
+    ]
+  },
+  {
+    "id": "e8664f52-2648-57b8-0ba0-724a2fd84cd0",
+    "scenarioId": "fa68f85e-d6d3-57db-f95e-8822b16fdd05",
+    "jiraRef": "TGDEMO-1",
+    "title": "[UI] employee-list: Empty state does NOT appear when search matches at least one employee",
+    "module": "employee-list",
+    "priority": "P2",
+    "type": "positive",
+    "caseScope": "regression",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees.",
+      "At least one employee exists in the system.",
+      "The first seeded employee's name is retrievable programmatically via GET /api/employees (use the first result's name as the search term)."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Retrieve the name of the first employee from the seeded data by calling GET /api/employees and reading the first record's full name (or first name). Store this value as <firstEmployeeName>.",
+        "expectedResult": "A valid employee name string is obtained for use as the search term.",
+        "testData": "API: GET /api/employees — read first result's name field"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Navigate to /",
+        "expectedResult": "The employee list page loads and the EmployeeTable is visible with employee rows rendered.",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Locate the search input field and confirm it is empty.",
+        "expectedResult": "The search input is visible and contains no text.",
+        "testData": "selector: [data-testid=employee-search-input]"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Type <firstEmployeeName> (obtained in step 1) into the search input.",
+        "expectedResult": "The input displays the typed name and the search/filter is triggered.",
+        "testData": "searchTerm: <firstEmployeeName> (dynamically obtained)"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Wait for the employee table to finish updating (loading indicator disappears).",
+        "expectedResult": "The table content area has settled with no loading spinner visible.",
+        "testData": "selector: [data-testid=loading-spinner]"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Observe the employee table body.",
+        "expectedResult": "At least one employee row is rendered in the table, containing text that matches <firstEmployeeName>.",
+        "testData": "selector: [data-testid=employee-table-row] — count should be >= 1"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Observe the area where the empty state message would appear (e.g. selector: [data-testid=empty-state]).",
+        "expectedResult": "The empty state message is NOT visible / not present in the DOM when matching results exist.",
+        "testData": "selector: [data-testid=empty-state] — should be absent or hidden"
+      }
+    ],
+    "expectedOutcome": "When a search term that matches at least one existing employee is entered, the EmployeeTable renders matching employee rows and the empty state message is not displayed, confirming the empty state is only shown for zero-result searches.",
+    "requiresPII": false,
+    "tags": [
+      "employee-list",
+      "regression",
+      "ui",
+      "empty-state",
+      "search",
+      "filter",
+      "happy-path"
+    ]
+  }
+]

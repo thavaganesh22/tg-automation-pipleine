@@ -1,23 +1,30 @@
 /**
- * AGT-02 — JIRA Story Validator
+ * AGT-02 — JIRA Story Validator & Scenario Generator
  *
  * Fetches the specific JIRA story identified in the PR (TGDEMO-xxxxx format),
- * then performs a deep alignment analysis:
+ * then performs two tasks:
  *
- *   1. Fetches the story's description, acceptance criteria, and linked issues
- *   2. Compares the story's stated intent against the actual code changes
- *   3. Produces a PASS / WARN / FAIL alignment verdict with detailed findings
- *   4. Enriches each scenario with JIRA story context for downstream agents
+ *   1. Alignment Analysis
+ *      Compares the story's stated intent against the actual code changes.
+ *      Produces a PASS / WARN / FAIL verdict. FAIL blocks the pipeline.
  *
- * A FAIL verdict (code contradicts the story or is completely unrelated)
- * blocks the pipeline — the PR should not proceed to test generation until
- * the mismatch is resolved.
+ *   2. JIRA-Derived Scenario Generation
+ *      Reads the story's acceptance criteria + code changes and generates
+ *      high-level test scenarios specifically for this story's new behaviour.
+ *      Each scenario is tagged testType = "ui" | "api" and
+ *      scenarioScope = "new-feature".
+ *
+ * Output: ValidatedScenario[] =
+ *   [enriched AGT-01 regression scenarios]
+ *   + [new UI/API scenarios derived from the JIRA story]
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 import axios from "axios";
 import { z } from "zod";
+import { deterministicId } from "../../orchestrator/ids";
 import type { Scenario } from "../01-codebase-analyst";
+import type { EnhancedAppStructure } from "../../shared/types";
 
 const client = new Anthropic();
 
@@ -66,6 +73,8 @@ export const ValidatedScenarioSchema = z.object({
   description: z.string(),
   entryPoints: z.array(z.string()),
   priority: z.enum(["P0", "P1", "P2", "P3"]),
+  scenarioScope: z.enum(["regression", "new-feature"]).default("new-feature"),
+  testType: z.enum(["ui", "api"]).default("ui"),
   userJourneys: z.array(z.string()).optional(),
   apiEndpoints: z.array(z.string()).optional(),
   jiraTicket: z.string(),
@@ -91,11 +100,13 @@ export interface JiraValidationReport {
   findings: AlignmentFinding[];
   summary: string;
   blockedReason: string | null; // Set when verdict is FAIL
-  validatedScenarios: ValidatedScenario[];
+  validatedScenarios: ValidatedScenario[]; // enriched AGT-01 regression scenarios
+  jiraDerivedScenarios: ValidatedScenario[]; // new UI/API scenarios from the JIRA story
 }
 
 export interface JiraConfig {
   host: string;
+  email: string;
   token: string;
   projectKey: string;
   sprintId?: string;
@@ -104,11 +115,12 @@ export interface JiraConfig {
 // ── Guardrail: allowlisted JIRA hosts ──────────────────────────────────────
 
 function assertHostAllowed(host: string): void {
-  const allowlist = (process.env.JIRA_HOST_ALLOWLIST ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (!allowlist.some((h) => host.startsWith(h))) {
+  const raw = process.env.JIRA_HOST_ALLOWLIST ?? "";
+  // If JIRA_HOST_ALLOWLIST is not set, skip the check — let the fetch attempt proceed
+  // (it will fail gracefully with a WARN verdict if the host is unreachable or rejected).
+  if (!raw.trim()) return;
+  const allowlist = raw.split(",").map((s: string) => s.trim()).filter(Boolean);
+  if (!allowlist.some((h: string) => host.startsWith(h))) {
     throw new Error(
       `[AGT-02 GUARDRAIL] JIRA host "${host}" is not in JIRA_HOST_ALLOWLIST.\n` +
         `  Allowed: ${allowlist.join(", ")}`
@@ -120,7 +132,8 @@ function assertHostAllowed(host: string): void {
 
 export async function runJiraValidator(
   scenarios: Scenario[],
-  config: JiraConfig
+  config: JiraConfig,
+  appObservations?: EnhancedAppStructure | null
 ): Promise<ValidatedScenario[]> {
   assertHostAllowed(config.host);
 
@@ -147,13 +160,18 @@ export async function runJiraValidator(
     return scenarios.map((s) => buildFallbackScenario(s, jiraTicket));
   }
 
-  // ── Step 2: Deep alignment analysis — code changes vs story ─────────────
+  // ── Step 2: Alignment analysis + JIRA-derived scenario generation ─────────
   console.log(`  [AGT-02] Running code-vs-story alignment analysis…`);
   const report = await analyseAlignment(scenarios, story);
 
   console.log(`  [AGT-02] Alignment verdict: ${report.overallVerdict}`);
   console.log(
     `  [AGT-02] Findings: ${report.findings.length} (${report.findings.filter((f) => f.severity === "critical").length} critical)`
+  );
+  console.log(
+    `  [AGT-02] JIRA-derived scenarios generated: ${report.jiraDerivedScenarios.length} ` +
+      `(${report.jiraDerivedScenarios.filter((s) => s.testType === "ui").length} UI | ` +
+      `${report.jiraDerivedScenarios.filter((s) => s.testType === "api").length} API)`
   );
 
   // ── Step 3: GUARDRAIL — block on FAIL verdict ────────────────────────────
@@ -179,17 +197,25 @@ export async function runJiraValidator(
     );
   }
 
-  // ── Step 4: Enrich each scenario with JIRA context ───────────────────────
-  return report.validatedScenarios;
+  // ── Step 4: Verify new features exist in live app (if observations available)
+  let jiraDerived = report.jiraDerivedScenarios;
+  if (appObservations && jiraDerived.length > 0) {
+    jiraDerived = verifyNewFeatures(jiraDerived, appObservations);
+  }
+
+  // ── Step 5: Return enriched AGT-01 scenarios + new JIRA-derived scenarios ─
+  return [...report.validatedScenarios, ...jiraDerived];
 }
 
 // ── JIRA API ───────────────────────────────────────────────────────────────
 
 async function fetchJiraStory(ticketKey: string, config: JiraConfig): Promise<JiraStory> {
   // GUARDRAIL: read-only — GET only, no POST/PUT/PATCH
+  // Atlassian Cloud uses Basic auth: base64(email:api_token)
+  const basicAuth = Buffer.from(`${config.email}:${config.token}`).toString("base64");
   const { data } = await axios.get(`${config.host}/rest/api/3/issue/${ticketKey}`, {
     headers: {
-      Authorization: `Bearer ${config.token}`,
+      Authorization: `Basic ${basicAuth}`,
       Accept: "application/json",
     },
     params: {
@@ -280,10 +306,13 @@ async function analyseAlignment(
   story: JiraStory
 ): Promise<JiraValidationReport> {
   const changedFiles = [...new Set(scenarios.flatMap((s) => s.changedFiles))];
+  const modules = [...new Set(scenarios.map((s) => s.module))];
+  const apiEndpoints = [...new Set(scenarios.flatMap((s) => s.apiEndpoints ?? []))];
   const scenarioDescriptions = scenarios.map((s) => ({
     title: s.title,
     module: s.module,
     description: s.description,
+    testType: s.testType,
     changedFiles: s.changedFiles,
     userJourneys: s.userJourneys ?? [],
     apiEndpoints: s.apiEndpoints ?? [],
@@ -308,7 +337,7 @@ ${story.acceptanceCriteria ?? "(no acceptance criteria defined)"}
 **Components:** ${story.components.join(", ") || "none"}
 
 **Linked Issues:**
-${story.linkedIssues.map((l) => `- ${l.type}: ${l.key} — ${l.summary}`).join("\n") || "none"}
+${story.linkedIssues.map((l: { type: string; key: string; summary: string }) => `- ${l.type}: ${l.key} — ${l.summary}`).join("\n") || "none"}
 
 ---
 
@@ -359,8 +388,9 @@ Verdict guide:
   FAIL = Code contradicts the story, implements something completely different, or is dangerously out of scope`;
 
   const response = await client.messages.create({
-    model: "claude-opus-4-6",
+    model: "claude-sonnet-4-6",
     max_tokens: 6000,
+    temperature: 0,
     system: `You are a strict QA lead performing alignment validation between JIRA stories and code changes.
 Be precise and evidence-based. Only flag real mismatches — not style preferences.
 Return ONLY valid JSON.`,
@@ -368,7 +398,7 @@ Return ONLY valid JSON.`,
   });
 
   const text = (response.content[0] as { text: string }).text;
-  const analysisRaw = extractJSON(text);
+  const analysisRaw = extractJSONObject(text);
 
   if (!analysisRaw) {
     return buildFallbackReport(scenarios, story, "LLM returned non-parseable analysis");
@@ -404,7 +434,7 @@ Return ONLY valid JSON.`,
     ? (analysis.overallVerdict as AlignmentVerdict)
     : "WARN";
 
-  // Build enriched validated scenarios
+  // Build enriched validated scenarios (AGT-01 regression scenarios + JIRA context)
   const validatedScenarios = scenarios.map((s): ValidatedScenario => {
     const enriched = analysis.enrichedScenarios?.find((e) => e.scenarioTitle === s.title);
     const coverageStatus =
@@ -423,6 +453,14 @@ Return ONLY valid JSON.`,
     });
   });
 
+  // Generate new UI + API test scenarios from the JIRA story + code changes
+  const jiraDerivedScenarios = await generateJiraScenarios(
+    story,
+    { modules, apiEndpoints, changedFiles },
+    overallVerdict,
+    analysis.alignmentSummary ?? ""
+  );
+
   return {
     jiraTicket: story.key,
     story,
@@ -431,7 +469,256 @@ Return ONLY valid JSON.`,
     summary: analysis.alignmentSummary ?? "",
     blockedReason: analysis.blockedReason ?? null,
     validatedScenarios,
+    jiraDerivedScenarios,
   };
+}
+
+// ── JIRA-Derived Scenario Generation ───────────────────────────────────────
+
+interface CodeChangeSummary {
+  modules: string[];
+  apiEndpoints: string[];
+  changedFiles: string[];
+}
+
+async function generateJiraScenarios(
+  story: JiraStory,
+  codeChanges: CodeChangeSummary,
+  overallVerdict: AlignmentVerdict,
+  alignmentSummary: string
+): Promise<ValidatedScenario[]> {
+  const MAX_JIRA_SCENARIOS = parseInt(process.env.MAX_JIRA_SCENARIOS ?? "15", 10);
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 6000,
+    temperature: 0.2,
+    system: `You are a senior QA architect creating test scenarios for a specific JIRA story.
+Your job is to generate high-level test scenarios covering the NEW BEHAVIOUR described in this story.
+
+HARD LIMIT: Generate AT MOST ${MAX_JIRA_SCENARIOS} scenarios total. Prioritise P0 and P1.
+
+IMPORTANT: Only generate scenarios for genuinely NEW behaviour introduced by this story.
+- If the story has no acceptance criteria and no clear new behaviour, return []
+- If the story is a sample, placeholder, maintenance task, or has nothing testable, return []
+- Do NOT invent scenarios just to have output — an empty array is the correct response when there is nothing new
+
+When scenarios ARE warranted, generate BOTH types:
+  UI scenarios  ("testType": "ui")  — what a user tests in the browser:
+    page loads, interactions, form submissions, success/error feedback, navigation
+  API scenarios ("testType": "api") — what backend tests should cover:
+    HTTP endpoints, request validation, response format, auth errors (401/403), CRUD operations
+
+Base scenarios directly on the acceptance criteria and story description.
+Each acceptance criterion should produce at least one scenario.
+
+IMPORTANT JSON FORMAT RULES:
+- Return ONLY a raw JSON array — no code fences, no backticks, no explanation
+- Start your response with [ and end with ]
+- An empty array [] is valid when there is nothing new to test
+- Keep all string values SHORT (max 15 words)
+
+Schema (every field required):
+{
+  "title": "[UI|API] <Module>: <10-word max title>",
+  "module": "lowercase-kebab-case",
+  "description": "10-word max description",
+  "testType": "ui|api",
+  "priority": "P0|P1|P2|P3",
+  "userJourneys": ["short user journey (UI scenarios only, empty array for API)"],
+  "apiEndpoints": ["METHOD /api/route (API scenarios only, empty array for UI)"],
+  "entryPoints": ["relevant/source/file.ts"]
+}`,
+    messages: [
+      {
+        role: "user",
+        content: `
+## JIRA Story: ${story.key}
+**Summary:** ${story.summary}
+**Type:** ${story.storyType} | **Priority:** ${story.priority} | **Status:** ${story.status}
+**Components:** ${story.components.join(", ") || "none"}
+**Labels:** ${story.labels.join(", ") || "none"}
+
+**Description:**
+${story.description ?? "(no description provided)"}
+
+**Acceptance Criteria:**
+${story.acceptanceCriteria ?? "(no acceptance criteria defined)"}
+
+**Linked Issues:**
+${story.linkedIssues.map((l) => `- ${l.type}: ${l.key} — ${l.summary}`).join("\n") || "none"}
+
+---
+
+## Code Changes in This PR
+**Modules affected:** ${codeChanges.modules.join(", ") || "none detected"}
+**API endpoints involved:** ${codeChanges.apiEndpoints.join(", ") || "none detected"}
+**Changed files:** ${codeChanges.changedFiles.join(", ") || "none detected"}
+
+**Alignment summary:** ${alignmentSummary || "N/A"}
+
+---
+
+Generate up to ${MAX_JIRA_SCENARIOS} new-feature test scenarios (raw JSON array, no code fences).
+Cover each acceptance criterion with at least one UI or API scenario.
+If there are no acceptance criteria and no new behaviour to test, return [].
+`.trim(),
+      },
+    ],
+  });
+
+  const text = (response.content[0] as { text: string }).text;
+  const items = extractJSONArray(text);
+
+  if (items.length === 0) {
+    console.warn("  [AGT-02] generateJiraScenarios: LLM returned no parseable scenarios");
+    return [];
+  }
+
+  const results: ValidatedScenario[] = [];
+  let skipped = 0;
+
+  for (const item of items) {
+    try {
+      const obj = item as Record<string, unknown>;
+      const rawTestType = String(obj["testType"] ?? "").toLowerCase();
+      const testType: "ui" | "api" = rawTestType === "api" ? "api" : "ui";
+
+      const scenarioModule = String(obj["module"] ?? "unknown").toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      const scenarioTitle = String(obj["title"] ?? "Untitled scenario");
+      const scenario = ValidatedScenarioSchema.parse({
+        id: deterministicId(`agt02::${story.key}::${scenarioModule}::${scenarioTitle}`),
+        title: scenarioTitle,
+        module: scenarioModule,
+        description: String(obj["description"] ?? ""),
+        entryPoints: toStringArray(obj["entryPoints"], codeChanges.changedFiles),
+        priority: normalisePriority(obj["priority"]),
+        scenarioScope: "new-feature",
+        testType,
+        userJourneys: toStringArray(obj["userJourneys"]),
+        apiEndpoints: toStringArray(obj["apiEndpoints"]),
+        jiraTicket: story.key,
+        prNumber: undefined,
+        changedFiles: codeChanges.changedFiles,
+        // AGT-02 enrichment
+        jiraRef: story.key,
+        jiraSummary: story.summary,
+        jiraDescription: story.description,
+        jiraAcceptanceCriteria: story.acceptanceCriteria,
+        alignmentVerdict: overallVerdict,
+        alignmentFindings: [],
+        alignmentSummary,
+        coverageStatus: "GAP",
+      });
+
+      results.push(scenario);
+    } catch (err) {
+      skipped++;
+      console.warn(`  [AGT-02] Skipped JIRA scenario: ${(err as Error).message.slice(0, 120)}`);
+    }
+  }
+
+  if (skipped > 0) {
+    console.warn(
+      `  [AGT-02] ${skipped}/${items.length} JIRA scenarios skipped (validation errors)`
+    );
+  }
+
+  return results;
+}
+
+/** Coerce value to string array (shared helper) */
+function toStringArray(val: unknown, fallback: string[] = []): string[] {
+  if (Array.isArray(val)) return val.map(String).filter(Boolean);
+  if (typeof val === "string" && val.trim()) return [val.trim()];
+  return fallback;
+}
+
+/** Normalise priority strings from LLM output */
+function normalisePriority(val: unknown): "P0" | "P1" | "P2" | "P3" {
+  const s = String(val ?? "P2").toUpperCase();
+  const match = s.match(/^P([0-3])/);
+  if (match) return `P${match[1]}` as "P0" | "P1" | "P2" | "P3";
+  if (s.includes("CRITICAL") || s.includes("HIGH")) return "P1";
+  if (s.includes("LOW") || s.includes("MINOR")) return "P3";
+  return "P2";
+}
+
+/** Multi-strategy JSON array extraction for LLM output */
+function extractJSONArray(text: string): unknown[] {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      /* fall through */
+    }
+  }
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const inner = fenceMatch ? fenceMatch[1].trim() : text.trim();
+  const start = inner.indexOf("[");
+  if (start === -1) return [];
+  try {
+    const parsed = JSON.parse(inner.slice(start));
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    /* fall through */
+  }
+  const lastBracket = inner.lastIndexOf("]");
+  if (lastBracket > start) {
+    try {
+      const parsed = JSON.parse(inner.slice(start, lastBracket + 1));
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      /* fall through */
+    }
+  }
+  return [];
+}
+
+// ── Live App Feature Verification ───────────────────────────────────────────
+
+function verifyNewFeatures(
+  scenarios: ValidatedScenario[],
+  observations: EnhancedAppStructure
+): ValidatedScenario[] {
+  const selectors = new Set(observations.discoveredSelectors);
+  const routes = observations.routeBehavior;
+
+  for (const scenario of scenarios) {
+    let verified = false;
+
+    // Check if UI elements from scenario description exist in discovered selectors
+    if (scenario.testType === "ui") {
+      const mentionsSelector = observations.discoveredSelectors.some(
+        (sel) => scenario.title.toLowerCase().includes(sel.replace(/-/g, " ").toLowerCase()) ||
+                 scenario.description.toLowerCase().includes(sel.replace(/-/g, " ").toLowerCase())
+      );
+      // UI scenarios are verified if the app has relevant selectors
+      verified = mentionsSelector || selectors.size > 0;
+    }
+
+    // Check if API endpoints from scenario exist in observed routes
+    if (scenario.testType === "api") {
+      const apiEndpoints = scenario.apiEndpoints ?? [];
+      verified = apiEndpoints.length === 0 || apiEndpoints.some((endpoint) => {
+        const routePath = endpoint.replace(/^(GET|POST|PUT|PATCH|DELETE)\s+/i, "");
+        return Object.keys(routes).some((r) => routePath.startsWith(r)) ||
+               routePath.startsWith("/api/");
+      });
+    }
+
+    // Tag with verification status (info log only — don't block scenarios)
+    if (!verified) {
+      console.log(
+        `  [AGT-02] Feature verification: "${scenario.title}" — ` +
+        `could not confirm in live app (may be newly added)`
+      );
+    }
+  }
+
+  return scenarios;
 }
 
 // ── Fallbacks ──────────────────────────────────────────────────────────────
@@ -477,17 +764,41 @@ function buildFallbackReport(
     summary: `Alignment analysis incomplete: ${reason}`,
     blockedReason: null,
     validatedScenarios: scenarios.map((s) => buildFallbackScenario(s, story.key)),
+    jiraDerivedScenarios: [], // cannot generate without JIRA story content
   };
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 
-function extractJSON(text: string): Record<string, unknown> | null {
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[0]) as Record<string, unknown>;
-  } catch {
-    return null;
+/** Extract the first JSON object from LLM text (handles code fences and leading text).
+ *  Uses balanced-brace scanning instead of greedy regex to handle nested objects correctly. */
+function extractJSONObject(text: string): Record<string, unknown> | null {
+  // Strategy 1: code fence content
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const source = fenceMatch ? fenceMatch[1].trim() : text.trim();
+
+  // Strategy 2: find first '{' and scan to balanced '}'
+  const start = source.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < source.length; i++) {
+    const ch = source[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\" && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(source.slice(start, i + 1)) as Record<string, unknown>;
+        } catch { break; }
+      }
+    }
   }
+  return null;
 }

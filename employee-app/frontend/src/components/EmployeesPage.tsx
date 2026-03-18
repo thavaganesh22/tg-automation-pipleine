@@ -170,16 +170,17 @@ export function EmployeesPage() {
               : "No employees yet"}
           </p>
         </div>
-        <button className="btn btn-primary" onClick={openCreate}>
+        <button data-testid="add-employee-btn" className="btn btn-primary" onClick={openCreate}>
           + Add employee
         </button>
       </div>
 
       {/* Error banner */}
       {listError && (
-        <div className="error-banner" style={{ marginBottom: 16 }}>
+        <div data-testid="error-banner" className="error-banner" style={{ marginBottom: 16 }}>
           ⚠ {listError}
           <button
+            data-testid="retry-btn"
             className="btn btn-ghost btn-sm"
             style={{ marginLeft: "auto" }}
             onClick={() => fetchEmployees({ page, search, department, status })}
@@ -191,7 +192,7 @@ export function EmployeesPage() {
 
       {/* Toast */}
       {toast && (
-        <div className="success-banner" style={{ marginBottom: 16 }}>
+        <div data-testid="success-toast" className="success-banner" style={{ marginBottom: 16 }}>
           ✓ {toast}
         </div>
       )}
@@ -201,6 +202,7 @@ export function EmployeesPage() {
         <div className="input-search-wrap">
           <span className="input-search-icon">⌕</span>
           <input
+            data-testid="search-input"
             className="input input-search"
             type="search"
             placeholder="Search name, email, title…"
@@ -210,6 +212,7 @@ export function EmployeesPage() {
         </div>
 
         <select
+          data-testid="department-filter"
           className="select"
           value={department}
           onChange={(e) => handleFilterChange("department", e.target.value)}
@@ -221,6 +224,7 @@ export function EmployeesPage() {
         </select>
 
         <select
+          data-testid="status-filter"
           className="select"
           value={status}
           onChange={(e) => handleFilterChange("status", e.target.value)}
@@ -233,6 +237,7 @@ export function EmployeesPage() {
 
         {(search || department || status) && (
           <button
+            data-testid="clear-filters-btn"
             className="btn btn-ghost btn-sm"
             onClick={() => {
               setSearch(""); setDepartment(""); setStatus(""); setPage(1);
