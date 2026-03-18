@@ -13,7 +13,10 @@ export const CreateEmployeeSchema = z.object({
   firstName:        z.string().min(1).max(100).trim(),
   lastName:         z.string().min(1).max(100).trim(),
   email:            z.string().email().max(254).toLowerCase().trim(),
-  phone:            z.string().max(30).trim().optional().default(""),
+  phone:            z.string().trim().optional().default("").refine(
+    (v) => v === "" || /^\+?[\d\s\-().]{7,30}$/.test(v),
+    { message: "Invalid phone format" }
+  ),
   cellPhone:        z.string().trim().optional().default("").refine(
     (v) => v === "" || /^\+?[\d\s\-().]{7,30}$/.test(v),
     { message: "Invalid phone format" }

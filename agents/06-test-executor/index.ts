@@ -89,7 +89,6 @@ const SCRIPT_ERROR_PATTERNS: RegExp[] = [
   /is not a function/i,
   /cannot read propert/i,
   /target page.*closed/i,
-  /expect.*toBeVisible.*failed/i,
   /expect.*toHaveCount.*failed/i,
   /expect.*toHaveText.*failed/i,
 ];
@@ -100,6 +99,9 @@ const APP_ERROR_PATTERNS: RegExp[] = [
   /connection refused/i,
   /response status.*[45]\d\d/i,
   /internal server error/i,
+  // Element not found = app hasn't implemented the feature; healer cannot fix this
+  /expect.*toBeVisible.*failed/i,
+  /element\(s\) not found/i,
 ];
 
 // ── Main Agent ─────────────────────────────────────────────────────────────
@@ -278,7 +280,8 @@ async function healSpecFile(
         "3. Do NOT say 'Here is the fixed file' or any similar phrase.\n" +
         "4. Your response will be written directly to disk as a .ts file — any prose will break compilation.\n" +
         "5. Do NOT remove any tests that are NOT listed as failing — keep ALL passing tests exactly as-is.\n" +
-        "6. Do NOT rewrite tests from scratch — make minimal, targeted changes to fix the specific errors shown.",
+        "6. Do NOT rewrite tests from scratch — make minimal, targeted changes to fix the specific errors shown.\n" +
+        "7. NEVER add new test() blocks — the output file must contain exactly the same number of tests as the input.",
       messages: [
         {
           role: "user",

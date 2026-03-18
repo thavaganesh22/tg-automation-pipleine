@@ -248,10 +248,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # CI checks out a synthetic merge commit (refs/pull/N/merge) in detached HEAD.
-          # Switch to the actual PR branch before committing so the bot commit lands
-          # on the PR branch head — not on top of the merge commit.
+          # The pipeline may have generated/modified files in the working tree.
+          # Stash them so git checkout doesn't abort, then restore after switching branches.
+          git stash --include-untracked || true
           git fetch origin ${{ github.head_ref }}
           git checkout ${{ github.head_ref }}
+          git stash pop || true
           git add pipeline-state/regression-baseline.json || true
           git add pipeline-state/pending-promotion.json || true
           git add playwright-tests/specs/ || true

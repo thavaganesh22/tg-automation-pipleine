@@ -299,6 +299,22 @@ function extractAdfText(adf: unknown): string | null {
   return lines.join("\n") || null;
 }
 
+// ── File partitioning ───────────────────────────────────────────────────────
+// Derive the app directory prefix from REPO_PATH (e.g. "./employee-app" → "employee-app/").
+// Files under this prefix are app changes; everything else is pipeline/infra.
+
+function partitionChangedFiles(files: string[]): { appFiles: string[]; infraFiles: string[] } {
+  const repoPath = (process.env.REPO_PATH ?? "").replace(/^\.\//, "").replace(/\/$/, "");
+  const appPrefix = repoPath ? repoPath + "/" : null;
+  const appFiles: string[]   = [];
+  const infraFiles: string[] = [];
+  for (const f of files) {
+    if (appPrefix && f.startsWith(appPrefix)) appFiles.push(f);
+    else infraFiles.push(f);
+  }
+  return { appFiles, infraFiles };
+}
+
 // ── Alignment Analysis ─────────────────────────────────────────────────────
 
 async function analyseAlignment(
@@ -306,6 +322,7 @@ async function analyseAlignment(
   story: JiraStory
 ): Promise<JiraValidationReport> {
   const changedFiles = [...new Set(scenarios.flatMap((s) => s.changedFiles))];
+  const { appFiles, infraFiles } = partitionChangedFiles(changedFiles);
   const modules = [...new Set(scenarios.map((s) => s.module))];
   const apiEndpoints = [...new Set(scenarios.flatMap((s) => s.apiEndpoints ?? []))];
   const scenarioDescriptions = scenarios.map((s) => ({
@@ -342,7 +359,10 @@ ${story.linkedIssues.map((l: { type: string; key: string; summary: string }) => 
 ---
 
 ## What the PR Actually Does (from changed files analysis)
-Changed files: ${changedFiles.join(", ")}
+App files changed: ${appFiles.length > 0 ? appFiles.join(", ") : "none"}
+${infraFiles.length > 0 ? `\nPipeline/infra files changed (part of the QA automation layer — NOT story scope): ${infraFiles.join(", ")}` : ""}
+
+NOTE: Pipeline and infra files (agents/, orchestrator/, .github/, playwright-tests/, etc.) are part of the QA pipeline that wraps the app. They are NOT part of the JIRA story's application scope and must NOT be treated as scope creep when evaluating story alignment. Only evaluate the app files above against the story.
 
 Detected behaviours from code analysis:
 ${JSON.stringify(scenarioDescriptions, null, 2)}
@@ -453,10 +473,11 @@ Return ONLY valid JSON.`,
     });
   });
 
-  // Generate new UI + API test scenarios from the JIRA story + code changes
+  // Generate new UI + API test scenarios from the JIRA story + code changes.
+  // Only pass app files — infra/pipeline changes are not testable via Playwright.
   const jiraDerivedScenarios = await generateJiraScenarios(
     story,
-    { modules, apiEndpoints, changedFiles },
+    { modules, apiEndpoints, changedFiles: appFiles },
     overallVerdict,
     analysis.alignmentSummary ?? ""
   );

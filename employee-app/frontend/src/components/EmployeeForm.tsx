@@ -61,6 +61,8 @@ function validate(data: FormData): Errors {
   if (!data.email.trim())            errs.email            = "Required";
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email))
                                      errs.email            = "Invalid email";
+  if (data.phone.trim() && !/^\+?[\d\s\-().]{7,30}$/.test(data.phone.trim()))
+                                     errs.phone            = "Invalid phone format";
   if (data.cellPhone.trim() && !/^\+?[\d\s\-().]{7,30}$/.test(data.cellPhone.trim()))
                                      errs.cellPhone        = "Invalid phone format";
   if (!data.designation.trim())      errs.designation      = "Required";
