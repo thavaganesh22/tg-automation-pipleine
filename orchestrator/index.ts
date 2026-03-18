@@ -78,11 +78,26 @@ async function main(): Promise<void> {
 
     const scenariosExist = await state.exists("scenarios");
     if (!regenScenarios && scenariosExist) {
-      const existing = await state.load<Scenario[]>("scenarios");
-      log.info(
-        `AGT-01 skipped — using ${existing.length} cached scenarios. ` +
-          `Pass --regen-scenarios (or REGEN_SCENARIOS=true) to regenerate.`
-      );
+      let existing = await state.load<Scenario[]>("scenarios");
+      // Always refresh changedFiles from the current PR context — cached scenarios
+      // retain the changed files from when they were originally generated, which
+      // becomes stale when new commits are pushed after the cache was created.
+      // AGT-02 depends on changedFiles to assess alignment, so it must reflect
+      // the current PR diff even when regression scenarios come from cache.
+      const currentChangedFiles = (process.env.PR_CHANGED_FILES ?? "")
+        .split("\n")
+        .map((f: string) => f.trim())
+        .filter(Boolean);
+      if (currentChangedFiles.length > 0) {
+        existing = existing.map((s) => ({ ...s, changedFiles: currentChangedFiles }));
+        await state.save("scenarios", existing);
+        log.info(`AGT-01 skipped — refreshed changedFiles (${currentChangedFiles.length} files) on ${existing.length} cached scenarios.`);
+      } else {
+        log.info(
+          `AGT-01 skipped — using ${existing.length} cached scenarios. ` +
+            `Pass --regen-scenarios (or REGEN_SCENARIOS=true) to regenerate.`
+        );
+      }
     } else {
       // PR context is set by the CI workflow via environment variables:
       //   PR_TITLE, PR_BRANCH, PR_NUMBER, GITHUB_BASE_REF, PR_CHANGED_FILES
