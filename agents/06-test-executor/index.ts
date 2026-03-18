@@ -467,15 +467,19 @@ module.exports = defineConfig({
     healArtifactsDir
   );
 
-  // Merge: keep run-1 results for non-healed files; replace with run-2 for healed files
-  // run-1 total = passed + failed + flaky + skipped
-  // Script-fail tests were in healed files — replace their results with heal-run results
-  const run1NonHealedPassed = firstResult.passed; // passed tests were NOT in healed files
-  const run1NonHealedFailed = appFails.length;     // app errors stay (not healed)
+  // Merge: keep run-1 results for non-healed files; replace with run-2 for healed files.
+  // We must subtract the healed files' run-1 contribution before adding the heal-run results,
+  // otherwise passing tests from the healed file get double-counted (leading to >100% pass rate).
+  const healedBasenames = new Set(healedSpecs.map((s) => path.basename(s)));
+  const healedRun1Tests = firstResult.allTests.filter((t) => healedBasenames.has(path.basename(t.file)));
+  const healedRun1Passed = healedRun1Tests.filter((t) => t.status === "passed" || t.status === "flaky").length;
+  const healedRun1Total  = healedRun1Tests.length;
 
-  const mergedPassed = run1NonHealedPassed + healReport.passed;
+  const run1NonHealedFailed = appFails.length; // app errors stay (not healed)
+
+  const mergedPassed = (firstResult.passed - healedRun1Passed) + healReport.passed;
   const mergedFailed = run1NonHealedFailed + healReport.failed;
-  const mergedTotal = firstResult.totalTests;
+  const mergedTotal  = (firstResult.totalTests - healedRun1Total) + healReport.total;
 
   // Keep app-error failures; add any still-failing tests from heal run
   const mergedFailedTests: FailedTest[] = [
