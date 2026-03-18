@@ -206,6 +206,7 @@ jobs:
           MIN_P0_COVERAGE: "80"
           MIN_P1_COVERAGE: "80"
           MAX_GAP_PERCENT: "20"
+          AUTO_HEAL_ENABLED: "true"
           STAKEHOLDER_EMAILS: ${{ vars.STAKEHOLDER_EMAILS }}
           ELASTICSEARCH_URL: ${{ secrets.ELASTICSEARCH_URL }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}

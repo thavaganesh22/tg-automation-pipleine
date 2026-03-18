@@ -7,6 +7,7 @@ test.describe('employee-validation — UI Regression Suite', () => {
 
     // TC-752dfe8f-59a8-5ef8-3ec3-9c78de39d4a2  SCOPE:regression
     test('Filling all required fields clears validation errors and enables successful submission', async ({ page }) => {
+      test.setTimeout(60000); // validation test fills 9 fields with per-field error checks — needs more than the default 20s
       const po = new EmployeeValidationPage(page);
       await po.navigate();
 
