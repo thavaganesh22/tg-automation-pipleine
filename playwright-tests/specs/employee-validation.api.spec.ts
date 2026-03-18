@@ -301,3 +301,203 @@ test.describe('employee-validation — API Gap Cases', () => {
     });
   });
 });
+
+test.describe('employee-validation — API Gap Cases', () => {
+  test.describe('positive', () => {
+    // TC-2a89b86b-29e7-5feb-08e1-f6f554348fc3  SCOPE:new-feature
+    test('valid cellPhone format accepted on employee creation', async ({ page }) => {
+      await setupEmployeeValidationMocks(page);
+      await page.goto('/');
+      const email = `test+cellphone+valid+${Date.now()}@example.com`;
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'User', email,
+        designation: 'Engineer', department: 'Engineering',
+        employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15', cellPhone: '+12125551234',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+      });
+      expect(r.status).toBe(201);
+      const body = r.body as Record<string, unknown>;
+      expect(typeof body._id).toBe('string');
+      expect((body._id as string).length).toBeGreaterThan(0);
+      expect(body.cellPhone).toBe('+12125551234');
+      const del = await apiCall(page, `/api/employees/${body._id}`, 'DELETE');
+      expect(del.status).toBe(204);
+    });
+
+    // TC-47a13109-5a60-5b20-032a-05317010cca2  SCOPE:new-feature
+    test('cellPhone omitted entirely — employee created successfully', async ({ page }) => {
+      await setupEmployeeValidationMocks(page);
+      await page.goto('/');
+      const email = `test+cellphone+omitted+${Date.now()}@example.com`;
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'User', email,
+        designation: 'Engineer', department: 'Engineering',
+        employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+      });
+      expect(r.status).toBe(201);
+      const body = r.body as Record<string, unknown>;
+      expect(typeof body._id).toBe('string');
+      expect((body._id as string).length).toBeGreaterThan(0);
+      const cellPhone = body.cellPhone;
+      expect(cellPhone === undefined || cellPhone === null || cellPhone === '').toBeTruthy();
+      const del = await apiCall(page, `/api/employees/${body._id}`, 'DELETE');
+      expect(del.status).toBe(204);
+    });
+
+    // TC-4a4bb5ef-ab76-5a73-b049-8db1013c156b  SCOPE:new-feature
+    test('cellPhone field persisted independently of phone field', async ({ page }) => {
+      await setupEmployeeValidationMocks(page);
+      await page.goto('/');
+      const email = `test+cellphone+workphone+${Date.now()}@example.com`;
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'User', email,
+        designation: 'Engineer', department: 'Engineering',
+        employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15', cellPhone: '+12125550001', phone: '+12125550002',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+      });
+      expect(r.status).toBe(201);
+      const body = r.body as Record<string, unknown>;
+      expect(body.cellPhone).toBe('+12125550001');
+      expect(body.phone).toBe('+12125550002');
+      const get = await apiCall(page, `/api/employees/${body._id}`, 'GET');
+      expect(get.status).toBe(200);
+      const fetched = get.body as Record<string, unknown>;
+      expect(fetched.cellPhone).toBe('+12125550001');
+      expect(fetched.phone).toBe('+12125550002');
+      const del = await apiCall(page, `/api/employees/${body._id}`, 'DELETE');
+      expect(del.status).toBe(204);
+    });
+  });
+
+  test.describe('negative', () => {
+    // TC-734c707b-b1dd-56da-e3a7-5deb19c43357  SCOPE:new-feature
+    test('invalid cellPhone format (letters) returns 400', async ({ page }) => {
+      await setupEmployeeValidationMocks(page);
+      await page.goto('/');
+      const email = `test+cellphone+letters+${Date.now()}@example.com`;
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'User', email,
+        designation: 'Engineer', department: 'Engineering',
+        employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15', cellPhone: 'ABCDEFGHIJ',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+      });
+      expect(r.status).toBe(400);
+      const body = r.body as Record<string, unknown>;
+      expect(body.error).toBeDefined();
+    });
+
+    // TC-4527732b-b342-5871-694d-ad136f1d2936  SCOPE:new-feature
+    test('invalid cellPhone format (special characters only) returns 400', async ({ page }) => {
+      await setupEmployeeValidationMocks(page);
+      await page.goto('/');
+      const email = `test+cellphone+special+${Date.now()}@example.com`;
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'User', email,
+        designation: 'Engineer', department: 'Engineering',
+        employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15', cellPhone: '!!!###$$$',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+      });
+      expect(r.status).toBe(400);
+      const body = r.body as Record<string, unknown>;
+      expect(body.error).toBeDefined();
+    });
+
+    // TC-4f2bb5cc-ce73-54ea-6a87-d67a90b00b97  SCOPE:new-feature
+    test('cellPhone as empty string returns 400', async ({ page }) => {
+      await setupEmployeeValidationMocks(page);
+      await page.goto('/');
+      const email = `test+cellphone+empty+${Date.now()}@example.com`;
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'User', email,
+        designation: 'Engineer', department: 'Engineering',
+        employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15', cellPhone: '',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+      });
+      expect(r.status).toBe(400);
+      const body = r.body as Record<string, unknown>;
+      expect(body.error).toBeDefined();
+    });
+
+    // TC-1e1594a1-2167-570d-de4d-b10b1737f270  SCOPE:new-feature
+    test('cellPhone with valid digits but no country code returns 400', async ({ page }) => {
+      await setupEmployeeValidationMocks(page);
+      await page.goto('/');
+      const email = `test+cellphone+nocountrycode+${Date.now()}@example.com`;
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'User', email,
+        designation: 'Engineer', department: 'Engineering',
+        employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15', cellPhone: '2125551234',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+      });
+      expect(r.status).toBe(400);
+      const body = r.body as Record<string, unknown>;
+      expect(body.error).toBeDefined();
+    });
+
+    // TC-753642b3-f7aa-511f-bae8-0497d81c4c7e  SCOPE:new-feature
+    test('cellPhone as null value returns 400', async ({ page }) => {
+      await setupEmployeeValidationMocks(page);
+      await page.goto('/');
+      const email = `test+cellphone+null+${Date.now()}@example.com`;
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'User', email,
+        designation: 'Engineer', department: 'Engineering',
+        employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15', cellPhone: null,
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+      });
+      expect(r.status).toBe(400);
+      const body = r.body as Record<string, unknown>;
+      expect(body.error).toBeDefined();
+    });
+  });
+
+  test.describe('edge', () => {
+    // TC-a2161252-fdc9-5ec0-de8c-79ab4ae3a835  SCOPE:new-feature
+    test('cellPhone exceeding maximum length returns 400', async ({ page }) => {
+      await setupEmployeeValidationMocks(page);
+      await page.goto('/');
+      const email = `test+cellphone+toolong+${Date.now()}@example.com`;
+      const longPhone = '+' + '1'.repeat(50);
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'User', email,
+        designation: 'Engineer', department: 'Engineering',
+        employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15', cellPhone: longPhone,
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+      });
+      expect(r.status).toBe(400);
+      const body = r.body as Record<string, unknown>;
+      expect(body.error).toBeDefined();
+    });
+
+    // TC-2b32e584-a9f7-54b6-00da-4991df58df82  SCOPE:new-feature
+    test('cellPhone at minimum valid length boundary accepted', async ({ page }) => {
+      await setupEmployeeValidationMocks(page);
+      await page.goto('/');
+      const email = `test+cellphone+minlength+${Date.now()}@example.com`;
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'User', email,
+        designation: 'Engineer', department: 'Engineering',
+        employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15', cellPhone: '+1234567',
+        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+      });
+      expect(r.status).toBe(201);
+      const body = r.body as Record<string, unknown>;
+      expect(typeof body._id).toBe('string');
+      expect((body._id as string).length).toBeGreaterThan(0);
+      expect(body.cellPhone).toBe('+1234567');
+      const del = await apiCall(page, `/api/employees/${body._id}`, 'DELETE');
+      expect(del.status).toBe(204);
+    });
+  });
+});

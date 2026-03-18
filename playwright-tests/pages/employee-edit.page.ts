@@ -28,6 +28,10 @@ export class EmployeeEditPage {
   private readonly countryInput = '[data-testid="country-input"]';
   private readonly cellPhoneError = '[data-testid="cellPhone-error"]';
   private readonly phoneError = '[data-testid="phone-error"]';
+  private readonly drawerOverlay = '[data-testid="drawer-overlay"]';
+  private readonly drawerError = '[data-testid="drawer-error"]';
+  private readonly errorBanner = '[data-testid="error-banner"]';
+
   constructor(private readonly page: Page) {}
 
   async navigate(): Promise<void> {
@@ -456,5 +460,168 @@ export class EmployeeEditPage {
   async getCountryValue(): Promise<string> {
     await this.page.waitForSelector(this.countryInput, { state: 'visible' });
     return this.page.locator(this.countryInput).inputValue();
+  }
+
+  async hasWorkPhoneLabel(): Promise<boolean> {
+    return this.hasExactLabel('Work Phone');
+  }
+
+  async hasCellPhoneLabel(): Promise<boolean> {
+    return this.hasExactLabel('Cell Phone');
+  }
+
+  async getFirstEmployeeFullName(): Promise<{ firstName: string; lastName: string }> {
+    const res = await this.page.request.get(`${this.baseUrl}/api/employees`);
+    const body = await res.json();
+    if (!body.data || body.data.length === 0) throw new Error('No employees found');
+    return {
+      firstName: body.data[0].firstName as string,
+      lastName: body.data[0].lastName as string,
+    };
+  }
+
+  async isWorkPhoneBeforeCellPhoneInLayout(): Promise<boolean> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    const phoneBox = await this.page.locator(this.phoneInput).boundingBox();
+    const cellPhoneBox = await this.page.locator(this.cellPhoneInput).boundingBox();
+    if (!phoneBox || !cellPhoneBox) return false;
+    return phoneBox.y < cellPhoneBox.y || (phoneBox.y === cellPhoneBox.y && phoneBox.x < cellPhoneBox.x);
+  }
+
+  async focusCellPhoneInput(): Promise<void> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    await this.page.locator(this.cellPhoneInput).click();
+  }
+
+  async focusPhoneInput(): Promise<void> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    await this.page.locator(this.phoneInput).click();
+  }
+
+  async isCellPhoneInputFocused(): Promise<boolean> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    return this.page.locator(this.cellPhoneInput).evaluate(el => el === document.activeElement);
+  }
+
+  async isPhoneInputFocused(): Promise<boolean> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    return this.page.locator(this.phoneInput).evaluate(el => el === document.activeElement);
+  }
+
+  async hardReload(): Promise<void> {
+    await this.page.reload({ waitUntil: 'networkidle' });
+    await this.page.waitForSelector(this.employeeTable, { timeout: 10000 });
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+    await this.page.waitForSelector('[data-testid^="employee-row-"]', { timeout: 10000 }).catch(() => {});
+  }
+
+  async isDrawerErrorVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.drawerError, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getDrawerErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.drawerError, { state: 'visible', timeout: 5000 });
+    const text = await this.page.locator(this.drawerError).textContent();
+    return text?.trim() ?? '';
+  }
+
+  async isErrorBannerVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.errorBanner, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getErrorBannerText(): Promise<string> {
+    await this.page.waitForSelector(this.errorBanner, { state: 'visible', timeout: 5000 });
+    const text = await this.page.locator(this.errorBanner).textContent();
+    return text?.trim() ?? '';
+  }
+
+  async clickDrawerOverlay(): Promise<void> {
+    await this.page.waitForSelector(this.drawerOverlay, { state: 'visible' });
+    await this.page.click(this.drawerOverlay, { force: true });
+    await this.page.locator(this.employeeDrawer).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  }
+
+  async areAllFormFieldsVisible(): Promise<boolean> {
+    const selectors = [
+      this.firstNameInput,
+      this.lastNameInput,
+      this.emailInput,
+      this.phoneInput,
+      this.cellPhoneInput,
+      this.designationInput,
+      this.departmentSelect,
+      this.employmentTypeSelect,
+      this.employmentStatusSelect,
+      this.startDateInput,
+      this.streetInput,
+      this.cityInput,
+      this.stateInput,
+      this.postalCodeInput,
+      this.countryInput,
+    ];
+    for (const sel of selectors) {
+      const visible = await this.page.locator(sel).isVisible().catch(() => false);
+      if (!visible) return false;
+    }
+    return true;
+  }
+
+  async getSuccessToastText(): Promise<string> {
+    await this.page.waitForSelector(this.successToast, { state: 'visible', timeout: 15000 });
+    const text = await this.page.locator(this.successToast).textContent();
+    return text?.trim() ?? '';
+  }
+
+  async submitAndWaitForSuccess(): Promise<void> {
+    await this.page.waitForSelector(this.submitBtn, { state: 'visible' });
+    await this.page.click(this.submitBtn);
+    await this.page.waitForSelector(this.successToast, { state: 'visible', timeout: 15000 });
+  }
+
+  async hasAnyValidationError(): Promise<boolean> {
+    const errorCount = await this.page.locator('[data-testid$="-error"]').count();
+    return errorCount > 0;
+  }
+
+  async getVisibleValidationErrors(): Promise<string[]> {
+    const errorLocators = this.page.locator('[data-testid$="-error"]');
+    const count = await errorLocators.count();
+    const errors: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const el = errorLocators.nth(i);
+      if (await el.isVisible()) {
+        const text = await el.textContent();
+        errors.push(text?.trim() ?? '');
+      }
+    }
+    return errors;
+  }
+
+  async clearSearchInput(): Promise<void> {
+    const searchLoc = this.page.locator(this.searchInput);
+    await searchLoc.waitFor({ state: 'visible' });
+    await searchLoc.clear();
+    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+  }
+
+  async getEmployeeFullNameById(id: string): Promise<{ firstName: string; lastName: string }> {
+    const res = await this.page.request.get(`${this.baseUrl}/api/employees/${id}`);
+    const body = await res.json();
+    return {
+      firstName: body.firstName as string,
+      lastName: body.lastName as string,
+    };
   }
 }

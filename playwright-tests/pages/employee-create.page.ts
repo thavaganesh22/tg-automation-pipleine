@@ -39,6 +39,8 @@ export class EmployeeCreatePage {
   private readonly drawerError = '[data-testid="drawer-error"]';
   private readonly employmentStatusError = '[data-testid="employmentStatus-error"]';
   private readonly startDateError = '[data-testid="startDate-error"]';
+  private readonly drawerOverlay = '[data-testid="drawer-overlay"]';
+  private readonly emptyState = '[data-testid="empty-state"]';
   constructor(private readonly page: Page) {}
 
   async navigate(): Promise<void> {
@@ -590,5 +592,283 @@ export class EmployeeCreatePage {
       }
     }
     return visible;
+  }
+
+  // --- New methods for test cases ---
+
+  async getCellPhonePlaceholder(): Promise<string | null> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    return this.page.locator(this.cellPhoneInput).getAttribute('placeholder');
+  }
+
+  async getPhonePlaceholder(): Promise<string | null> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    return this.page.locator(this.phoneInput).getAttribute('placeholder');
+  }
+
+  async clickDrawerOverlay(): Promise<void> {
+    await this.page.waitForSelector(this.drawerOverlay, { state: 'visible' });
+    await this.page.click(this.drawerOverlay, { force: true });
+  }
+
+  async clickWorkPhoneLabel(): Promise<void> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = this.page.locator(`${this.employeeDrawer} label`);
+    const count = await labels.count();
+    for (let i = 0; i < count; i++) {
+      const text = await labels.nth(i).innerText();
+      if (text.trim() === 'Work Phone') {
+        await labels.nth(i).click();
+        return;
+      }
+    }
+    throw new Error('Label "Work Phone" not found in drawer');
+  }
+
+  async clickCellPhoneLabel(): Promise<void> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = this.page.locator(`${this.employeeDrawer} label`);
+    const count = await labels.count();
+    for (let i = 0; i < count; i++) {
+      const text = await labels.nth(i).innerText();
+      if (text.trim() === 'Cell Phone') {
+        await labels.nth(i).click();
+        return;
+      }
+    }
+    throw new Error('Label "Cell Phone" not found in drawer');
+  }
+
+  async hasLabelWithWorkPhone(): Promise<boolean> {
+    return this.hasLabelWithExactText('Work Phone');
+  }
+
+  async hasLabelWithCellPhone(): Promise<boolean> {
+    return this.hasLabelWithExactText('Cell Phone');
+  }
+
+  async getPhoneInputType(): Promise<string | null> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    return this.page.locator(this.phoneInput).getAttribute('type');
+  }
+
+  async getCellPhoneInputType(): Promise<string | null> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    return this.page.locator(this.cellPhoneInput).getAttribute('type');
+  }
+
+  async isPhoneInputReadOnly(): Promise<boolean> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    const readOnly = await this.page.locator(this.phoneInput).getAttribute('readonly');
+    return readOnly !== null;
+  }
+
+  async isCellPhoneInputReadOnly(): Promise<boolean> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    const readOnly = await this.page.locator(this.cellPhoneInput).getAttribute('readonly');
+    return readOnly !== null;
+  }
+
+  async getStreetValue(): Promise<string> {
+    await this.page.waitForSelector(this.streetInput, { state: 'visible' });
+    return this.page.locator(this.streetInput).inputValue();
+  }
+
+  async getCityValue(): Promise<string> {
+    await this.page.waitForSelector(this.cityInput, { state: 'visible' });
+    return this.page.locator(this.cityInput).inputValue();
+  }
+
+  async getCountryValue(): Promise<string> {
+    await this.page.waitForSelector(this.countryInput, { state: 'visible' });
+    return this.page.locator(this.countryInput).inputValue();
+  }
+
+  async getDesignationValue(): Promise<string> {
+    await this.page.waitForSelector(this.designationInput, { state: 'visible' });
+    return this.page.locator(this.designationInput).inputValue();
+  }
+
+  async isSubmitBtnVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.submitBtn, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async isSubmitBtnEnabled(): Promise<boolean> {
+    await this.page.waitForSelector(this.submitBtn, { state: 'visible' });
+    return this.page.locator(this.submitBtn).isEnabled();
+  }
+
+  async isCancelBtnVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.cancelBtn, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getDrawerAllLabelTexts(): Promise<string[]> {
+    return this.getDrawerLabelTexts();
+  }
+
+  async hasExactStandaloneLabelPhone(): Promise<boolean> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = await this.getDrawerLabelTexts();
+    return labels.some((label) => label.trim() === 'Phone');
+  }
+
+  async getPhoneAndCellPhoneInputIds(): Promise<{ phoneId: string | null; cellPhoneId: string | null }> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    const phoneId = await this.page.locator(this.phoneInput).getAttribute('id');
+    const cellPhoneId = await this.page.locator(this.cellPhoneInput).getAttribute('id');
+    return { phoneId, cellPhoneId };
+  }
+
+  async arePhoneAndCellPhoneDistinctElements(): Promise<boolean> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    const phoneHandle = await this.page.locator(this.phoneInput).elementHandle();
+    const cellPhoneHandle = await this.page.locator(this.cellPhoneInput).elementHandle();
+    if (!phoneHandle || !cellPhoneHandle) return false;
+    const areSame = await this.page.evaluate(
+      ([a, b]) => a === b,
+      [phoneHandle, cellPhoneHandle]
+    );
+    return !areSame;
+  }
+
+  async waitForEmployeeRowBySearch(name: string, timeout = 10000): Promise<string> {
+    await this.searchEmployees(name);
+    await this.page.waitForSelector('[data-testid^="employee-row-"]', { state: 'visible', timeout });
+    return this.getFirstVisibleEmployeeId();
+  }
+
+  async getSuccessToastAndWaitForDrawerClose(): Promise<string> {
+    await this.waitForSuccessToast();
+    const text = await this.getSuccessToastText();
+    await this.waitForDrawerHidden();
+    return text;
+  }
+
+  async isEmptyStateVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.emptyState, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getEmptyStateText(): Promise<string> {
+    await this.page.waitForSelector(this.emptyState, { state: 'visible' });
+    return this.page.locator(this.emptyState).innerText();
+  }
+
+  async getCellPhoneInputCssProperty(property: string): Promise<string> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    return this.page.locator(this.cellPhoneInput).evaluate((el, prop) => {
+      return window.getComputedStyle(el).getPropertyValue(prop);
+    }, property);
+  }
+
+  async getPhoneInputCssProperty(property: string): Promise<string> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    return this.page.locator(this.phoneInput).evaluate((el, prop) => {
+      return window.getComputedStyle(el).getPropertyValue(prop);
+    }, property);
+  }
+
+  async getWorkPhoneLabelBoundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = this.page.locator(`${this.employeeDrawer} label`);
+    const count = await labels.count();
+    for (let i = 0; i < count; i++) {
+      const text = await labels.nth(i).innerText();
+      if (text.trim() === 'Work Phone') {
+        return labels.nth(i).boundingBox();
+      }
+    }
+    return null;
+  }
+
+  async isWorkPhoneLabelFullyVisible(): Promise<boolean> {
+    const box = await this.getWorkPhoneLabelBoundingBox();
+    if (!box) return false;
+    return box.width > 0 && box.height > 0;
+  }
+
+  async getWorkPhoneLabelText(): Promise<string | null> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = this.page.locator(`${this.employeeDrawer} label`);
+    const count = await labels.count();
+    for (let i = 0; i < count; i++) {
+      const text = await labels.nth(i).innerText();
+      if (text.trim() === 'Work Phone') {
+        return text.trim();
+      }
+    }
+    return null;
+  }
+
+  async getCellPhoneLabelText(): Promise<string | null> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = this.page.locator(`${this.employeeDrawer} label`);
+    const count = await labels.count();
+    for (let i = 0; i < count; i++) {
+      const text = await labels.nth(i).innerText();
+      if (text.trim() === 'Cell Phone') {
+        return text.trim();
+      }
+    }
+    return null;
+  }
+
+  async isEmploymentStatusErrorVisible(): Promise<boolean> {
+    return this.page.locator(this.employmentStatusError).isVisible();
+  }
+
+  async isStartDateErrorVisible(): Promise<boolean> {
+    return this.page.locator(this.startDateError).isVisible();
+  }
+
+  async getEmploymentStatusErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.employmentStatusError, { state: 'visible' });
+    return this.page.locator(this.employmentStatusError).innerText();
+  }
+
+  async getStartDateErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.startDateError, { state: 'visible' });
+    return this.page.locator(this.startDateError).innerText();
+  }
+
+  async getStreetErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.addressStreetError, { state: 'visible' });
+    return this.page.locator(this.addressStreetError).innerText();
+  }
+
+  async getCityErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.addressCityError, { state: 'visible' });
+    return this.page.locator(this.addressCityError).innerText();
+  }
+
+  async getCountryErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.addressCountryError, { state: 'visible' });
+    return this.page.locator(this.addressCountryError).innerText();
+  }
+
+  async getDepartmentErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.departmentError, { state: 'visible' });
+    return this.page.locator(this.departmentError).innerText();
+  }
+
+  async getEmploymentTypeErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.employmentTypeError, { state: 'visible' });
+    return this.page.locator(this.employmentTypeError).innerText();
   }
 }

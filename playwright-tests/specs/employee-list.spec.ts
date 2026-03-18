@@ -534,3 +534,499 @@ test.describe('employee-list — UI Gap Cases', () => {
     });
   });
 });
+
+test.describe('employee-list — UI Gap Cases', () => {
+  test.describe('positive', () => {
+    // TC-978b324f  SCOPE:new-feature
+    test('Cell phone column is visible in the employee list table', async ({ page }) => {
+      const po = new EmployeeListPage(page);
+      await po.navigate();
+
+      await expect(async () => {
+        const visible = await po.isEmployeeTableVisible();
+        expect(visible).toBe(true);
+      }).toPass({ timeout: 10000 });
+
+      const headers = await po.getTableHeaderTexts();
+      const headerTextsLower = headers.map(h => h.toLowerCase().trim());
+
+      expect(headerTextsLower).toContain('cell phone');
+      expect(headerTextsLower).toContain('work phone');
+
+      // Verify at least one row exists
+      const rowCount = await po.getEmployeeRowCount();
+      expect(rowCount).toBeGreaterThan(0);
+    });
+
+    // TC-e4f96bfd  SCOPE:new-feature
+    test('Work Phone label replaces old Phone label in the employee list table', async ({ page }) => {
+      const po = new EmployeeListPage(page);
+      await po.navigate();
+
+      await expect(async () => {
+        const visible = await po.isEmployeeTableVisible();
+        expect(visible).toBe(true);
+      }).toPass({ timeout: 10000 });
+
+      const headers = await po.getTableHeaderTexts();
+      const trimmedHeaders = headers.map(h => h.trim());
+
+      // No standalone 'Phone' header (exact match)
+      const standalonePhone = trimmedHeaders.filter(h => h.toLowerCase() === 'phone');
+      expect(standalonePhone.length).toBe(0);
+
+      // Exactly one 'Work Phone' header
+      const workPhoneHeaders = trimmedHeaders.filter(h => h.toLowerCase() === 'work phone');
+      expect(workPhoneHeaders.length).toBe(1);
+    });
+
+    // TC-aa40f8b7  SCOPE:new-feature
+    test('Cell phone value entered during employee creation appears in the list', async ({ page }) => {
+      const po = new EmployeeListPage(page);
+      await po.navigate();
+
+      const uniqueEmail = `test.${Date.now()}@test.com`;
+      const timestamp = Date.now().toString();
+      let createdId = '';
+
+      try {
+        await po.openAddEmployeeDrawer();
+        await expect(async () => {
+          const visible = await po.isDrawerVisible();
+          expect(visible).toBe(true);
+        }).toPass({ timeout: 5000 });
+
+        await po.fillFirstName('UITest');
+        await po.fillLastName(`User${timestamp}`);
+        await po.fillEmail(uniqueEmail);
+        await po.fillDesignation('Engineer');
+        await po.selectDepartment('Engineering');
+        await po.selectEmploymentType('Full-Time');
+        await po.fillPhone('555-000-0001');
+        await po.fillCellPhone('555-000-0002');
+        await po.fillStreet('123 Test St');
+        await po.fillCity('Test City');
+        await po.fillCountry('United States');
+
+        await po.submitEmployeeForm();
+        await po.waitForSuccessToast();
+
+        // Wait for drawer to close
+        await po.waitForDrawerHidden();
+
+        // Search for the created employee
+        await po.searchEmployees('UITest');
+
+        // Get the row count and find our employee
+        const rowCount = await po.getEmployeeRowCount();
+        expect(rowCount).toBeGreaterThan(0);
+
+        // Find Cell Phone and Work Phone column indices
+        const headers = await po.getTableHeaderTexts();
+        const cellPhoneColIdx = headers.findIndex(h => h.trim().toLowerCase() === 'cell phone');
+        const workPhoneColIdx = headers.findIndex(h => h.trim().toLowerCase() === 'work phone');
+        expect(cellPhoneColIdx).toBeGreaterThanOrEqual(0);
+        expect(workPhoneColIdx).toBeGreaterThanOrEqual(0);
+
+        // Read values from first row
+        const cellPhoneValue = await po.getCellTextByRowAndColumnIndex(0, cellPhoneColIdx);
+        const workPhoneValue = await po.getCellTextByRowAndColumnIndex(0, workPhoneColIdx);
+
+        expect(cellPhoneValue).toContain('555-000-0002');
+        expect(workPhoneValue).toContain('555-000-0001');
+
+        // Get the employee ID for cleanup
+        createdId = await po.getFirstEmployeeId();
+      } finally {
+        if (createdId) {
+          await po.deleteEmployee(createdId);
+        }
+      }
+    });
+
+    // TC-288ad30e  SCOPE:new-feature
+    test('Cell phone value is visible in the employee detail/edit drawer', async ({ page }) => {
+      const po = new EmployeeListPage(page);
+      await po.navigate();
+
+      await expect(async () => {
+        const visible = await po.isEmployeeTableVisible();
+        expect(visible).toBe(true);
+      }).toPass({ timeout: 10000 });
+
+      const id = await po.getFirstEmployeeId();
+      await po.clickEmployeeRow(id);
+
+      await expect(async () => {
+        const visible = await po.isDrawerVisible();
+        expect(visible).toBe(true);
+      }).toPass({ timeout: 5000 });
+
+      // Verify Cell Phone input is visible in the drawer
+      const cellPhoneVisible = await po.isCellPhoneInputVisible();
+      expect(cellPhoneVisible).toBe(true);
+
+      // Verify Phone (Work Phone) input is visible in the drawer
+      const phoneVisible = await po.isPhoneInputVisible();
+      expect(phoneVisible).toBe(true);
+
+      // Verify form field labels contain 'Cell Phone' and 'Work Phone'
+      const labels = await po.getFormFieldLabels();
+      const labelsLower = labels.map(l => l.trim().toLowerCase());
+      expect(labelsLower).toContain('cell phone');
+      expect(labelsLower).toContain('work phone');
+
+      await po.closeDrawer();
+    });
+
+    // TC-e0ee4091  SCOPE:new-feature
+    test('Cell phone field label is "Cell Phone" and work phone field label is "Work Phone" in the create form', async ({ page }) => {
+      const po = new EmployeeListPage(page);
+      await po.navigate();
+
+      await po.openAddEmployeeDrawer();
+      await expect(async () => {
+        const visible = await po.isDrawerVisible();
+        expect(visible).toBe(true);
+      }).toPass({ timeout: 5000 });
+
+      const labels = await po.getFormFieldLabels();
+      const trimmedLabels = labels.map(l => l.trim());
+      const labelsLower = trimmedLabels.map(l => l.toLowerCase());
+
+      // 'Work Phone' label exists
+      expect(labelsLower).toContain('work phone');
+
+      // 'Cell Phone' label exists
+      expect(labelsLower).toContain('cell phone');
+
+      // No standalone 'Phone' label (exact match)
+      const standalonePhone = trimmedLabels.filter(l => l.toLowerCase() === 'phone');
+      expect(standalonePhone.length).toBe(0);
+
+      await po.closeDrawer();
+    });
+
+    // TC-a74ffde4  SCOPE:new-feature
+    test('Editing an existing employee updates the cell phone value in the list', async ({ page }) => {
+      const po = new EmployeeListPage(page);
+      await po.navigate();
+
+      const uniqueEmail = `test.${Date.now()}@test.com`;
+      let createdId = '';
+
+      try {
+        createdId = await po.createEmployee({
+          firstName: 'UITest',
+          lastName: 'EditCell',
+          email: uniqueEmail,
+          designation: 'Engineer',
+          department: 'Engineering',
+          employmentType: 'Full-Time',
+          employmentStatus: 'Active',
+          startDate: '2024-01-15',
+          address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+        });
+
+        await po.navigate();
+        await po.searchEmployees('UITest');
+
+        await expect(async () => {
+          const visible = await po.isEmployeeRowVisible(createdId);
+          expect(visible).toBe(true);
+        }).toPass({ timeout: 10000 });
+
+        await po.clickEmployeeRow(createdId);
+
+        await expect(async () => {
+          const visible = await po.isDrawerVisible();
+          expect(visible).toBe(true);
+        }).toPass({ timeout: 5000 });
+
+        // Clear and fill cell phone with new value
+        await po.clearCellPhone();
+        await po.fillCellPhone('555-999-8888');
+
+        await po.submitEmployeeForm();
+        await po.waitForSuccessToast();
+        await po.waitForDrawerHidden();
+
+        // Search again to find the updated employee
+        await po.searchEmployees('UITest');
+
+        await expect(async () => {
+          const visible = await po.isEmployeeRowVisible(createdId);
+          expect(visible).toBe(true);
+        }).toPass({ timeout: 10000 });
+
+        // Find Cell Phone column index
+        const headers = await po.getTableHeaderTexts();
+        const cellPhoneColIdx = headers.findIndex(h => h.trim().toLowerCase() === 'cell phone');
+        expect(cellPhoneColIdx).toBeGreaterThanOrEqual(0);
+
+        const cellPhoneValue = await po.getCellTextByEmployeeIdAndColumnIndex(createdId, cellPhoneColIdx);
+        expect(cellPhoneValue).toContain('555-999-8888');
+      } finally {
+        if (createdId) {
+          await po.deleteEmployee(createdId);
+        }
+      }
+    });
+
+    // TC-8f58361f  SCOPE:new-feature
+    test('Both Work Phone and Cell Phone columns are independently populated and do not cross-contaminate data', async ({ page }) => {
+      const po = new EmployeeListPage(page);
+      await po.navigate();
+
+      const uniqueEmail = `test.${Date.now()}@test.com`;
+      const timestamp = Date.now().toString();
+      let createdId = '';
+
+      try {
+        await po.openAddEmployeeDrawer();
+        await expect(async () => {
+          const visible = await po.isDrawerVisible();
+          expect(visible).toBe(true);
+        }).toPass({ timeout: 5000 });
+
+        await po.fillFirstName('UITest');
+        await po.fillLastName(`Cross${timestamp}`);
+        await po.fillEmail(uniqueEmail);
+        await po.fillDesignation('Engineer');
+        await po.selectDepartment('Engineering');
+        await po.selectEmploymentType('Full-Time');
+        await po.fillPhone('555-111-2222');
+        await po.fillCellPhone('555-333-4444');
+        await po.fillStreet('123 Test St');
+        await po.fillCity('Test City');
+        await po.fillCountry('United States');
+
+        await po.submitEmployeeForm();
+        await po.waitForSuccessToast();
+        await po.waitForDrawerHidden();
+
+        await po.searchEmployees('UITest');
+
+        const rowCount = await po.getEmployeeRowCount();
+        expect(rowCount).toBeGreaterThan(0);
+
+        createdId = await po.getFirstEmployeeId();
+
+        // Find column indices
+        const headers = await po.getTableHeaderTexts();
+        const workPhoneColIdx = headers.findIndex(h => h.trim().toLowerCase() === 'work phone');
+        const cellPhoneColIdx = headers.findIndex(h => h.trim().toLowerCase() === 'cell phone');
+        expect(workPhoneColIdx).toBeGreaterThanOrEqual(0);
+        expect(cellPhoneColIdx).toBeGreaterThanOrEqual(0);
+
+        // Verify values in the table
+        const workPhoneValue = await po.getCellTextByEmployeeIdAndColumnIndex(createdId, workPhoneColIdx);
+        const cellPhoneValue = await po.getCellTextByEmployeeIdAndColumnIndex(createdId, cellPhoneColIdx);
+
+        expect(workPhoneValue).toContain('555-111-2222');
+        expect(cellPhoneValue).toContain('555-333-4444');
+
+        // Values should not be swapped
+        expect(workPhoneValue).not.toContain('555-333-4444');
+        expect(cellPhoneValue).not.toContain('555-111-2222');
+
+        // Open drawer and verify values there too
+        await po.clickEmployeeRow(createdId);
+        await expect(async () => {
+          const visible = await po.isDrawerVisible();
+          expect(visible).toBe(true);
+        }).toPass({ timeout: 5000 });
+
+        const drawerPhoneValue = await po.getPhoneInputValue();
+        const drawerCellPhoneValue = await po.getCellPhoneInputValue();
+
+        expect(drawerPhoneValue).toContain('555-111-2222');
+        expect(drawerCellPhoneValue).toContain('555-333-4444');
+
+        await po.closeDrawer();
+      } finally {
+        if (createdId) {
+          await po.deleteEmployee(createdId);
+        }
+      }
+    });
+  });
+
+  test.describe('negative', () => {
+    // TC-11487587  SCOPE:new-feature
+    test('Cell phone field rejects non-numeric or invalid format input and shows a validation message', async ({ page }) => {
+      const po = new EmployeeListPage(page);
+      await po.navigate();
+
+      await po.openAddEmployeeDrawer();
+      await expect(async () => {
+        const visible = await po.isDrawerVisible();
+        expect(visible).toBe(true);
+      }).toPass({ timeout: 5000 });
+
+      // Fill all required fields
+      await po.fillAllRequiredFields({
+        firstName: 'UITest',
+        lastName: `Validate${Date.now()}`,
+        email: `test.${Date.now()}@test.com`,
+        designation: 'Engineer',
+        department: 'Engineering',
+        employmentType: 'Full-Time',
+        street: '123 Test St',
+        city: 'Test City',
+        country: 'United States'
+      });
+
+      // Enter invalid cell phone value
+      await po.fillCellPhone('abc!@#$%');
+
+      await po.submitEmployeeForm();
+
+      // Expect a validation error on the cell phone field
+      const cellPhoneErrorVisible = await po.isCellPhoneErrorVisible();
+      expect(cellPhoneErrorVisible).toBe(true);
+
+      const errorText = await po.getCellPhoneErrorText();
+      expect(errorText.length).toBeGreaterThan(0);
+
+      // Drawer should still be open (form did not submit)
+      const drawerVisible = await po.isDrawerVisible();
+      expect(drawerVisible).toBe(true);
+
+      // Clear cell phone and submit again — should succeed since field is optional
+      await po.clearCellPhone();
+      await po.submitEmployeeForm();
+      await po.waitForSuccessToast();
+      await po.waitForDrawerHidden();
+
+      // Clean up: find and delete the created employee
+      await po.searchEmployees('UITest');
+      const rowCount = await po.getEmployeeRowCount();
+      if (rowCount > 0) {
+        const createdId = await po.getFirstEmployeeId();
+        await po.deleteEmployee(createdId);
+      }
+    });
+  });
+
+  test.describe('edge', () => {
+    // TC-ad7be7e5  SCOPE:new-feature
+    test('Employee can be saved with an empty cell phone field (optional field)', async ({ page }) => {
+      const po = new EmployeeListPage(page);
+      await po.navigate();
+
+      const uniqueEmail = `test.${Date.now()}@test.com`;
+      let createdId = '';
+
+      try {
+        await po.openAddEmployeeDrawer();
+        await expect(async () => {
+          const visible = await po.isDrawerVisible();
+          expect(visible).toBe(true);
+        }).toPass({ timeout: 5000 });
+
+        await po.fillFirstName('UITest');
+        await po.fillLastName(`Empty${Date.now()}`);
+        await po.fillEmail(uniqueEmail);
+        await po.fillDesignation('Engineer');
+        await po.selectDepartment('Engineering');
+        await po.selectEmploymentType('Full-Time');
+        await po.fillStreet('123 Test St');
+        await po.fillCity('Test City');
+        await po.fillCountry('United States');
+        // Deliberately leave Cell Phone empty
+
+        await po.submitEmployeeForm();
+        await po.waitForSuccessToast();
+        await po.waitForDrawerHidden();
+
+        // No cell phone validation error should have appeared
+        // (if it did, the form wouldn't have submitted and toast wouldn't appear)
+
+        await po.searchEmployees('UITest');
+        const rowCount = await po.getEmployeeRowCount();
+        expect(rowCount).toBeGreaterThan(0);
+
+        createdId = await po.getFirstEmployeeId();
+
+        // Find Cell Phone column index
+        const headers = await po.getTableHeaderTexts();
+        const cellPhoneColIdx = headers.findIndex(h => h.trim().toLowerCase() === 'cell phone');
+        expect(cellPhoneColIdx).toBeGreaterThanOrEqual(0);
+
+        // Cell phone column should be empty or have a placeholder — no broken UI
+        const cellPhoneValue = await po.getCellTextByEmployeeIdAndColumnIndex(createdId, cellPhoneColIdx);
+        // Value should be empty string, dash, or N/A — just not an error indicator
+        expect(cellPhoneValue.length).toBeLessThan(50); // sanity check — no error dump
+      } finally {
+        if (createdId) {
+          await po.deleteEmployee(createdId);
+        }
+      }
+    });
+
+    // TC-547ed6b8  SCOPE:new-feature
+    test('Cell phone column displays correctly when value contains maximum allowed characters', async ({ page }) => {
+      const po = new EmployeeListPage(page);
+      await po.navigate();
+
+      const uniqueEmail = `test.${Date.now()}@test.com`;
+      const maxCellPhone = '+15550000001234';
+      let createdId = '';
+
+      try {
+        await po.openAddEmployeeDrawer();
+        await expect(async () => {
+          const visible = await po.isDrawerVisible();
+          expect(visible).toBe(true);
+        }).toPass({ timeout: 5000 });
+
+        await po.fillFirstName('UITest');
+        await po.fillLastName(`MaxLen${Date.now()}`);
+        await po.fillEmail(uniqueEmail);
+        await po.fillDesignation('Engineer');
+        await po.selectDepartment('Engineering');
+        await po.selectEmploymentType('Full-Time');
+        await po.fillCellPhone(maxCellPhone);
+        await po.fillStreet('123 Test St');
+        await po.fillCity('Test City');
+        await po.fillCountry('United States');
+
+        await po.submitEmployeeForm();
+        await po.waitForSuccessToast();
+        await po.waitForDrawerHidden();
+
+        await po.searchEmployees('UITest');
+        const rowCount = await po.getEmployeeRowCount();
+        expect(rowCount).toBeGreaterThan(0);
+
+        createdId = await po.getFirstEmployeeId();
+
+        // Find Cell Phone column index
+        const headers = await po.getTableHeaderTexts();
+        const cellPhoneColIdx = headers.findIndex(h => h.trim().toLowerCase() === 'cell phone');
+        expect(cellPhoneColIdx).toBeGreaterThanOrEqual(0);
+
+        // Verify the full value is displayed in the table
+        const cellPhoneValue = await po.getCellTextByEmployeeIdAndColumnIndex(createdId, cellPhoneColIdx);
+        expect(cellPhoneValue).toContain(maxCellPhone);
+
+        // Open drawer and verify the value there too
+        await po.clickEmployeeRow(createdId);
+        await expect(async () => {
+          const visible = await po.isDrawerVisible();
+          expect(visible).toBe(true);
+        }).toPass({ timeout: 5000 });
+
+        const drawerCellPhoneValue = await po.getCellPhoneInputValue();
+        expect(drawerCellPhoneValue).toContain(maxCellPhone);
+
+        await po.closeDrawer();
+      } finally {
+        if (createdId) {
+          await po.deleteEmployee(createdId);
+        }
+      }
+    });
+  });
+});

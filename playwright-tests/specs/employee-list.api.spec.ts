@@ -535,3 +535,141 @@ test.describe('employee-list — API Gap Cases', () => {
     });
   });
 });
+
+test.describe('employee-list — API Gap Cases', () => {
+  test.describe('positive', () => {
+    // TC-44a97f90-4c74-5883-280c-5f8a4228e845  SCOPE:new-feature
+    test('[API] PUT/PATCH updates cellPhone and GET reflects the new value', async ({ page }) => {
+      await setupEmployeeListMocks(page);
+      await page.goto('/');
+      const ts = Date.now();
+      const createR = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'UpdateCell', email: `test+updatecell${ts}@example.com`,
+        designation: 'Developer', department: 'Engineering', employmentType: 'Full-Time',
+        employmentStatus: 'Active', startDate: '2024-06-01', cellPhone: '+15550009999',
+        address: { street: '789 Update Rd', city: 'Update City', country: 'United States' }
+      });
+      expect(createR.status).toBe(201);
+      const id = (createR.body as Record<string, unknown>)._id as string;
+      const patchR = await apiCall(page, `/api/employees/${id}`, 'PATCH', { cellPhone: '+15557778888' });
+      expect(patchR.status).toBe(200);
+      expect((patchR.body as Record<string, unknown>).cellPhone).toBe('+15557778888');
+      const getR = await apiCall(page, `/api/employees/${id}`, 'GET');
+      expect(getR.status).toBe(200);
+      expect((getR.body as Record<string, unknown>).cellPhone).toBe('+15557778888');
+      const delR = await apiCall(page, `/api/employees/${id}`, 'DELETE');
+      expect(delR.status).toBe(204);
+    });
+
+    // TC-7bcd21da-756c-5262-8f1c-d7cfe12759e0  SCOPE:new-feature
+    test('[API] cellPhone field is independent of phone (work phone) field', async ({ page }) => {
+      await setupEmployeeListMocks(page);
+      await page.goto('/');
+      const ts = Date.now();
+      const createR = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'DualPhone', email: `test+dualphone${ts}@example.com`,
+        designation: 'Manager', department: 'Operations', employmentType: 'Full-Time',
+        employmentStatus: 'Active', startDate: '2024-02-01', phone: '+15550001111',
+        cellPhone: '+15550002222',
+        address: { street: '10 Dual St', city: 'Dual City', country: 'United States' }
+      });
+      expect(createR.status).toBe(201);
+      const id = (createR.body as Record<string, unknown>)._id as string;
+      const getR = await apiCall(page, `/api/employees/${id}`, 'GET');
+      expect(getR.status).toBe(200);
+      const body = getR.body as Record<string, unknown>;
+      expect(body.phone).toBe('+15550001111');
+      expect(body.cellPhone).toBe('+15550002222');
+      expect(body.phone).not.toBe(body.cellPhone);
+      const delR = await apiCall(page, `/api/employees/${id}`, 'DELETE');
+      expect(delR.status).toBe(204);
+    });
+
+    // TC-88278321-f62b-574b-4c46-1afe1c3f2ff1  SCOPE:new-feature
+    test('[API] GET /api/employees list endpoint includes cellPhone in each employee object', async ({ page }) => {
+      await setupEmployeeListMocks(page);
+      await page.goto('/');
+      const ts = Date.now();
+      const createR = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'ListCell', email: `test+listcell${ts}@example.com`,
+        designation: 'Engineer', department: 'Engineering', employmentType: 'Full-Time',
+        employmentStatus: 'Active', startDate: '2024-01-15', cellPhone: '+15559998888',
+        address: { street: '1 List St', city: 'List City', country: 'United States' }
+      });
+      expect(createR.status).toBe(201);
+      const createdId = (createR.body as Record<string, unknown>)._id as string;
+      const listR = await apiCall(page, '/api/employees?limit=50', 'GET');
+      expect(listR.status).toBe(200);
+      const data = (listR.body as Record<string, unknown>).data as Record<string, unknown>[];
+      expect(data.length).toBeGreaterThan(0);
+      const found = data.find(e => e._id === createdId) as Record<string, unknown>;
+      expect(found).toBeTruthy();
+      expect('cellPhone' in found).toBe(true);
+      const delR = await apiCall(page, `/api/employees/${createdId}`, 'DELETE');
+      expect(delR.status).toBe(204);
+    });
+  });
+
+  test.describe('negative', () => {
+    // TC-1ceb561e-d76c-561b-8b46-06ae364bde4c  SCOPE:new-feature
+    test('[API] POST with invalid cellPhone type returns validation error or coerces gracefully', async ({ page }) => {
+      await setupEmployeeListMocks(page);
+      await page.goto('/');
+      const ts = Date.now();
+      const r = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'BadCellType', email: `test+badcelltype${ts}@example.com`,
+        designation: 'Engineer', department: 'Engineering', employmentType: 'Full-Time',
+        employmentStatus: 'Active', startDate: '2024-01-15', cellPhone: 15550003333,
+        address: { street: '1 Bad Type St', city: 'Type City', country: 'United States' }
+      });
+      expect(r.status).not.toBe(500);
+      if (r.status === 400 || r.status === 422) {
+        const body = r.body as Record<string, unknown>;
+        expect(body.error ?? body.message).toBeTruthy();
+      } else if (r.status === 201) {
+        const id = (r.body as Record<string, unknown>)._id as string;
+        const delR = await apiCall(page, `/api/employees/${id}`, 'DELETE');
+        expect(delR.status).toBe(204);
+      }
+    });
+  });
+
+  test.describe('edge', () => {
+    // TC-34c11a2d-2ec7-5224-e5cd-671bb9cca1eb  SCOPE:new-feature
+    test('[API] cellPhone field accepts maximum-length phone string', async ({ page }) => {
+      await setupEmployeeListMocks(page);
+      await page.goto('/');
+      const ts = Date.now();
+      const phone20 = '+1234567890123456789';
+      const r1 = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'MaxCell', email: `test+maxcell${ts}@example.com`,
+        designation: 'QA', department: 'Engineering', employmentType: 'Full-Time',
+        employmentStatus: 'Active', startDate: '2024-01-01', cellPhone: phone20,
+        address: { street: '1 Max St', city: 'Max City', country: 'United States' }
+      });
+      expect(r1.status).not.toBe(500);
+      let id20: string | null = null;
+      if (r1.status === 201) {
+        id20 = (r1.body as Record<string, unknown>)._id as string;
+        const getR = await apiCall(page, `/api/employees/${id20}`, 'GET');
+        expect(getR.status).toBe(200);
+        expect((getR.body as Record<string, unknown>).cellPhone).toBe(phone20);
+      }
+      const longPhone = '1'.repeat(256);
+      const r2 = await apiCall(page, '/api/employees', 'POST', {
+        firstName: 'Test', lastName: 'OverMaxCell', email: `test+overmaxcell${ts}@example.com`,
+        designation: 'QA', department: 'Engineering', employmentType: 'Full-Time',
+        employmentStatus: 'Active', startDate: '2024-01-01', cellPhone: longPhone,
+        address: { street: '1 Over St', city: 'Over City', country: 'United States' }
+      });
+      expect(r2.status).not.toBe(500);
+      if (r2.status === 201) {
+        const id256 = (r2.body as Record<string, unknown>)._id as string;
+        await apiCall(page, `/api/employees/${id256}`, 'DELETE');
+      }
+      if (id20) {
+        await apiCall(page, `/api/employees/${id20}`, 'DELETE');
+      }
+    });
+  });
+});
