@@ -9,6 +9,7 @@ export class EmployeeDeletePage {
   private readonly confirmDialog = '[data-testid="confirm-dialog"]';
   private readonly confirmDeleteBtn = '[data-testid="confirm-delete-btn"]';
   private readonly confirmCancelBtn = '[data-testid="confirm-cancel-btn"]';
+  private readonly closeDrawerBtn = '[data-testid="close-drawer-btn"]';
   constructor(private readonly page: Page) {}
 
   async navigate(): Promise<void> {
@@ -131,6 +132,12 @@ export class EmployeeDeletePage {
   async cancelDeletion(): Promise<void> {
     await this.page.waitForSelector(this.confirmCancelBtn, { state: 'visible' });
     await this.page.click(this.confirmCancelBtn);
+  }
+
+  async closeDrawer(): Promise<void> {
+    await this.page.waitForSelector(this.closeDrawerBtn, { state: 'visible', timeout: 5000 });
+    await this.page.click(this.closeDrawerBtn);
+    await this.page.locator('[data-testid="drawer-overlay"]').waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
   }
 
   async pressEscapeKey(): Promise<void> {

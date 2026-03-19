@@ -241,9 +241,12 @@ async function main(): Promise<void> {
       let stableNewFeature: TestCase[];
       let newModuleRegressionCases: TestCase[] = [];
 
-      // Also fall through to LLM path if --add-regression was passed with new modules —
-      // in that case we need to generate regression cases even if pending-promotion exists.
-      if (pendingExists && newFeatureScenarios.length > 0 && allowedRegressionScenarios.length === 0) {
+      // Reuse pending-promotion whenever it exists AND we don't need to generate new regression
+      // modules (--add-regression path). This applies regardless of whether AGT-02 produced
+      // new-feature scenarios in this run — if pending-promotion exists, it already has the
+      // stable UUIDs that specs were generated against; regenerating would cause UUID drift
+      // → AGT-05 sees 0% coverage → AGT-04 appends duplicate gap tests.
+      if (pendingExists && allowedRegressionScenarios.length === 0) {
         stableNewFeature = await state.load<TestCase[]>("pending-promotion");
         log.info(
           `Reusing ${stableNewFeature.length} cached new-feature case(s) from pending-promotion.json ` +

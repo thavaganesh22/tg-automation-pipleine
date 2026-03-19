@@ -255,7 +255,7 @@ jobs:
           git checkout ${{ github.head_ref }}
           git stash pop || true
           git add pipeline-state/regression-baseline.json || true
-          git add pipeline-state/pending-promotion.json || true
+          git add -f pipeline-state/pending-promotion.json || true
           git add playwright-tests/specs/ || true
           git add playwright-tests/pages/ || true
           git add playwright-tests/fixtures/ || true

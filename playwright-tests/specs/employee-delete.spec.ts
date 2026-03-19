@@ -1,27 +1,25 @@
-import { test, expect } from '@playwright/test';
-import { EmployeeDeletePage } from '../pages/employee-delete.page';
+import { test, expect } from "@playwright/test";
+import { EmployeeDeletePage } from "../pages/employee-delete.page";
 
-test.describe('employee-delete — UI Regression Suite', () => {
-
-  test.describe('positive', () => {
-
+test.describe("employee-delete — UI Regression Suite", () => {
+  test.describe("positive", () => {
     // TC-9860ba1a-4eb3-5973-2a7a-b4e6470c16fe  SCOPE:regression
-    test('Confirm dialog delete button removes employee from list', async ({ page }) => {
+    test("Confirm dialog delete button removes employee from list", async ({ page }) => {
       const po = new EmployeeDeletePage(page);
       await po.navigate();
 
       const uniqueEmail = `test.del.${Date.now()}@example.com`;
-      const firstName = 'TestDel';
+      const firstName = "TestDel";
       const id = await po.createEmployee({
         firstName,
-        lastName: 'UserConfirm',
+        lastName: "UserConfirm",
         email: uniqueEmail,
-        designation: 'Engineer',
-        department: 'Engineering',
-        employmentType: 'Full-Time',
-        employmentStatus: 'Active',
-        startDate: '2024-01-15',
-        address: { street: '123 Test St', city: 'Test City', country: 'United States' },
+        designation: "Engineer",
+        department: "Engineering",
+        employmentType: "Full-Time",
+        employmentStatus: "Active",
+        startDate: "2024-01-15",
+        address: { street: "123 Test St", city: "Test City", country: "United States" },
       });
 
       try {
@@ -33,9 +31,9 @@ test.describe('employee-delete — UI Regression Suite', () => {
 
         // Find the actual employee row dynamically since createEmployee may return wrong id
         const firstRow = page.locator('[data-testid^="employee-row-"]').first();
-        await firstRow.waitFor({ state: 'visible', timeout: 10000 });
-        const rowTestId = await firstRow.getAttribute('data-testid');
-        const actualId = rowTestId!.replace('employee-row-', '');
+        await firstRow.waitFor({ state: "visible", timeout: 10000 });
+        const rowTestId = await firstRow.getAttribute("data-testid");
+        const actualId = rowTestId!.replace("employee-row-", "");
 
         // Verify the employee row is visible
         const rowVisible = await po.isEmployeeRowVisible(actualId);
@@ -55,7 +53,7 @@ test.describe('employee-delete — UI Regression Suite', () => {
         // Verify dialog text contains the employee name and a warning
         const dialogText = await po.getConfirmDialogText();
         expect(dialogText).toContain(firstName);
-        expect(dialogText.toLowerCase()).toContain('delete');
+        expect(dialogText.toLowerCase()).toContain("delete");
 
         // Verify both Cancel and Delete buttons are visible
         const cancelBtnVisible = await po.isConfirmCancelButtonVisible();
@@ -92,7 +90,7 @@ test.describe('employee-delete — UI Regression Suite', () => {
     });
 
     // TC-040b8a4a-5400-579e-8f1d-d1bc7a6e2eba  SCOPE:regression
-    test('Escape key closes confirm dialog without deleting employee', async ({ page }) => {
+    test("Escape key closes confirm dialog without deleting employee", async ({ page }) => {
       const po = new EmployeeDeletePage(page);
       await po.navigate();
       await page.waitForTimeout(1000);
@@ -121,10 +119,9 @@ test.describe('employee-delete — UI Regression Suite', () => {
     });
   });
 
-  test.describe('negative', () => {
-
+  test.describe("negative", () => {
     // TC-6be062eb-e65f-522c-ecb0-521aff4c5e04  SCOPE:regression
-    test('Cancelling the confirm dialog does not remove the employee', async ({ page }) => {
+    test("Cancelling the confirm dialog does not remove the employee", async ({ page }) => {
       const po = new EmployeeDeletePage(page);
       await po.navigate();
       await page.waitForTimeout(1000);
@@ -153,41 +150,41 @@ test.describe('employee-delete — UI Regression Suite', () => {
       const dialogHidden = await po.isConfirmDialogHidden();
       expect(dialogHidden).toBe(true);
 
-      // Wait for any dialog overlay/animation to fully clear
-      await page.waitForTimeout(500);
+      // Close the edit drawer (stays open after confirm dialog is dismissed)
+      await po.closeDrawer();
 
       // Verify the employee row is still present
       const rowStillVisible = await po.isEmployeeRowVisible(id);
       expect(rowStillVisible).toBe(true);
 
       // Re-search to confirm the employee is still present
-      await page.locator('[data-testid="search-input"]').waitFor({ state: 'visible', timeout: 5000 });
-      await po.searchEmployees(employeeName.split(' ')[0]);
+      await po.searchEmployees(employeeName.split(" ")[0]);
       await page.waitForTimeout(500);
       const rowAfterSearch = await po.isEmployeeRowVisible(id);
       expect(rowAfterSearch).toBe(true);
     });
   });
 
-  test.describe('edge', () => {
-
+  test.describe("edge", () => {
     // TC-1e52ec0d-c64b-5ade-9b1b-4c39d34ede7c  SCOPE:regression
-    test('Escape key on confirm dialog does not delete; subsequent explicit confirm does delete', async ({ page }) => {
+    test("Escape key on confirm dialog does not delete; subsequent explicit confirm does delete", async ({
+      page,
+    }) => {
       const po = new EmployeeDeletePage(page);
       await po.navigate();
 
       const uniqueEmail = `test.esc.${Date.now()}@example.com`;
-      const firstName = 'TestEsc';
+      const firstName = "TestEsc";
       const id = await po.createEmployee({
         firstName,
-        lastName: 'UserEdge',
+        lastName: "UserEdge",
         email: uniqueEmail,
-        designation: 'Engineer',
-        department: 'Engineering',
-        employmentType: 'Full-Time',
-        employmentStatus: 'Active',
-        startDate: '2024-01-15',
-        address: { street: '456 Edge St', city: 'Edge City', country: 'United States' },
+        designation: "Engineer",
+        department: "Engineering",
+        employmentType: "Full-Time",
+        employmentStatus: "Active",
+        startDate: "2024-01-15",
+        address: { street: "456 Edge St", city: "Edge City", country: "United States" },
       });
 
       try {
@@ -199,9 +196,9 @@ test.describe('employee-delete — UI Regression Suite', () => {
 
         // Find the actual employee row dynamically since createEmployee may return wrong id
         const firstRow = page.locator('[data-testid^="employee-row-"]').first();
-        await firstRow.waitFor({ state: 'visible', timeout: 10000 });
-        const rowTestId = await firstRow.getAttribute('data-testid');
-        const actualId = rowTestId!.replace('employee-row-', '');
+        await firstRow.waitFor({ state: "visible", timeout: 10000 });
+        const rowTestId = await firstRow.getAttribute("data-testid");
+        const actualId = rowTestId!.replace("employee-row-", "");
 
         // Verify the employee row is visible
         const rowVisible = await po.isEmployeeRowVisible(actualId);
@@ -225,10 +222,15 @@ test.describe('employee-delete — UI Regression Suite', () => {
         const rowAfterEscape = await po.isEmployeeRowVisible(actualId);
         expect(rowAfterEscape).toBe(true);
 
+        // Close the edit drawer (it stays open after the confirm dialog is dismissed via Escape)
+        await po.closeDrawer();
+
         // Step 7: Click delete button again to reopen confirm dialog
         // Use the locator directly to ensure we interact with the correct element
-        const deleteBtn = page.locator(`[data-testid="employee-row-${actualId}"] [data-testid="delete-btn"]`);
-        if (await deleteBtn.count() > 0) {
+        const deleteBtn = page.locator(
+          `[data-testid="employee-row-${actualId}"] [data-testid="delete-btn"]`
+        );
+        if ((await deleteBtn.count()) > 0) {
           await deleteBtn.click({ timeout: 10000 });
         } else {
           // Fallback: hover over the row first to reveal the delete button
