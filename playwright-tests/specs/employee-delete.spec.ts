@@ -222,22 +222,29 @@ test.describe("employee-delete — UI Regression Suite", () => {
         const rowAfterEscape = await po.isEmployeeRowVisible(actualId);
         expect(rowAfterEscape).toBe(true);
 
-        // Close the edit drawer (it stays open after the confirm dialog is dismissed via Escape)
-        await po.closeDrawer();
+        // Close the edit drawer if it stays open after the confirm dialog is dismissed via Escape
+        try {
+          await po.closeDrawer();
+        } catch {
+          // Drawer may not be open — ignore
+        }
+        await page.waitForTimeout(500);
 
         // Step 7: Click delete button again to reopen confirm dialog
-        // Use the locator directly to ensure we interact with the correct element
-        const deleteBtn = page.locator(
-          `[data-testid="employee-row-${actualId}"] [data-testid="delete-btn"]`
-        );
-        if ((await deleteBtn.count()) > 0) {
+        // First hover over the row to reveal the delete button
+        const rowLocator = page.locator(`[data-testid="employee-row-${actualId}"]`);
+        await rowLocator.hover();
+        await page.waitForTimeout(300);
+
+        // Try clicking the delete button
+        const deleteBtn = rowLocator.locator('[data-testid="delete-btn"]');
+        if ((await deleteBtn.count()) > 0 && await deleteBtn.isVisible()) {
           await deleteBtn.click({ timeout: 10000 });
         } else {
-          // Fallback: hover over the row first to reveal the delete button
-          await page.locator(`[data-testid="employee-row-${actualId}"]`).hover();
-          await page.waitForTimeout(300);
+          // Fallback: use the page object method
           await po.clickDeleteButtonOnRow(actualId);
         }
+
         const dialogVisibleAgain = await po.isConfirmDialogVisible();
         expect(dialogVisibleAgain).toBe(true);
 

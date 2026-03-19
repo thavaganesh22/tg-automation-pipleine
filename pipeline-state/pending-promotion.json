@@ -1,0 +1,609 @@
+[
+  {
+    "id": "7f9ea89f-d01c-5147-012e-8d9185f48a04",
+    "scenarioId": "894c49f3-b42d-5eb0-4529-9e2d602d8c1b",
+    "jiraRef": "TGDEMO-3",
+    "title": "[UI] employee-form: Work Phone label is displayed on Add Employee form",
+    "module": "employee-form",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "new-feature",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "Employee list page loads and is visible",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the Add Employee button",
+        "expectedResult": "Employee form drawer/modal opens",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Inspect all visible form field labels inside the open employee form",
+        "expectedResult": "A label reading exactly 'Work Phone' is visible in the form",
+        "testData": "selector: label, form field labels within the employee form"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Confirm that no label reading 'Phone' (without the 'Work' prefix) exists as a standalone label for the phone field",
+        "expectedResult": "The old label 'Phone' is not present as a standalone field label; only 'Work Phone' is shown",
+        "testData": "Assert absence of label text 'Phone' as a standalone label"
+      }
+    ],
+    "expectedOutcome": "The phone field label in the Add Employee form displays 'Work Phone' and not the old label 'Phone'",
+    "requiresPII": false,
+    "tags": [
+      "employee-form",
+      "new-feature",
+      "ui",
+      "work-phone",
+      "label",
+      "TGDEMO-3"
+    ]
+  },
+  {
+    "id": "3acb57d6-f435-53b3-1bc6-691f3bba6ee0",
+    "scenarioId": "894c49f3-b42d-5eb0-4529-9e2d602d8c1b",
+    "jiraRef": "TGDEMO-3",
+    "title": "[UI] employee-form: Work Phone label is displayed on Edit Employee form",
+    "module": "employee-form",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "new-feature",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "Employee list page loads and displays a list of employees",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Retrieve the first seeded employee's name programmatically (e.g. via getFirstEmployeeId()) and search/filter for that employee by name so their row is visible on page 1",
+        "expectedResult": "The target employee row is visible in the list",
+        "testData": "Use seeded employee; search input selector: [data-testid=search-input] or equivalent"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Click on the employee's row or their Edit button to open the employee form in edit mode",
+        "expectedResult": "Employee form drawer/modal opens pre-populated with the employee's existing data",
+        "testData": "selector: employee row or [data-testid=edit-employee-btn]"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Inspect all visible form field labels inside the open employee form",
+        "expectedResult": "A label reading exactly 'Work Phone' is visible in the form",
+        "testData": "selector: label elements within the employee form"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Confirm that no standalone label reading 'Phone' (without the 'Work' prefix) exists for the phone field",
+        "expectedResult": "The old label 'Phone' is not present as a standalone field label; only 'Work Phone' is shown",
+        "testData": "Assert absence of standalone label text 'Phone'"
+      }
+    ],
+    "expectedOutcome": "The phone field label in the Edit Employee form displays 'Work Phone' and not the old label 'Phone'",
+    "requiresPII": false,
+    "tags": [
+      "employee-form",
+      "new-feature",
+      "ui",
+      "work-phone",
+      "label",
+      "edit",
+      "TGDEMO-3"
+    ]
+  },
+  {
+    "id": "08f3f7ac-9d85-5887-4cb5-54ccb99d0d8c",
+    "scenarioId": "894c49f3-b42d-5eb0-4529-9e2d602d8c1b",
+    "jiraRef": "TGDEMO-3",
+    "title": "[UI] employee-form: Cell Phone field is present on Add Employee form",
+    "module": "employee-form",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "new-feature",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "Employee list page loads and is visible",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the Add Employee button",
+        "expectedResult": "Employee form drawer/modal opens",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Inspect all visible form field labels inside the open employee form",
+        "expectedResult": "A label reading 'Cell Phone' is visible in the form",
+        "testData": "selector: label elements within the employee form"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Confirm the Cell Phone input field is interactive (can be clicked and typed into)",
+        "expectedResult": "The Cell Phone input field accepts text input without errors",
+        "testData": "selector: input associated with 'Cell Phone' label; test value: '555-000-1234'"
+      }
+    ],
+    "expectedOutcome": "A 'Cell Phone' field with an interactive input is present in the Add Employee form",
+    "requiresPII": false,
+    "tags": [
+      "employee-form",
+      "new-feature",
+      "ui",
+      "cell-phone",
+      "TGDEMO-3"
+    ]
+  },
+  {
+    "id": "81f87fdc-2347-5acf-b9ed-599d1da5defd",
+    "scenarioId": "894c49f3-b42d-5eb0-4529-9e2d602d8c1b",
+    "jiraRef": "TGDEMO-3",
+    "title": "[UI] employee-form: Both Work Phone and Cell Phone fields are present simultaneously",
+    "module": "employee-form",
+    "priority": "P0",
+    "type": "positive",
+    "caseScope": "new-feature",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "Employee list page loads",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the Add Employee button",
+        "expectedResult": "Employee form drawer/modal opens",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Count and list all visible field labels in the employee form",
+        "expectedResult": "Both a 'Work Phone' label and a 'Cell Phone' label are visible in the form at the same time",
+        "testData": "selector: all label elements within the employee form"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Verify that 'Work Phone' and 'Cell Phone' each have their own distinct input field",
+        "expectedResult": "Two separate input fields exist — one associated with 'Work Phone' and one associated with 'Cell Phone'",
+        "testData": "selector: inputs associated with 'Work Phone' and 'Cell Phone' labels respectively"
+      }
+    ],
+    "expectedOutcome": "The employee form contains both a 'Work Phone' field and a 'Cell Phone' field as two distinct, labelled inputs",
+    "requiresPII": false,
+    "tags": [
+      "employee-form",
+      "new-feature",
+      "ui",
+      "work-phone",
+      "cell-phone",
+      "TGDEMO-3"
+    ]
+  },
+  {
+    "id": "a008caca-b127-54ff-2d2c-6b5779bb082a",
+    "scenarioId": "894c49f3-b42d-5eb0-4529-9e2d602d8c1b",
+    "jiraRef": "TGDEMO-3",
+    "title": "[UI] employee-form: Work Phone value is saved and displayed correctly on re-open",
+    "module": "employee-form",
+    "priority": "P1",
+    "type": "positive",
+    "caseScope": "new-feature",
+    "testType": "ui",
+    "preconditions": [
+      "Create a dedicated test employee via API before the test; delete it after."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "Employee list page loads",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the Add Employee button",
+        "expectedResult": "Employee form opens",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Fill in all required fields with valid test data, using a unique email (e.g. test+<timestamp>@example.com)",
+        "expectedResult": "All required fields are filled without validation errors",
+        "testData": "email: test+<timestamp>@example.com; firstName: TestFirst; lastName: TestLast"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Enter a phone number into the 'Work Phone' field",
+        "expectedResult": "The Work Phone input accepts the value",
+        "testData": "workPhone value: 555-111-2222"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Submit the form by clicking the Save/Submit button",
+        "expectedResult": "Form closes and a success notification or confirmation is shown; the new employee appears in the list",
+        "testData": "selector: [data-testid=save-employee-btn] or equivalent"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Search/filter for the newly created employee by their name so their row is visible",
+        "expectedResult": "The newly created employee row is visible in the list",
+        "testData": "search by the firstName and lastName used in step 3"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Click on the employee's row or Edit button to re-open the form",
+        "expectedResult": "Employee form opens in edit mode pre-populated with saved data",
+        "testData": "selector: employee row or [data-testid=edit-employee-btn]"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Inspect the 'Work Phone' field value",
+        "expectedResult": "The 'Work Phone' field displays the value '555-111-2222' that was entered during creation",
+        "testData": "expected value: 555-111-2222"
+      }
+    ],
+    "expectedOutcome": "A value entered in the 'Work Phone' field is persisted and correctly displayed when the employee form is reopened",
+    "requiresPII": false,
+    "tags": [
+      "employee-form",
+      "new-feature",
+      "ui",
+      "work-phone",
+      "persistence",
+      "TGDEMO-3"
+    ]
+  },
+  {
+    "id": "c8f68da1-d3e9-5fad-341e-2bee130c6cc7",
+    "scenarioId": "894c49f3-b42d-5eb0-4529-9e2d602d8c1b",
+    "jiraRef": "TGDEMO-3",
+    "title": "[UI] employee-form: Cell Phone value is saved and displayed correctly on re-open",
+    "module": "employee-form",
+    "priority": "P1",
+    "type": "positive",
+    "caseScope": "new-feature",
+    "testType": "ui",
+    "preconditions": [
+      "Create a dedicated test employee via API before the test; delete it after."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "Employee list page loads",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the Add Employee button",
+        "expectedResult": "Employee form opens",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Fill in all required fields with valid test data, using a unique email (e.g. test+<timestamp>@example.com)",
+        "expectedResult": "All required fields are filled without validation errors",
+        "testData": "email: test+<timestamp>@example.com; firstName: CellFirst; lastName: CellLast"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Enter a phone number into the 'Cell Phone' field",
+        "expectedResult": "The Cell Phone input accepts the value",
+        "testData": "cellPhone value: 555-333-4444"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Submit the form by clicking the Save/Submit button",
+        "expectedResult": "Form closes and a success notification or confirmation is shown; the new employee appears in the list",
+        "testData": "selector: [data-testid=save-employee-btn] or equivalent"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Search/filter for the newly created employee by their name so their row is visible",
+        "expectedResult": "The newly created employee row is visible in the list",
+        "testData": "search by the firstName and lastName used in step 3"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Click on the employee's row or Edit button to re-open the form",
+        "expectedResult": "Employee form opens in edit mode pre-populated with saved data",
+        "testData": "selector: employee row or [data-testid=edit-employee-btn]"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Inspect the 'Cell Phone' field value",
+        "expectedResult": "The 'Cell Phone' field displays the value '555-333-4444' that was entered during creation",
+        "testData": "expected value: 555-333-4444"
+      }
+    ],
+    "expectedOutcome": "A value entered in the 'Cell Phone' field is persisted and correctly displayed when the employee form is reopened",
+    "requiresPII": false,
+    "tags": [
+      "employee-form",
+      "new-feature",
+      "ui",
+      "cell-phone",
+      "persistence",
+      "TGDEMO-3"
+    ]
+  },
+  {
+    "id": "4775b4e2-456e-5680-eb03-d396d6cd0f95",
+    "scenarioId": "894c49f3-b42d-5eb0-4529-9e2d602d8c1b",
+    "jiraRef": "TGDEMO-3",
+    "title": "[UI] employee-form: Work Phone and Cell Phone accept maximum-length boundary values",
+    "module": "employee-form",
+    "priority": "P1",
+    "type": "edge",
+    "caseScope": "new-feature",
+    "testType": "ui",
+    "preconditions": [
+      "Create a dedicated test employee via API before the test; delete it after."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "Employee list page loads",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the Add Employee button",
+        "expectedResult": "Employee form opens",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Fill in all required fields with valid test data, using a unique email (e.g. test+<timestamp>@example.com)",
+        "expectedResult": "All required fields are filled without validation errors",
+        "testData": "email: test+<timestamp>@example.com; firstName: BoundFirst; lastName: BoundLast"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Enter a 20-character string into the 'Work Phone' field",
+        "expectedResult": "The Work Phone input accepts the value without showing a validation error",
+        "testData": "workPhone value: 12345678901234567890 (20 chars)"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Enter a 20-character string into the 'Cell Phone' field",
+        "expectedResult": "The Cell Phone input accepts the value without showing a validation error",
+        "testData": "cellPhone value: 09876543210987654321 (20 chars)"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Submit the form by clicking the Save/Submit button",
+        "expectedResult": "Form submits successfully; success notification is shown and no field-level validation errors appear for Work Phone or Cell Phone",
+        "testData": "selector: [data-testid=save-employee-btn] or equivalent"
+      }
+    ],
+    "expectedOutcome": "Both Work Phone and Cell Phone fields accept boundary-length values and the form submits without validation errors",
+    "requiresPII": false,
+    "tags": [
+      "employee-form",
+      "new-feature",
+      "ui",
+      "work-phone",
+      "cell-phone",
+      "boundary",
+      "edge",
+      "TGDEMO-3"
+    ]
+  },
+  {
+    "id": "2e3ad3f2-aa54-5042-e0c2-275a8f1a0d94",
+    "scenarioId": "894c49f3-b42d-5eb0-4529-9e2d602d8c1b",
+    "jiraRef": "TGDEMO-3",
+    "title": "[UI] employee-form: Work Phone field does not accept excessively long input without error",
+    "module": "employee-form",
+    "priority": "P2",
+    "type": "negative",
+    "caseScope": "new-feature",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "Employee list page loads",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the Add Employee button",
+        "expectedResult": "Employee form opens",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Fill in all required fields with valid test data",
+        "expectedResult": "All required fields are filled",
+        "testData": "email: test+<timestamp>@example.com; firstName: NegFirst; lastName: NegLast"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Enter a string of 300 characters into the 'Work Phone' field",
+        "expectedResult": "The Work Phone input either truncates the input or displays a validation error message",
+        "testData": "workPhone value: a string of 300 repeated digit characters"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Click the Save/Submit button",
+        "expectedResult": "Either the form does not submit and a validation error is shown near the Work Phone field, OR the input was already truncated to the allowed maximum and the form submits successfully — in neither case does the app crash or show an unhandled error",
+        "testData": "selector: [data-testid=save-employee-btn] or equivalent"
+      }
+    ],
+    "expectedOutcome": "The Work Phone field handles excessively long input gracefully — either via client-side truncation or a visible validation error — without crashing the application",
+    "requiresPII": false,
+    "tags": [
+      "employee-form",
+      "new-feature",
+      "ui",
+      "work-phone",
+      "negative",
+      "validation",
+      "TGDEMO-3"
+    ]
+  },
+  {
+    "id": "17840849-bd79-5076-44c4-76e9881d8e39",
+    "scenarioId": "894c49f3-b42d-5eb0-4529-9e2d602d8c1b",
+    "jiraRef": "TGDEMO-3",
+    "title": "[UI] employee-form: Cell Phone field is visible and labelled correctly on Edit Employee form for seeded employee",
+    "module": "employee-form",
+    "priority": "P1",
+    "type": "positive",
+    "caseScope": "new-feature",
+    "testType": "ui",
+    "preconditions": [
+      "Application is running with seeded employees."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "Employee list page loads and displays seeded employees",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Retrieve the first seeded employee's name programmatically and search/filter for that employee by name so their row is visible on page 1",
+        "expectedResult": "The target seeded employee row is visible in the list",
+        "testData": "Use getFirstEmployeeId() to obtain the employee; search input selector: [data-testid=search-input] or equivalent"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Click on the employee's row or Edit button to open the employee form in edit mode",
+        "expectedResult": "Employee form opens in edit mode",
+        "testData": "selector: employee row or [data-testid=edit-employee-btn]"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Inspect all visible form field labels",
+        "expectedResult": "A label reading 'Cell Phone' is visible in the form",
+        "testData": "selector: label elements within the employee form"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Verify the Cell Phone input field is present and interactive",
+        "expectedResult": "The Cell Phone input field is rendered and can receive focus/input",
+        "testData": "selector: input associated with 'Cell Phone' label"
+      }
+    ],
+    "expectedOutcome": "The 'Cell Phone' field is visible and interactive in the Edit Employee form for an existing seeded employee",
+    "requiresPII": false,
+    "tags": [
+      "employee-form",
+      "new-feature",
+      "ui",
+      "cell-phone",
+      "edit",
+      "TGDEMO-3"
+    ]
+  },
+  {
+    "id": "11d2689c-d7ef-5821-d53c-b013ea025fb1",
+    "scenarioId": "894c49f3-b42d-5eb0-4529-9e2d602d8c1b",
+    "jiraRef": "TGDEMO-3",
+    "title": "[UI] employee-form: Work Phone and Cell Phone fields are independent — editing one does not affect the other",
+    "module": "employee-form",
+    "priority": "P1",
+    "type": "edge",
+    "caseScope": "new-feature",
+    "testType": "ui",
+    "preconditions": [
+      "Create a dedicated test employee via API before the test; delete it after."
+    ],
+    "steps": [
+      {
+        "stepNumber": 1,
+        "action": "Navigate to /",
+        "expectedResult": "Employee list page loads",
+        "testData": "route: /"
+      },
+      {
+        "stepNumber": 2,
+        "action": "Click the Add Employee button",
+        "expectedResult": "Employee form opens",
+        "testData": "selector: [data-testid=add-employee-btn]"
+      },
+      {
+        "stepNumber": 3,
+        "action": "Fill in all required fields with valid test data using a unique email",
+        "expectedResult": "All required fields are filled",
+        "testData": "email: test+<timestamp>@example.com; firstName: IndepFirst; lastName: IndepLast"
+      },
+      {
+        "stepNumber": 4,
+        "action": "Enter a distinct value into the 'Work Phone' field",
+        "expectedResult": "Work Phone field shows the entered value",
+        "testData": "workPhone value: 111-111-1111"
+      },
+      {
+        "stepNumber": 5,
+        "action": "Enter a different distinct value into the 'Cell Phone' field",
+        "expectedResult": "Cell Phone field shows its own entered value; Work Phone field still shows '111-111-1111' unchanged",
+        "testData": "cellPhone value: 222-222-2222"
+      },
+      {
+        "stepNumber": 6,
+        "action": "Submit the form by clicking the Save/Submit button",
+        "expectedResult": "Form submits successfully with a success notification",
+        "testData": "selector: [data-testid=save-employee-btn] or equivalent"
+      },
+      {
+        "stepNumber": 7,
+        "action": "Search/filter for the newly created employee by name and click their row to re-open the form",
+        "expectedResult": "Employee form opens in edit mode",
+        "testData": "search by firstName and lastName used in step 3"
+      },
+      {
+        "stepNumber": 8,
+        "action": "Verify the 'Work Phone' field value and the 'Cell Phone' field value independently",
+        "expectedResult": "'Work Phone' displays '111-111-1111' and 'Cell Phone' displays '222-222-2222' — each field retains its own distinct value",
+        "testData": "expected workPhone: 111-111-1111; expected cellPhone: 222-222-2222"
+      }
+    ],
+    "expectedOutcome": "Work Phone and Cell Phone are fully independent fields — values entered in each are stored and retrieved separately without cross-contamination",
+    "requiresPII": false,
+    "tags": [
+      "employee-form",
+      "new-feature",
+      "ui",
+      "work-phone",
+      "cell-phone",
+      "independence",
+      "edge",
+      "TGDEMO-3"
+    ]
+  }
+]

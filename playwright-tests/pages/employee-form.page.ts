@@ -26,6 +26,7 @@ export class EmployeeFormPage {
   private readonly successToast = '[data-testid="success-toast"]';
   private readonly phoneError = '[data-testid="phone-error"]';
   private readonly cellPhoneError = '[data-testid="cellPhone-error"]';
+  private readonly startDateInput = '[data-testid="startDate-input"]';
   constructor(page: Page) {
     this.page = page;
   }
@@ -360,5 +361,119 @@ export class EmployeeFormPage {
     } catch {
       return true;
     }
+  }
+
+  async fillWorkPhoneAndVerifyInteractive(value: string): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.phoneInput, { state: 'visible', timeout: 3000 });
+      await this.page.locator(this.phoneInput).click();
+      await this.page.fill(this.phoneInput, value);
+      const inputValue = await this.page.locator(this.phoneInput).inputValue();
+      return inputValue === value;
+    } catch {
+      return false;
+    }
+  }
+
+  async fillAllRequiredFieldsAndPhones(data: {
+    firstName: string; lastName: string; email: string; designation: string;
+    department: string; employmentType: string; street: string; city: string; country: string;
+    workPhone?: string; cellPhone?: string;
+  }): Promise<void> {
+    await this.fillRequiredFields({
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      designation: data.designation,
+      department: data.department,
+      employmentType: data.employmentType,
+      street: data.street,
+      city: data.city,
+      country: data.country,
+    });
+    if (data.workPhone) {
+      await this.fillWorkPhone(data.workPhone);
+    }
+    if (data.cellPhone) {
+      await this.fillCellPhone(data.cellPhone);
+    }
+  }
+
+  async submitAndWaitForSuccess(): Promise<void> {
+    await this.page.waitForSelector(this.submitBtn, { state: 'visible' });
+    await this.page.click(this.submitBtn);
+    await this.page.waitForSelector(this.successToast, { state: 'visible', timeout: 15000 });
+  }
+
+  async searchAndClickFirstEmployee(name: string): Promise<void> {
+    await this.searchEmployees(name);
+    const firstRowId = await this.getFirstVisibleEmployeeId();
+    await this.clickEmployeeRow(firstRowId);
+  }
+
+  async getDesignationValue(): Promise<string> {
+    await this.page.waitForSelector(this.designationInput, { state: 'visible' });
+    return this.page.locator(this.designationInput).inputValue();
+  }
+
+  async getDepartmentValue(): Promise<string> {
+    await this.page.waitForSelector(this.departmentSelect, { state: 'visible' });
+    return this.page.locator(this.departmentSelect).inputValue();
+  }
+
+  async getEmploymentTypeValue(): Promise<string> {
+    await this.page.waitForSelector(this.employmentTypeSelect, { state: 'visible' });
+    return this.page.locator(this.employmentTypeSelect).inputValue();
+  }
+
+  async getEmploymentStatusValue(): Promise<string> {
+    await this.page.waitForSelector(this.employmentStatusSelect, { state: 'visible' });
+    return this.page.locator(this.employmentStatusSelect).inputValue();
+  }
+
+  async getStartDateValue(): Promise<string> {
+    await this.page.waitForSelector(this.startDateInput, { state: 'visible' });
+    return this.page.locator(this.startDateInput).inputValue();
+  }
+
+  async getStreetValue(): Promise<string> {
+    await this.page.waitForSelector(this.streetInput, { state: 'visible' });
+    return this.page.locator(this.streetInput).inputValue();
+  }
+
+  async getCityValue(): Promise<string> {
+    await this.page.waitForSelector(this.cityInput, { state: 'visible' });
+    return this.page.locator(this.cityInput).inputValue();
+  }
+
+  async getCountryValue(): Promise<string> {
+    await this.page.waitForSelector(this.countryInput, { state: 'visible' });
+    return this.page.locator(this.countryInput).inputValue();
+  }
+
+  async isPhoneInputTruncatedOrErrorShown(value: string): Promise<boolean> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    await this.page.fill(this.phoneInput, value);
+    const currentValue = await this.page.locator(this.phoneInput).inputValue();
+    const wasTruncated = currentValue.length < value.length;
+    if (wasTruncated) {
+      return true;
+    }
+    await this.submitEmployeeForm();
+    const hasPhoneError = await this.isPhoneErrorVisible();
+    return hasPhoneError;
+  }
+
+  async isCellPhoneInputTruncatedOrErrorShown(value: string): Promise<boolean> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    await this.page.fill(this.cellPhoneInput, value);
+    const currentValue = await this.page.locator(this.cellPhoneInput).inputValue();
+    const wasTruncated = currentValue.length < value.length;
+    if (wasTruncated) {
+      return true;
+    }
+    await this.submitEmployeeForm();
+    const hasCellPhoneError = await this.isCellPhoneErrorVisible();
+    return hasCellPhoneError;
   }
 }
