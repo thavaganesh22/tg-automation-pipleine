@@ -1,4 +1,4 @@
-# 7-Agent Autonomous QA Pipeline
+# Autonomous QA Pipeline
 
 > A fully automated QA testing pipeline powered by Claude. Every Pull Request triggers all 7 agents — from codebase analysis to test execution and Kibana reporting. The PR check only passes after AGT-07 (Report Architect) completes successfully.
 
