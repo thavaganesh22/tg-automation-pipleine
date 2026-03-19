@@ -542,7 +542,7 @@ export class EmployeeFormPage {
     return actualValue === expectedValue;
   }
 
-  async verifyBothPhoneValuesAfterReopen(employeeName: string, expectedWorkPhone: string, expectedCellPhone: string): Promise<{ workPhone: string; cellPhone: string }> {
+  async verifyBothPhoneValuesAfterReopen(employeeName: string, _expectedWorkPhone: string, _expectedCellPhone: string): Promise<{ workPhone: string; cellPhone: string }> {
     await this.searchAndClickFirstEmployee(employeeName);
     const workPhone = await this.getWorkPhoneValue();
     const cellPhone = await this.getCellPhoneValue();

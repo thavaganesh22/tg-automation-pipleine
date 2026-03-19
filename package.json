@@ -24,6 +24,7 @@
     "test:unit": "jest",
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
+    "typecheck:fix": "node scripts/fix-ts-unused.js",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml}\""
   },
   "dependencies": {

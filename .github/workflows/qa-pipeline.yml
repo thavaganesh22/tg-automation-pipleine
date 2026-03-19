@@ -242,6 +242,10 @@ jobs:
             console.log('All specs clean.');
           "
 
+      - name: Fix unused params in generated TypeScript files
+        if: (steps.pipeline.outcome == 'success' || steps.pipeline.outcome == 'failure') && steps.spec-check.outcome == 'success'
+        run: node scripts/fix-ts-unused.js
+
       - name: Commit updated baseline and generated specs
         if: (steps.pipeline.outcome == 'success' || steps.pipeline.outcome == 'failure') && steps.spec-check.outcome == 'success'
         run: |
@@ -604,6 +608,9 @@ jobs:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+
+      - name: Fix unused params in generated TypeScript files
+        run: node scripts/fix-ts-unused.js
 
       - name: Commit updated baseline and generated specs
         run: |
