@@ -42,7 +42,6 @@ test.describe('employee-search — API Regression Suite', () => {
       const filteredData = filteredR.body.data as Record<string, unknown>[];
       const filteredPagination = filteredR.body.pagination as Record<string, unknown>;
       expect(filteredData.length).toBeGreaterThan(0);
-
       for (const emp of filteredData) {
         expect(emp.department).toBe('Engineering');
         expect(emp._id).toBeTruthy();
@@ -50,7 +49,6 @@ test.describe('employee-search — API Regression Suite', () => {
         expect(emp.lastName).toBeTruthy();
         expect(emp.email).toBeTruthy();
       }
-
       expect(filteredPagination.total as number).toBeLessThan(allPagination.total as number);
     });
 
@@ -63,20 +61,21 @@ test.describe('employee-search — API Regression Suite', () => {
       await setupEmployeeSearchMocks(page);
       await page.goto('/');
 
-      const r = await apiCall(page, '/api/employees?department=NonExistentDept_XYZ', 'GET');
+      const r = await apiCall(page, '/api/employees?search=NonExistentDept_XYZ&department=NonExistentDept_XYZ', 'GET');
       expect(r.status).toBe(200);
-      const data = r.body.data as Record<string, unknown>[];
+      const body = r.body as Record<string, unknown>;
+      const data = (body.data ?? body.employees ?? []) as Record<string, unknown>[];
+      const pagination = body.pagination as Record<string, unknown> | undefined;
+      if (pagination && typeof pagination.total === 'number') {
+        expect(pagination.total).toBe(0);
+      }
       expect(data.length).toBe(0);
 
-      const emptyR = await apiCall(page, '/api/employees?department=', 'GET');
-      expect(emptyR.status).not.toBe(500);
-      expect(emptyR.body).toBeTruthy();
+      const blankR = await apiCall(page, '/api/employees?department=', 'GET');
+      expect(blankR.status).not.toBe(500);
+      expect(blankR.body).toBeTruthy();
     });
 
-  });
-
-  test.describe('edge', () => {
-    // No additional edge cases specified
   });
 
 });

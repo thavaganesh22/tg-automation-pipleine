@@ -12,8 +12,8 @@ export class EmployeePaginationPage {
   private readonly prevPageBtn = '[data-testid="prev-page-btn"]';
   private readonly nextPageBtn = '[data-testid="next-page-btn"]';
   private readonly paginationCurrent = '[data-testid="pagination-current"]';
+  private readonly employeeRowPrefix = '[data-testid^="employee-row-"]';
   private readonly employeeName = '[data-testid="employee-name"]';
-  private readonly successToast = '[data-testid="success-toast"]';
 
   constructor(page: Page) {
     this.page = page;
@@ -23,7 +23,7 @@ export class EmployeePaginationPage {
     await this.page.goto('/');
     await this.page.waitForSelector(this.employeeTable, { timeout: 10000 });
     await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
-    await this.page.waitForSelector('[data-testid^="employee-row-"]', { timeout: 10000 }).catch(() => {});
+    await this.page.waitForSelector(this.employeeRowPrefix, { timeout: 10000 }).catch(() => {});
   }
 
   async getFirstEmployeeId(): Promise<string> {
@@ -33,14 +33,19 @@ export class EmployeePaginationPage {
     return body.data[0]._id as string;
   }
 
+  async getFirstVisibleEmployeeId(): Promise<string> {
+    const testid = await this.page.locator(this.employeeRowPrefix).first().getAttribute('data-testid');
+    if (!testid) throw new Error('No visible employee row');
+    return testid.replace('employee-row-', '');
+  }
+
   async createEmployee(payload: {
     firstName: string; lastName: string; email: string; designation: string;
     department: string; employmentType: string; employmentStatus: string;
     startDate: string; address: { street: string; city: string; country: string };
   }): Promise<string> {
     const res = await this.page.request.post(`${this.baseUrl}/api/employees`, {
-      data: payload,
-      headers: { 'Content-Type': 'application/json' },
+      data: payload, headers: { 'Content-Type': 'application/json' },
     });
     const body = await res.json();
     return body._id as string;
@@ -55,8 +60,8 @@ export class EmployeePaginationPage {
     await searchLoc.waitFor({ state: 'visible' });
     await searchLoc.click();
     await searchLoc.fill(query);
-    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
-    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+    await this.page.locator('[data-testid="loading-row"]').waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
+    await this.page.locator('[data-testid="loading-row"]').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
   }
 
   async isEmployeeRowVisible(id: string): Promise<boolean> {
@@ -70,10 +75,10 @@ export class EmployeePaginationPage {
 
   async getEmployeeRowCount(): Promise<number> {
     await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
-    return this.page.locator('[data-testid^="employee-row-"]').count();
+    return this.page.locator(this.employeeRowPrefix).count();
   }
 
-  async getEmployeeNamesOnPage(): Promise<string[]> {
+  async getVisibleEmployeeNames(): Promise<string[]> {
     await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
     return this.page.locator(this.employeeName).allTextContents();
   }
@@ -97,6 +102,18 @@ export class EmployeePaginationPage {
     return (await this.page.locator(this.paginationCurrent).textContent()) ?? '';
   }
 
+  async getCurrentPageNumber(): Promise<number> {
+    const text = await this.getPaginationCurrentText();
+    const match = text.match(/(\d+)\s*\/\s*(\d+)/);
+    return match ? parseInt(match[1], 10) : 1;
+  }
+
+  async getTotalPageCount(): Promise<number> {
+    const text = await this.getPaginationCurrentText();
+    const match = text.match(/(\d+)\s*\/\s*(\d+)/);
+    return match ? parseInt(match[2], 10) : 1;
+  }
+
   async isNextPageButtonEnabled(): Promise<boolean> {
     await this.page.waitForSelector(this.nextPageBtn, { state: 'visible' });
     return !(await this.page.locator(this.nextPageBtn).isDisabled());
@@ -109,51 +126,39 @@ export class EmployeePaginationPage {
 
   async goToNextPage(): Promise<void> {
     await this.page.waitForSelector(this.nextPageBtn, { state: 'visible' });
-    await this.page.click(this.nextPageBtn);
-    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
-    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+    await Promise.all([
+      this.page.waitForResponse(res => res.url().includes('/api/employees') && res.status() === 200),
+      this.page.click(this.nextPageBtn),
+    ]);
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
   }
 
   async goToPrevPage(): Promise<void> {
     await this.page.waitForSelector(this.prevPageBtn, { state: 'visible' });
-    await this.page.click(this.prevPageBtn);
-    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
-    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+    await Promise.all([
+      this.page.waitForResponse(res => res.url().includes('/api/employees') && res.status() === 200),
+      this.page.click(this.prevPageBtn),
+    ]);
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
   }
 
-  async clickNextPageButtonWhileDisabled(): Promise<void> {
+  async clickNextPageButton(): Promise<void> {
     await this.page.waitForSelector(this.nextPageBtn, { state: 'visible' });
-    await this.page.click(this.nextPageBtn, { force: true });
-    await this.page.waitForTimeout(500);
+    await this.page.click(this.nextPageBtn);
   }
 
-  async clickPrevPageButtonWhileDisabled(): Promise<void> {
+  async clickPrevPageButton(): Promise<void> {
     await this.page.waitForSelector(this.prevPageBtn, { state: 'visible' });
-    await this.page.click(this.prevPageBtn, { force: true });
-    await this.page.waitForTimeout(500);
+    await this.page.click(this.prevPageBtn);
   }
 
-  async navigateToLastPage(): Promise<void> {
-    while (await this.isNextPageButtonEnabled()) {
+  async goToLastPage(): Promise<void> {
+    let totalPages = await this.getTotalPageCount();
+    let currentPage = await this.getCurrentPageNumber();
+    while (currentPage < totalPages) {
       await this.goToNextPage();
+      currentPage = await this.getCurrentPageNumber();
+      totalPages = await this.getTotalPageCount();
     }
-  }
-
-  async getTotalPagesFromIndicator(): Promise<number> {
-    const text = await this.getPaginationCurrentText();
-    const match = text.match(/(\d+)\s*\/\s*(\d+)/);
-    if (!match) throw new Error(`Cannot parse page indicator: "${text}"`);
-    return parseInt(match[2], 10);
-  }
-
-  async getCurrentPageFromIndicator(): Promise<number> {
-    const text = await this.getPaginationCurrentText();
-    const match = text.match(/(\d+)\s*\/\s*(\d+)/);
-    if (!match) throw new Error(`Cannot parse page indicator: "${text}"`);
-    return parseInt(match[1], 10);
-  }
-
-  async waitForSuccessToast(): Promise<void> {
-    await this.page.waitForSelector(this.successToast, { state: 'visible', timeout: 15000 });
   }
 }

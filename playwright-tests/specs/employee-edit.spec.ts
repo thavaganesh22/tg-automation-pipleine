@@ -10,63 +10,59 @@ test.describe('employee-edit — UI Regression Suite', () => {
       const po = new EmployeeEditPage(page);
       await po.navigate();
 
-      // Step 1: Retrieve the first seeded employee's ID
+      // Step 1: Retrieve the first seeded employee's ID and data
       const id = await po.getFirstEmployeeId();
-      expect(id).toBeTruthy();
-
-      // Fetch full employee details via API for assertion
       const employee = await po.getEmployeeById(id);
-      const firstName = (employee as Record<string, unknown>).firstName as string;
-      const lastName = (employee as Record<string, unknown>).lastName as string;
-      const email = (employee as Record<string, unknown>).email as string;
-      const department = (employee as Record<string, unknown>).department as string;
-      const designation = (employee as Record<string, unknown>).designation as string;
+      const originalFirstName = employee.firstName as string;
+      const originalLastName = employee.lastName as string;
+      const originalEmail = employee.email as string;
+      const originalDepartment = employee.department as string;
+      const originalDesignation = employee.designation as string;
 
-      // Step 2: Navigate to root (already done, but ensure fresh state)
-      await po.navigate();
+      // Step 3: Search for the employee so their row is on page 1
+      await po.searchEmployees(originalFirstName);
 
-      // Step 3: Search for the employee by first name to ensure row is on page 1
-      await po.searchEmployees(firstName);
+      // Wait for the filtered row to appear
+      await page.getByTestId(`employee-row-${id}`).waitFor({ state: 'visible', timeout: 10000 });
 
-      // Step 4: Verify the row is visible and click it
+      // Step 4: Click the employee row to open the edit drawer
       const rowVisible = await po.isEmployeeRowVisible(id);
       expect(rowVisible).toBe(true);
       await po.clickEmployeeRow(id);
 
-      // Wait for drawer to open
-      await po.waitForDrawerOpen();
+      // Verify drawer is open
       const drawerVisible = await po.isDrawerVisible();
       expect(drawerVisible).toBe(true);
 
       // Step 5: Verify First Name is pre-populated
-      const actualFirstName = await po.getFirstNameValue();
-      expect(actualFirstName).toBe(firstName);
+      const firstName = await po.getFirstNameValue();
+      expect(firstName).toBe(originalFirstName);
 
       // Step 6: Verify Last Name is pre-populated
-      const actualLastName = await po.getLastNameValue();
-      expect(actualLastName).toBe(lastName);
+      const lastName = await po.getLastNameValue();
+      expect(lastName).toBe(originalLastName);
 
       // Step 7: Verify Email is pre-populated
-      const actualEmail = await po.getEmailValue();
-      expect(actualEmail).toBe(email);
+      const email = await po.getEmailValue();
+      expect(email).toBe(originalEmail);
 
       // Step 8: Verify Department is pre-populated
-      const actualDepartment = await po.getDepartmentValue();
-      expect(actualDepartment).toBe(department);
+      const department = await po.getDepartmentValue();
+      expect(department).toBe(originalDepartment);
 
       // Step 9: Verify Designation (Role) is pre-populated
-      const actualDesignation = await po.getDesignationValue();
-      expect(actualDesignation).toBe(designation);
+      const designation = await po.getDesignationValue();
+      expect(designation).toBe(originalDesignation);
 
-      // Step 10: Verify drawer is in edit mode — drawer title is "Personal Information"
-      // and the form is pre-filled (already verified above). Confirm drawer is visible.
+      // Step 10: Verify drawer is visible (drawer title is "Personal Information", not "Edit Employee")
       const drawerStillVisible = await po.isDrawerVisible();
       expect(drawerStillVisible).toBe(true);
 
       // Step 11: Close the drawer without making changes
+      // Note: the employee drawer has no Escape key handler — use the close button
       await po.closeDrawer();
-      const drawerClosed = await po.isDrawerVisible();
-      expect(drawerClosed).toBe(false);
+      const drawerHidden = await po.isDrawerHidden();
+      expect(drawerHidden).toBe(true);
     });
 
   });
@@ -78,10 +74,10 @@ test.describe('employee-edit — UI Regression Suite', () => {
       const po = new EmployeeEditPage(page);
       await po.navigate();
 
-      // Step 1: Create a dedicated test employee with unique email
-      const uniqueEmail = `test.cancel.${Date.now()}@test.com`;
-      const originalFirstName = 'CancelTest';
-      const originalLastName = 'Employee';
+      // Step 1: Create a dedicated test employee
+      const uniqueEmail = `test.discard.${Date.now()}@test.com`;
+      const originalFirstName = 'DiscardTest';
+      const originalLastName = 'CancelUser';
       const id = await po.createEmployee({
         firstName: originalFirstName,
         lastName: originalLastName,
@@ -95,23 +91,24 @@ test.describe('employee-edit — UI Regression Suite', () => {
       });
 
       try {
-        // Step 2: Navigate to root to reload the list
+        // Step 2: Navigate to list
         await po.navigate();
 
-        // Step 3: Search for the created employee
+        // Step 3: Search for the test employee
         await po.searchEmployees(originalFirstName);
 
-        // Verify the row is visible
+        // Wait for the filtered row to appear
+        await page.getByTestId(`employee-row-${id}`).waitFor({ state: 'visible', timeout: 10000 });
+
         const rowVisible = await po.isEmployeeRowVisible(id);
         expect(rowVisible).toBe(true);
 
         // Step 4: Click the employee row to open edit drawer
         await po.clickEmployeeRow(id);
-        await po.waitForDrawerOpen();
         const drawerVisible = await po.isDrawerVisible();
         expect(drawerVisible).toBe(true);
 
-        // Verify pre-populated values match original data
+        // Verify pre-populated values
         const preFirstName = await po.getFirstNameValue();
         expect(preFirstName).toBe(originalFirstName);
         const preEmail = await po.getEmailValue();
@@ -119,41 +116,46 @@ test.describe('employee-edit — UI Regression Suite', () => {
 
         // Step 5: Clear First Name and type a temporary value
         await po.fillFirstName('UNSAVED_EDIT');
-        const editedFirstName = await po.getFirstNameValue();
-        expect(editedFirstName).toBe('UNSAVED_EDIT');
+        const changedFirstName = await po.getFirstNameValue();
+        expect(changedFirstName).toBe('UNSAVED_EDIT');
 
         // Step 6: Clear Email and type a temporary value
         const unsavedEmail = `unsaved.${Date.now()}@test.com`;
         await po.fillEmail(unsavedEmail);
-        const editedEmail = await po.getEmailValue();
-        expect(editedEmail).toBe(unsavedEmail);
+        const changedEmail = await po.getEmailValue();
+        expect(changedEmail).toBe(unsavedEmail);
 
-        // Step 7: Click Cancel without saving
-        await po.cancelForm();
-        const drawerAfterCancel = await po.isDrawerVisible();
-        expect(drawerAfterCancel).toBe(false);
+        // Step 7: Cancel without saving
+        await po.cancelEdit();
+        const drawerHidden = await po.isDrawerHidden();
+        expect(drawerHidden).toBe(true);
 
-        // Step 8: Search for the employee again
+        // Step 8: Search for the test employee again
         await po.searchEmployees(originalFirstName);
+
+        // Wait for the filtered row to appear
+        await page.getByTestId(`employee-row-${id}`).waitFor({ state: 'visible', timeout: 10000 });
+
         const rowStillVisible = await po.isEmployeeRowVisible(id);
         expect(rowStillVisible).toBe(true);
 
-        // Step 9: Click the employee row again to reopen the edit drawer
+        // Step 9: Reopen the edit drawer
         await po.clickEmployeeRow(id);
-        await po.waitForDrawerOpen();
-        const drawerReopened = await po.isDrawerVisible();
-        expect(drawerReopened).toBe(true);
+        const drawerVisibleAgain = await po.isDrawerVisible();
+        expect(drawerVisibleAgain).toBe(true);
 
-        // Step 10: Verify First Name is restored to original value
+        // Step 10: Verify First Name is restored to original
         const restoredFirstName = await po.getFirstNameValue();
         expect(restoredFirstName).toBe(originalFirstName);
 
-        // Step 11: Verify Email is restored to original value
+        // Step 11: Verify Email is restored to original
         const restoredEmail = await po.getEmailValue();
         expect(restoredEmail).toBe(uniqueEmail);
 
         // Step 12: Close the drawer
         await po.closeDrawer();
+        const finalDrawerHidden = await po.isDrawerHidden();
+        expect(finalDrawerHidden).toBe(true);
       } finally {
         // Cleanup: delete the dedicated test employee
         await po.deleteEmployee(id);

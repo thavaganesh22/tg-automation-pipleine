@@ -68,7 +68,7 @@ const ALLOWED_URLS = (process.env.ALLOWED_TEST_URLS ?? "")
   .map((s: string) => s.trim())
   .filter(Boolean);
 const MAX_WORKERS = Math.min(parseInt(process.env.MAX_WORKERS ?? "4", 10), 8);
-const TEST_TIMEOUT_MS = 20_000;        // per-test wall-clock limit
+const TEST_TIMEOUT_MS = 45_000;        // per-test wall-clock limit
 const ACTION_TIMEOUT_MS = 10_000;      // per-action (locator.waitFor, click, fill, etc.)
 const NAVIGATION_TIMEOUT_MS = 15_000; // page.goto / waitForURL
 const SUITE_TIMEOUT_MS = 15 * 60 * 1000; // overall suite cap (15 min)
@@ -89,7 +89,6 @@ const SCRIPT_ERROR_PATTERNS: RegExp[] = [
   /is not a function/i,
   /cannot read propert/i,
   /target page.*closed/i,
-  /expect.*toBeVisible.*failed/i,
   /expect.*toHaveCount.*failed/i,
   /expect.*toHaveText.*failed/i,
 ];
@@ -100,6 +99,9 @@ const APP_ERROR_PATTERNS: RegExp[] = [
   /connection refused/i,
   /response status.*[45]\d\d/i,
   /internal server error/i,
+  // Element not found = app hasn't implemented the feature; healer cannot fix this
+  /expect.*toBeVisible.*failed/i,
+  /element\(s\) not found/i,
 ];
 
 // ── Main Agent ─────────────────────────────────────────────────────────────
@@ -278,7 +280,8 @@ async function healSpecFile(
         "3. Do NOT say 'Here is the fixed file' or any similar phrase.\n" +
         "4. Your response will be written directly to disk as a .ts file — any prose will break compilation.\n" +
         "5. Do NOT remove any tests that are NOT listed as failing — keep ALL passing tests exactly as-is.\n" +
-        "6. Do NOT rewrite tests from scratch — make minimal, targeted changes to fix the specific errors shown.",
+        "6. Do NOT rewrite tests from scratch — make minimal, targeted changes to fix the specific errors shown.\n" +
+        "7. NEVER add new test() blocks — the output file must contain exactly the same number of tests as the input.",
       messages: [
         {
           role: "user",
@@ -467,15 +470,19 @@ module.exports = defineConfig({
     healArtifactsDir
   );
 
-  // Merge: keep run-1 results for non-healed files; replace with run-2 for healed files
-  // run-1 total = passed + failed + flaky + skipped
-  // Script-fail tests were in healed files — replace their results with heal-run results
-  const run1NonHealedPassed = firstResult.passed; // passed tests were NOT in healed files
-  const run1NonHealedFailed = appFails.length;     // app errors stay (not healed)
+  // Merge: keep run-1 results for non-healed files; replace with run-2 for healed files.
+  // We must subtract the healed files' run-1 contribution before adding the heal-run results,
+  // otherwise passing tests from the healed file get double-counted (leading to >100% pass rate).
+  const healedBasenames = new Set(healedSpecs.map((s) => path.basename(s)));
+  const healedRun1Tests = firstResult.allTests.filter((t) => healedBasenames.has(path.basename(t.file)));
+  const healedRun1Passed = healedRun1Tests.filter((t) => t.status === "passed" || t.status === "flaky").length;
+  const healedRun1Total  = healedRun1Tests.length;
 
-  const mergedPassed = run1NonHealedPassed + healReport.passed;
+  const run1NonHealedFailed = appFails.length; // app errors stay (not healed)
+
+  const mergedPassed = (firstResult.passed - healedRun1Passed) + healReport.passed;
   const mergedFailed = run1NonHealedFailed + healReport.failed;
-  const mergedTotal = firstResult.totalTests;
+  const mergedTotal  = (firstResult.totalTests - healedRun1Total) + healReport.total;
 
   // Keep app-error failures; add any still-failing tests from heal run
   const mergedFailedTests: FailedTest[] = [

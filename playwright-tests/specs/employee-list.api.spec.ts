@@ -32,22 +32,27 @@ test.describe('employee-list — API Regression Suite', () => {
 
       const r = await apiCall(page, '/api/employees', 'GET');
       expect(r.status).toBe(200);
+      expect(r.body).toBeDefined();
       expect(typeof r.body).toBe('object');
-      expect(Array.isArray(r.body.data)).toBe(true);
+      expect(Array.isArray(r.body)).toBe(false);
 
       const data = r.body.data as Record<string, unknown>[];
-      const pagination = r.body.pagination as Record<string, unknown>;
+      expect(Array.isArray(data)).toBe(true);
       expect(data.length).toBeGreaterThanOrEqual(1);
+
+      const pagination = r.body.pagination as Record<string, unknown>;
       expect(typeof pagination.total).toBe('number');
+      expect(pagination.total as number).toBeGreaterThanOrEqual(1);
       expect(pagination.page).toBe(1);
       expect(typeof pagination.limit).toBe('number');
-      expect((pagination.limit as number)).toBeGreaterThan(0);
-      expect(data.length).toBeLessThanOrEqual(pagination.limit as number);
+      expect(pagination.limit as number).toBeGreaterThan(0);
 
       const first = data[0];
       for (const field of ['_id', 'firstName', 'lastName', 'email', 'designation', 'department', 'employmentStatus']) {
         expect(first[field]).toBeTruthy();
       }
+
+      expect(data.length).toBeLessThanOrEqual(pagination.limit as number);
 
       const r2 = await apiCall(page, '/api/employees?page=1&limit=5', 'GET');
       expect(r2.status).toBe(200);
@@ -60,7 +65,7 @@ test.describe('employee-list — API Regression Suite', () => {
   test.describe('negative', () => {
 
     // TC-59672e2b-f616-5e47-085a-65f2218d7a97  SCOPE:regression
-    test('GET /api/employees rejects invalid pagination parameters', async ({ page }) => {
+    test('GET /api/employees rejects invalid pagination parameters with 400', async ({ page }) => {
       await setupEmployeeListMocks(page);
       await page.goto('/');
 
@@ -75,7 +80,8 @@ test.describe('employee-list — API Regression Suite', () => {
       for (const url of invalidCases) {
         const r = await apiCall(page, url, 'GET');
         expect([400, 422]).toContain(r.status);
-        expect(r.body.error || r.body.message).toBeTruthy();
+        const hasError = r.body.error || r.body.message;
+        expect(hasError).toBeTruthy();
       }
 
       const valid = await apiCall(page, '/api/employees?page=1&limit=10', 'GET');

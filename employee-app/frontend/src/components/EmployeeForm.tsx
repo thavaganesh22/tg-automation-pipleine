@@ -9,6 +9,7 @@ type FormData = {
   lastName:         string;
   email:            string;
   phone:            string;
+  cellPhone:        string;
   designation:      string;
   department:       string;
   employmentType:   string;
@@ -35,6 +36,7 @@ function toFormData(emp?: Employee | null): FormData {
     lastName:         emp?.lastName         ?? "",
     email:            emp?.email            ?? "",
     phone:            emp?.phone            ?? "",
+    cellPhone:        emp?.cellPhone        ?? "",
     designation:      emp?.designation      ?? "",
     department:       emp?.department       ?? "",
     employmentType:   emp?.employmentType   ?? "",
@@ -59,6 +61,10 @@ function validate(data: FormData): Errors {
   if (!data.email.trim())            errs.email            = "Required";
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email))
                                      errs.email            = "Invalid email";
+  if (data.phone.trim() && !/^\+?[\d\s\-().]{7,30}$/.test(data.phone.trim()))
+                                     errs.phone            = "Invalid phone format";
+  if (data.cellPhone.trim() && !/^\+?[\d\s\-().]{7,30}$/.test(data.cellPhone.trim()))
+                                     errs.cellPhone        = "Invalid phone format";
   if (!data.designation.trim())      errs.designation      = "Required";
   if (!data.department)              errs.department       = "Required";
   if (!data.employmentType)          errs.employmentType   = "Required";
@@ -157,12 +163,21 @@ export function EmployeeForm({ employee, onSave, onCancel, onDelete, saving }: P
               />
               {err("email")}
             </F>
-            <F id="phone" label="Phone">
+            <F id="phone" label="Work Phone">
               <input
                 id="phone" data-testid="phone-input" className="form-input"
                 value={form.phone} onChange={(e) => set("phone", e.target.value)}
                 placeholder="+1-416-555-0192"
               />
+              {err("phone")}
+            </F>
+            <F id="cellPhone" label="Cell Phone">
+              <input
+                id="cellPhone" data-testid="cellPhone-input" className="form-input"
+                value={form.cellPhone} onChange={(e) => set("cellPhone", e.target.value)}
+                placeholder="+1-416-555-0193"
+              />
+              {err("cellPhone")}
             </F>
           </div>
         </div>

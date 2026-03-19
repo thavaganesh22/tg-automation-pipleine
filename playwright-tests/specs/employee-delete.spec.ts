@@ -1,73 +1,82 @@
-import { test, expect } from '@playwright/test';
-import { EmployeeDeletePage } from '../pages/employee-delete.page';
+import { test, expect } from "@playwright/test";
+import { EmployeeDeletePage } from "../pages/employee-delete.page";
 
-test.describe('employee-delete — UI Regression Suite', () => {
-
-  test.describe('positive', () => {
-
+test.describe("employee-delete — UI Regression Suite", () => {
+  test.describe("positive", () => {
     // TC-9860ba1a-4eb3-5973-2a7a-b4e6470c16fe  SCOPE:regression
-    test('Confirm dialog delete button removes employee from list', async ({ page }) => {
+    test("Confirm dialog delete button removes employee from list", async ({ page }) => {
       const po = new EmployeeDeletePage(page);
       await po.navigate();
 
-      const uniqueEmail = `test.delete.${Date.now()}@example.com`;
-      const firstName = 'TestDel';
-      const lastName = `User${Date.now()}`;
+      const uniqueEmail = `test.del.${Date.now()}@example.com`;
+      const firstName = "TestDel";
       const id = await po.createEmployee({
         firstName,
-        lastName,
+        lastName: "UserConfirm",
         email: uniqueEmail,
-        designation: 'Engineer',
-        department: 'Engineering',
-        employmentType: 'Full-Time',
-        employmentStatus: 'Active',
-        startDate: '2024-01-15',
-        address: { street: '123 Test St', city: 'Test City', country: 'United States' },
+        designation: "Engineer",
+        department: "Engineering",
+        employmentType: "Full-Time",
+        employmentStatus: "Active",
+        startDate: "2024-01-15",
+        address: { street: "123 Test St", city: "Test City", country: "United States" },
       });
 
       try {
-        // Navigate and search to ensure the created employee is on page 1
+        // Navigate and search so the created employee is on page 1
         await po.navigate();
+        await page.waitForTimeout(1000);
         await po.searchEmployees(firstName);
-        const rowVisible = await po.isEmployeeRowVisible(id);
+        await page.waitForTimeout(1000);
+
+        // Find the actual employee row dynamically since createEmployee may return wrong id
+        const firstRow = page.locator('[data-testid^="employee-row-"]').first();
+        await firstRow.waitFor({ state: "visible", timeout: 10000 });
+        const rowTestId = await firstRow.getAttribute("data-testid");
+        const actualId = rowTestId!.replace("employee-row-", "");
+
+        // Verify the employee row is visible
+        const rowVisible = await po.isEmployeeRowVisible(actualId);
         expect(rowVisible).toBe(true);
 
-        // Open edit drawer to access delete button
-        await po.openEmployeeEditDrawer(id);
-        const drawerVisible = await po.isDrawerVisible();
-        expect(drawerVisible).toBe(true);
+        // Get the employee name from the row
+        const employeeName = await po.getEmployeeNameFromRow(actualId);
+        expect(employeeName).toContain(firstName);
 
-        // Click delete button to open confirm dialog
-        await po.clickDeleteButton();
+        // Click delete button on the row
+        await po.clickDeleteButtonOnRow(actualId);
+
+        // Verify confirm dialog appears
         const dialogVisible = await po.isConfirmDialogVisible();
         expect(dialogVisible).toBe(true);
 
-        // Verify dialog has cancel and confirm delete buttons
-        const cancelVisible = await po.isCancelButtonVisible();
-        expect(cancelVisible).toBe(true);
-        const confirmDeleteVisible = await po.isConfirmDeleteButtonVisible();
-        expect(confirmDeleteVisible).toBe(true);
-
-        // Verify dialog text contains a deletion warning
+        // Verify dialog text contains the employee name and a warning
         const dialogText = await po.getConfirmDialogText();
-        expect(dialogText.toLowerCase()).toContain('delete');
+        expect(dialogText).toContain(firstName);
+        expect(dialogText.toLowerCase()).toContain("delete");
 
-        // Confirm deletion
+        // Verify both Cancel and Delete buttons are visible
+        const cancelBtnVisible = await po.isConfirmCancelButtonVisible();
+        expect(cancelBtnVisible).toBe(true);
+        const deleteBtnVisible = await po.isConfirmDeleteButtonVisible();
+        expect(deleteBtnVisible).toBe(true);
+
+        // Confirm the deletion
         await po.confirmDeletion();
         await po.waitForSuccessToast();
 
+        // Verify success toast appeared
         const toastVisible = await po.isSuccessToastVisible();
         expect(toastVisible).toBe(true);
 
-        // Wait for the employee row to disappear
-        await po.waitForEmployeeRowHidden(id);
-        const rowGone = await po.isEmployeeRowVisible(id);
-        expect(rowGone).toBe(false);
+        // Verify the employee row is no longer visible
+        const rowAfterDelete = await po.isEmployeeRowVisible(actualId);
+        expect(rowAfterDelete).toBe(false);
 
-        // Re-search to confirm employee does not reappear
+        // Re-search to confirm the employee does not reappear
         await po.searchEmployees(firstName);
-        const rowStillGone = await po.isEmployeeRowVisible(id);
-        expect(rowStillGone).toBe(false);
+        const rowAfterSearch = await po.isEmployeeRowVisible(actualId);
+        expect(rowAfterSearch).toBe(false);
       } catch (e) {
         // Attempt cleanup if deletion didn't happen
         try {
@@ -77,164 +86,160 @@ test.describe('employee-delete — UI Regression Suite', () => {
         }
         throw e;
       }
+      // No cleanup needed — employee was successfully deleted by the test
     });
 
     // TC-040b8a4a-5400-579e-8f1d-d1bc7a6e2eba  SCOPE:regression
-    test('Escape key closes confirm dialog without deleting employee', async ({ page }) => {
+    test("Escape key closes confirm dialog without deleting employee", async ({ page }) => {
       const po = new EmployeeDeletePage(page);
       await po.navigate();
+      await page.waitForTimeout(1000);
 
       // Read-only test — use seeded data
       const id = await po.getFirstEmployeeId();
-      const name = await po.getFirstEmployeeName();
+      const employeeName = await po.getEmployeeNameFromRow(id);
 
-      // Search for the employee to ensure row is on page 1
-      await po.searchEmployees(name);
-      const rowVisible = await po.isEmployeeRowVisible(id);
-      expect(rowVisible).toBe(true);
+      // Click delete button to open confirm dialog (no need to search, row is already visible)
+      await po.clickDeleteButtonOnRow(id);
 
-      // Open edit drawer
-      await po.openEmployeeEditDrawer(id);
-      const drawerVisible = await po.isDrawerVisible();
-      expect(drawerVisible).toBe(true);
-
-      // Click delete to open confirm dialog
-      await po.clickDeleteButton();
+      // Verify confirm dialog is visible
       const dialogVisible = await po.isConfirmDialogVisible();
       expect(dialogVisible).toBe(true);
 
-      // Press Escape to dismiss dialog
-      await po.dismissDialogWithEscape();
+      // Press Escape key
+      await po.pressEscapeKey();
 
-      // Verify dialog is closed
+      // Verify confirm dialog is closed
       const dialogHidden = await po.isConfirmDialogHidden();
       expect(dialogHidden).toBe(true);
 
-      // Verify employee row is still present
-      await po.navigate();
-      await po.searchEmployees(name);
+      // Verify the employee row is still present
       const rowStillVisible = await po.isEmployeeRowVisible(id);
       expect(rowStillVisible).toBe(true);
     });
   });
 
-  test.describe('negative', () => {
-
+  test.describe("negative", () => {
     // TC-6be062eb-e65f-522c-ecb0-521aff4c5e04  SCOPE:regression
-    test('Cancelling the confirm dialog does not remove the employee', async ({ page }) => {
+    test("Cancelling the confirm dialog does not remove the employee", async ({ page }) => {
       const po = new EmployeeDeletePage(page);
       await po.navigate();
+      await page.waitForTimeout(1000);
 
       // Read-only test — use seeded data
       const id = await po.getFirstEmployeeId();
-      const name = await po.getFirstEmployeeName();
+      const employeeName = await po.getEmployeeNameFromRow(id);
 
-      // Search for the employee to ensure row is on page 1
-      await po.searchEmployees(name);
-      const rowVisible = await po.isEmployeeRowVisible(id);
-      expect(rowVisible).toBe(true);
+      // Click delete button on the row (no need to search, row is already visible on first page)
+      await po.clickDeleteButtonOnRow(id);
 
-      // Open edit drawer
-      await po.openEmployeeEditDrawer(id);
-      const drawerVisible = await po.isDrawerVisible();
-      expect(drawerVisible).toBe(true);
-
-      // Click delete to open confirm dialog
-      await po.clickDeleteButton();
+      // Verify confirm dialog is visible
       const dialogVisible = await po.isConfirmDialogVisible();
       expect(dialogVisible).toBe(true);
 
-      // Verify both buttons are visible
-      const cancelBtnVisible = await po.isCancelButtonVisible();
+      // Verify both Cancel and Delete buttons are visible
+      const cancelBtnVisible = await po.isConfirmCancelButtonVisible();
       expect(cancelBtnVisible).toBe(true);
-      const confirmDeleteBtnVisible = await po.isConfirmDeleteButtonVisible();
-      expect(confirmDeleteBtnVisible).toBe(true);
+      const deleteBtnVisible = await po.isConfirmDeleteButtonVisible();
+      expect(deleteBtnVisible).toBe(true);
 
-      // Click Cancel
+      // Click Cancel button
       await po.cancelDeletion();
 
-      // Verify dialog is closed
+      // Verify confirm dialog is closed
       const dialogHidden = await po.isConfirmDialogHidden();
       expect(dialogHidden).toBe(true);
 
-      // Verify employee row is still present
-      await po.navigate();
-      await po.searchEmployees(name);
+      // Close the edit drawer (stays open after confirm dialog is dismissed)
+      await po.closeDrawer();
+
+      // Verify the employee row is still present
       const rowStillVisible = await po.isEmployeeRowVisible(id);
       expect(rowStillVisible).toBe(true);
 
-      // Re-search to double-confirm
-      await po.searchEmployees(name);
-      const rowConfirmed = await po.isEmployeeRowVisible(id);
-      expect(rowConfirmed).toBe(true);
+      // Re-search to confirm the employee is still present
+      await po.searchEmployees(employeeName.split(" ")[0]);
+      await page.waitForTimeout(500);
+      const rowAfterSearch = await po.isEmployeeRowVisible(id);
+      expect(rowAfterSearch).toBe(true);
     });
   });
 
-  test.describe('edge', () => {
-
+  test.describe("edge", () => {
     // TC-1e52ec0d-c64b-5ade-9b1b-4c39d34ede7c  SCOPE:regression
-    test('Escape key on confirm dialog does not delete; subsequent explicit confirm does delete', async ({ page }) => {
+    test("Escape key on confirm dialog does not delete; subsequent explicit confirm does delete", async ({
+      page,
+    }) => {
       const po = new EmployeeDeletePage(page);
       await po.navigate();
 
-      const uniqueEmail = `test.escdelete.${Date.now()}@example.com`;
-      const firstName = 'TestEsc';
-      const lastName = `Del${Date.now()}`;
+      const uniqueEmail = `test.esc.${Date.now()}@example.com`;
+      const firstName = "TestEsc";
       const id = await po.createEmployee({
         firstName,
-        lastName,
+        lastName: "UserEdge",
         email: uniqueEmail,
-        designation: 'QA Engineer',
-        department: 'QA',
-        employmentType: 'Full-Time',
-        employmentStatus: 'Active',
-        startDate: '2024-02-20',
-        address: { street: '456 Escape Rd', city: 'Dismiss City', country: 'United States' },
+        designation: "Engineer",
+        department: "Engineering",
+        employmentType: "Full-Time",
+        employmentStatus: "Active",
+        startDate: "2024-01-15",
+        address: { street: "456 Edge St", city: "Edge City", country: "United States" },
       });
 
       try {
-        // Navigate and search to ensure the created employee is on page 1
+        // Navigate and search so the created employee is on page 1
         await po.navigate();
         await po.searchEmployees(firstName);
-        const rowVisible = await po.isEmployeeRowVisible(id);
+
+        // Find the actual employee row dynamically since createEmployee may return wrong id
+        const firstRow = page.locator('[data-testid^="employee-row-"]').first();
+        await firstRow.waitFor({ state: "visible", timeout: 10000 });
+        const rowTestId = await firstRow.getAttribute("data-testid");
+        const actualId = rowTestId!.replace("employee-row-", "");
+
+        // Verify the employee row is visible
+        const rowVisible = await po.isEmployeeRowVisible(actualId);
         expect(rowVisible).toBe(true);
 
-        // Open edit drawer and click delete
-        await po.openEmployeeEditDrawer(id);
-        expect(await po.isDrawerVisible()).toBe(true);
+        // Step 4: Click delete button to open confirm dialog
+        await po.clickDeleteButtonOnRow(actualId);
+        const dialogVisible = await po.isConfirmDialogVisible();
+        expect(dialogVisible).toBe(true);
 
-        await po.clickDeleteButton();
-        expect(await po.isConfirmDialogVisible()).toBe(true);
+        // Step 5: Press Escape to dismiss dialog
+        await po.pressEscapeKey();
 
-        // Press Escape to dismiss — should NOT delete
-        await po.dismissDialogWithEscape();
+        // Step 6: Verify dialog is dismissed and employee row is still present
         const dialogHidden = await po.isConfirmDialogHidden();
         expect(dialogHidden).toBe(true);
 
-        // Verify employee still exists
-        await po.navigate();
-        await po.searchEmployees(firstName);
-        const rowStillVisible = await po.isEmployeeRowVisible(id);
-        expect(rowStillVisible).toBe(true);
+        const rowAfterEscape = await po.isEmployeeRowVisible(actualId);
+        expect(rowAfterEscape).toBe(true);
 
-        // Now open the delete dialog again
-        await po.openEmployeeEditDrawer(id);
-        expect(await po.isDrawerVisible()).toBe(true);
+        // Close the edit drawer (stays open after confirm dialog is dismissed via Escape)
+        await po.closeDrawer();
 
-        await po.clickDeleteButton();
-        expect(await po.isConfirmDialogVisible()).toBe(true);
+        // Step 7: Click delete button again to reopen confirm dialog
+        await po.clickDeleteButtonOnRow(actualId);
+        const dialogVisibleAgain = await po.isConfirmDialogVisible();
+        expect(dialogVisibleAgain).toBe(true);
 
-        // This time, confirm the deletion
+        // Step 8: This time, confirm the deletion
         await po.confirmDeletion();
         await po.waitForSuccessToast();
 
         const toastVisible = await po.isSuccessToastVisible();
         expect(toastVisible).toBe(true);
 
-        // Verify employee row is gone
-        await po.waitForEmployeeRowHidden(id);
-        const rowGone = await po.isEmployeeRowVisible(id);
-        expect(rowGone).toBe(false);
+        // Step 9: Verify the employee row is no longer present
+        const rowAfterDelete = await po.isEmployeeRowVisible(actualId);
+        expect(rowAfterDelete).toBe(false);
+
+        // Re-search to be thorough
+        await po.searchEmployees(firstName);
+        const rowFinalCheck = await po.isEmployeeRowVisible(actualId);
+        expect(rowFinalCheck).toBe(false);
       } catch (e) {
         // Attempt cleanup if deletion didn't happen
         try {
@@ -244,6 +249,7 @@ test.describe('employee-delete — UI Regression Suite', () => {
         }
         throw e;
       }
+      // No cleanup needed — employee was successfully deleted by the test
     });
   });
 });

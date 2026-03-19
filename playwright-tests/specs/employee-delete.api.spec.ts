@@ -30,12 +30,8 @@ test.describe('employee-delete — API Regression Suite', () => {
       await setupEmployeeDeleteMocks(page);
       await page.goto('/');
 
-      const created = await apiCall(page, '/api/employees', 'POST', {
-        firstName: 'Delete', lastName: 'Target', email: `delete.target+${Date.now()}@example.com`,
-        designation: 'Engineer', department: 'Engineering', employmentType: 'Full-Time',
-        employmentStatus: 'Active', startDate: '2024-01-15',
-        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
-      });
+      const payload = { firstName: 'Delete', lastName: 'Target', email: `delete.target+${Date.now()}@example.com`, designation: 'Engineer', department: 'Engineering', employmentType: 'Full-Time', employmentStatus: 'Active', startDate: '2024-01-15', address: { street: '123 Test St', city: 'Test City', country: 'United States' } };
+      const created = await apiCall(page, '/api/employees', 'POST', payload);
       expect(created.status).toBe(201);
       const id = created.body._id as string;
       expect(id).toBeTruthy();
@@ -54,8 +50,7 @@ test.describe('employee-delete — API Regression Suite', () => {
       const list = await apiCall(page, '/api/employees?limit=100', 'GET');
       expect(list.status).toBe(200);
       const data = list.body.data as Record<string, unknown>[];
-      const found = data.some((e) => e._id === id);
-      expect(found).toBe(false);
+      expect(data.some((e) => e._id === id)).toBe(false);
     });
 
   });
@@ -63,46 +58,33 @@ test.describe('employee-delete — API Regression Suite', () => {
   test.describe('negative', () => {
 
     // TC-61ed95d1-acb2-5e9c-44c8-effb09190633  SCOPE:regression
-    test('DELETE /api/employees/:id returns 404 for non-existent ID', async ({ page }) => {
+    test('DELETE /api/employees/:id returns 404 for non-existent or already-deleted ID, 400 for malformed ID', async ({ page }) => {
       await setupEmployeeDeleteMocks(page);
       await page.goto('/');
 
-      const nonExistent = await apiCall(page, '/api/employees/000000000000000000000000', 'DELETE');
-      expect(nonExistent.status).toBe(404);
-      expect(nonExistent.body.error || nonExistent.body.message).toBeTruthy();
-    });
+      // Non-existent valid ObjectId
+      const r1 = await apiCall(page, '/api/employees/000000000000000000000000', 'DELETE');
+      expect(r1.status).toBe(404);
+      expect(r1.body.error || r1.body.message).toBeTruthy();
 
-    // TC-61ed95d1-acb2-5e9c-44c8-effb09190633  SCOPE:regression
-    test('DELETE /api/employees/:id returns 404 for already-deleted employee', async ({ page }) => {
-      await setupEmployeeDeleteMocks(page);
-      await page.goto('/');
-
-      const created = await apiCall(page, '/api/employees', 'POST', {
-        firstName: 'Double', lastName: 'Delete', email: `double.delete+${Date.now()}@example.com`,
-        designation: 'Analyst', department: 'Operations', employmentType: 'Full-Time',
-        employmentStatus: 'Active', startDate: '2024-03-01',
-        address: { street: '456 Edge Ave', city: 'Edge City', country: 'United States' }
-      });
+      // Create then delete, then delete again
+      const payload = { firstName: 'Double', lastName: 'Delete', email: `double.delete+${Date.now()}@example.com`, designation: 'Analyst', department: 'Operations', employmentType: 'Full-Time', employmentStatus: 'Active', startDate: '2024-03-01', address: { street: '456 Edge Ave', city: 'Edge City', country: 'United States' } };
+      const created = await apiCall(page, '/api/employees', 'POST', payload);
       expect(created.status).toBe(201);
-      const id = created.body._id as string;
-      expect(id).toBeTruthy();
+      const newId = created.body._id as string;
+      expect(newId).toBeTruthy();
 
-      const firstDel = await apiCall(page, `/api/employees/${id}`, 'DELETE');
-      expect(firstDel.status).toBe(204);
+      const del1 = await apiCall(page, `/api/employees/${newId}`, 'DELETE');
+      expect(del1.status).toBe(204);
 
-      const secondDel = await apiCall(page, `/api/employees/${id}`, 'DELETE');
-      expect(secondDel.status).toBe(404);
-      expect(secondDel.body.error || secondDel.body.message).toBeTruthy();
-    });
+      const del2 = await apiCall(page, `/api/employees/${newId}`, 'DELETE');
+      expect(del2.status).toBe(404);
+      expect(del2.body.error || del2.body.message).toBeTruthy();
 
-    // TC-61ed95d1-acb2-5e9c-44c8-effb09190633  SCOPE:regression
-    test('DELETE /api/employees/:id returns 400 for malformed ID', async ({ page }) => {
-      await setupEmployeeDeleteMocks(page);
-      await page.goto('/');
-
-      const malformed = await apiCall(page, '/api/employees/not-a-valid-id', 'DELETE');
-      expect(malformed.status).toBe(400);
-      expect(malformed.body.error || malformed.body.message).toBeTruthy();
+      // Malformed ID
+      const r3 = await apiCall(page, '/api/employees/not-a-valid-id', 'DELETE');
+      expect(r3.status).toBe(400);
+      expect(r3.body.error || r3.body.message).toBeTruthy();
     });
 
   });

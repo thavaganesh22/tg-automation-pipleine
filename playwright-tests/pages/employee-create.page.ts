@@ -1,15 +1,15 @@
 import { Page } from '@playwright/test';
 
 export class EmployeeCreatePage {
+  private readonly page: Page;
   private readonly baseUrl = process.env.BASE_URL ?? 'http://localhost:3000';
 
-  private readonly addEmployeeBtn = '[data-testid="add-employee-btn"]';
-  private readonly searchInput = '[data-testid="search-input"]';
   private readonly employeeTable = '[data-testid="employee-table"]';
   private readonly loadingRow = '[data-testid="loading-row"]';
+  private readonly addEmployeeBtn = '[data-testid="add-employee-btn"]';
+  private readonly searchInput = '[data-testid="search-input"]';
   private readonly employeeDrawer = '[data-testid="employee-drawer"]';
   private readonly closeDrawerBtn = '[data-testid="close-drawer-btn"]';
-  private readonly successToast = '[data-testid="success-toast"]';
   private readonly firstNameInput = '[data-testid="firstName-input"]';
   private readonly lastNameInput = '[data-testid="lastName-input"]';
   private readonly emailInput = '[data-testid="email-input"]';
@@ -23,17 +23,10 @@ export class EmployeeCreatePage {
   private readonly countryInput = '[data-testid="country-input"]';
   private readonly cancelBtn = '[data-testid="cancel-btn"]';
   private readonly submitBtn = '[data-testid="submit-btn"]';
-  private readonly firstNameError = '[data-testid="firstName-error"]';
-  private readonly lastNameError = '[data-testid="lastName-error"]';
-  private readonly emailError = '[data-testid="email-error"]';
-  private readonly designationError = '[data-testid="designation-error"]';
-  private readonly departmentError = '[data-testid="department-error"]';
-  private readonly employmentTypeError = '[data-testid="employmentType-error"]';
-  private readonly addressStreetError = '[data-testid="address-street-error"]';
-  private readonly addressCityError = '[data-testid="address-city-error"]';
-  private readonly addressCountryError = '[data-testid="address-country-error"]';
-
-  constructor(private readonly page: Page) {}
+  private readonly successToast = '[data-testid="success-toast"]';
+  constructor(page: Page) {
+    this.page = page;
+  }
 
   async navigate(): Promise<void> {
     await this.page.goto('/');
@@ -50,17 +43,18 @@ export class EmployeeCreatePage {
   }
 
   async getFirstVisibleEmployeeId(): Promise<string> {
-    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
     const row = this.page.locator('[data-testid^="employee-row-"]').first();
     const testId = await row.getAttribute('data-testid');
-    if (!testId) throw new Error('No visible employee rows');
-    return testId.replace('employee-row-', '');
+    return testId!.replace('employee-row-', '');
   }
 
-  async createEmployee(payload: { firstName: string; lastName: string; email: string; designation: string; department: string; employmentType: string; employmentStatus: string; startDate: string; address: { street: string; city: string; country: string } }): Promise<string> {
+  async createEmployee(payload: {
+    firstName: string; lastName: string; email: string; designation: string;
+    department: string; employmentType: string; employmentStatus: string;
+    startDate: string; address: { street: string; city: string; country: string };
+  }): Promise<string> {
     const res = await this.page.request.post(`${this.baseUrl}/api/employees`, {
-      data: payload,
-      headers: { 'Content-Type': 'application/json' },
+      data: payload, headers: { 'Content-Type': 'application/json' },
     });
     const body = await res.json();
     return body._id as string;
@@ -75,8 +69,8 @@ export class EmployeeCreatePage {
     await searchLoc.waitFor({ state: 'visible' });
     await searchLoc.click();
     await searchLoc.fill(query);
-    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
-    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+    await this.page.locator('[data-testid="loading-row"]').waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
+    await this.page.locator('[data-testid="loading-row"]').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
   }
 
   async isEmployeeRowVisible(id: string): Promise<boolean> {
@@ -115,6 +109,39 @@ export class EmployeeCreatePage {
     } catch {
       return false;
     }
+  }
+
+  async getFieldValue(selector: string): Promise<string> {
+    await this.page.waitForSelector(selector, { state: 'visible' });
+    return this.page.locator(selector).inputValue();
+  }
+
+  async getFirstNameValue(): Promise<string> {
+    return this.getFieldValue(this.firstNameInput);
+  }
+
+  async getLastNameValue(): Promise<string> {
+    return this.getFieldValue(this.lastNameInput);
+  }
+
+  async getEmailValue(): Promise<string> {
+    return this.getFieldValue(this.emailInput);
+  }
+
+  async getDepartmentValue(): Promise<string> {
+    return this.getFieldValue(this.departmentSelect);
+  }
+
+  async getEmploymentTypeValue(): Promise<string> {
+    return this.getFieldValue(this.employmentTypeSelect);
+  }
+
+  async getEmploymentStatusValue(): Promise<string> {
+    return this.getFieldValue(this.employmentStatusSelect);
+  }
+
+  async getStartDateValue(): Promise<string> {
+    return this.getFieldValue(this.startDateInput);
   }
 
   async fillFirstName(value: string): Promise<void> {
@@ -182,7 +209,7 @@ export class EmployeeCreatePage {
     ]).catch(() => {});
   }
 
-  async cancelDrawer(): Promise<void> {
+  async cancelEmployeeForm(): Promise<void> {
     await this.page.waitForSelector(this.cancelBtn, { state: 'visible' });
     await this.page.click(this.cancelBtn);
   }
@@ -196,104 +223,67 @@ export class EmployeeCreatePage {
     await this.page.waitForSelector(this.successToast, { state: 'visible', timeout: 15000 });
   }
 
-  async getFirstNameValue(): Promise<string> {
-    await this.page.waitForSelector(this.firstNameInput, { state: 'visible' });
-    return this.page.locator(this.firstNameInput).inputValue();
-  }
-
-  async getLastNameValue(): Promise<string> {
-    await this.page.waitForSelector(this.lastNameInput, { state: 'visible' });
-    return this.page.locator(this.lastNameInput).inputValue();
-  }
-
-  async getEmailValue(): Promise<string> {
-    await this.page.waitForSelector(this.emailInput, { state: 'visible' });
-    return this.page.locator(this.emailInput).inputValue();
-  }
-
-  async getDepartmentValue(): Promise<string> {
-    await this.page.waitForSelector(this.departmentSelect, { state: 'visible' });
-    return this.page.locator(this.departmentSelect).inputValue();
-  }
-
-  async getEmploymentTypeValue(): Promise<string> {
-    await this.page.waitForSelector(this.employmentTypeSelect, { state: 'visible' });
-    return this.page.locator(this.employmentTypeSelect).inputValue();
-  }
-
-  async getEmploymentStatusValue(): Promise<string> {
-    await this.page.waitForSelector(this.employmentStatusSelect, { state: 'visible' });
-    return this.page.locator(this.employmentStatusSelect).inputValue();
-  }
-
-  async getStartDateValue(): Promise<string> {
-    await this.page.waitForSelector(this.startDateInput, { state: 'visible' });
-    return this.page.locator(this.startDateInput).inputValue();
-  }
-
-  async isFirstNameErrorVisible(): Promise<boolean> {
-    return this.page.locator(this.firstNameError).isVisible();
-  }
-
-  async isLastNameErrorVisible(): Promise<boolean> {
-    return this.page.locator(this.lastNameError).isVisible();
-  }
-
-  async isEmailErrorVisible(): Promise<boolean> {
-    return this.page.locator(this.emailError).isVisible();
-  }
-
-  async isDesignationErrorVisible(): Promise<boolean> {
-    return this.page.locator(this.designationError).isVisible();
-  }
-
-  async isDepartmentErrorVisible(): Promise<boolean> {
-    return this.page.locator(this.departmentError).isVisible();
-  }
-
-  async isEmploymentTypeErrorVisible(): Promise<boolean> {
-    return this.page.locator(this.employmentTypeError).isVisible();
-  }
-
-  async isStreetErrorVisible(): Promise<boolean> {
-    return this.page.locator(this.addressStreetError).isVisible();
-  }
-
-  async isCityErrorVisible(): Promise<boolean> {
-    return this.page.locator(this.addressCityError).isVisible();
-  }
-
-  async isCountryErrorVisible(): Promise<boolean> {
-    return this.page.locator(this.addressCountryError).isVisible();
-  }
-
-  async getFirstNameErrorText(): Promise<string> {
-    await this.page.waitForSelector(this.firstNameError, { state: 'visible' });
-    return this.page.locator(this.firstNameError).innerText();
-  }
-
-  async getLastNameErrorText(): Promise<string> {
-    await this.page.waitForSelector(this.lastNameError, { state: 'visible' });
-    return this.page.locator(this.lastNameError).innerText();
-  }
-
-  async getEmailErrorText(): Promise<string> {
-    await this.page.waitForSelector(this.emailError, { state: 'visible' });
-    return this.page.locator(this.emailError).innerText();
-  }
-
-  async getDesignationErrorText(): Promise<string> {
-    await this.page.waitForSelector(this.designationError, { state: 'visible' });
-    return this.page.locator(this.designationError).innerText();
-  }
-
-  async isAddEmployeeBtnVisible(): Promise<boolean> {
+  async isSuccessToastVisible(): Promise<boolean> {
     try {
-      await this.page.waitForSelector(this.addEmployeeBtn, { state: 'visible', timeout: 3000 });
+      await this.page.waitForSelector(this.successToast, { state: 'visible', timeout: 5000 });
       return true;
     } catch {
       return false;
     }
+  }
+
+  async isValidationErrorVisible(testId: string): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(`[data-testid="${testId}"]`, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async isFirstNameErrorVisible(): Promise<boolean> {
+    return this.isValidationErrorVisible('firstName-error');
+  }
+
+  async isLastNameErrorVisible(): Promise<boolean> {
+    return this.isValidationErrorVisible('lastName-error');
+  }
+
+  async isEmailErrorVisible(): Promise<boolean> {
+    return this.isValidationErrorVisible('email-error');
+  }
+
+  async isDesignationErrorVisible(): Promise<boolean> {
+    return this.isValidationErrorVisible('designation-error');
+  }
+
+  async isDepartmentErrorVisible(): Promise<boolean> {
+    return this.isValidationErrorVisible('department-error');
+  }
+
+  async isEmploymentTypeErrorVisible(): Promise<boolean> {
+    return this.isValidationErrorVisible('employmentType-error');
+  }
+
+  async isStreetErrorVisible(): Promise<boolean> {
+    return this.isValidationErrorVisible('address-street-error');
+  }
+
+  async isCityErrorVisible(): Promise<boolean> {
+    return this.isValidationErrorVisible('address-city-error');
+  }
+
+  async isCountryErrorVisible(): Promise<boolean> {
+    return this.isValidationErrorVisible('address-country-error');
+  }
+
+  async getValidationErrorText(testId: string): Promise<string> {
+    await this.page.waitForSelector(`[data-testid="${testId}"]`, { state: 'visible' });
+    return this.page.locator(`[data-testid="${testId}"]`).innerText();
+  }
+
+  async getEmailErrorText(): Promise<string> {
+    return this.getValidationErrorText('email-error');
   }
 
   async getEmployeeNameFromRow(id: string): Promise<string> {
@@ -304,5 +294,14 @@ export class EmployeeCreatePage {
   async getEmployeeEmailFromRow(id: string): Promise<string> {
     const row = this.page.locator(`[data-testid="employee-row-${id}"]`);
     return row.locator('[data-testid="employee-email"]').innerText();
+  }
+
+  async isAddEmployeeButtonVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.addEmployeeBtn, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

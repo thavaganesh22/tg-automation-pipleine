@@ -43,3 +43,6 @@ Thumbs.db
 *.pptx
 /infra
 scripts/build-exec-pptx.py
+
+# ── Wiki drafts (maintained directly on GitHub Wiki) ──────────
+docs/wiki/

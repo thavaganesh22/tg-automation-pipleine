@@ -52,7 +52,7 @@ test.describe('health — API Regression Suite', () => {
       expect([404, 405]).toContain(delR.status);
       const putR = await apiCall(page, '/api/health', 'PUT', {});
       expect([404, 405]).toContain(putR.status);
-      // Confirm endpoint still works after invalid methods
+      // Confirm endpoint still operational
       const getR = await apiCall(page, '/api/health', 'GET');
       expect(getR.status).toBe(200);
       expect(getR.body.status).toBe('ok');

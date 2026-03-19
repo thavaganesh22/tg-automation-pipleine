@@ -1,7 +1,6 @@
 import { Page } from '@playwright/test';
 
 export class EmployeeFiltersPage {
-  private readonly page: Page;
   private readonly baseUrl = process.env.BASE_URL ?? 'http://localhost:3000';
 
   private readonly employeeTable = '[data-testid="employee-table"]';
@@ -12,9 +11,7 @@ export class EmployeeFiltersPage {
   private readonly emptyState = '[data-testid="empty-state"]';
   private readonly successToast = '[data-testid="success-toast"]';
 
-  constructor(page: Page) {
-    this.page = page;
-  }
+  constructor(private readonly page: Page) {}
 
   async navigate(): Promise<void> {
     await this.page.goto('/');
@@ -28,6 +25,13 @@ export class EmployeeFiltersPage {
     const body = await res.json();
     if (!body.data || body.data.length === 0) throw new Error('No employees found');
     return body.data[0]._id as string;
+  }
+
+  async getFirstVisibleEmployeeId(): Promise<string> {
+    const row = this.page.locator('[data-testid^="employee-row-"]').first();
+    const testId = await row.getAttribute('data-testid');
+    if (!testId) throw new Error('No visible employee row found');
+    return testId.replace('employee-row-', '');
   }
 
   async createEmployee(payload: {
@@ -51,8 +55,8 @@ export class EmployeeFiltersPage {
     await searchLoc.waitFor({ state: 'visible' });
     await searchLoc.click();
     await searchLoc.fill(query);
-    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
-    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+    await this.page.locator('[data-testid="loading-row"]').waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
+    await this.page.locator('[data-testid="loading-row"]').waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
   }
 
   async isEmployeeRowVisible(id: string): Promise<boolean> {
@@ -92,6 +96,65 @@ export class EmployeeFiltersPage {
     return this.page.locator(`${this.departmentFilter} option`).allTextContents();
   }
 
+  async getStatusFilterOptions(): Promise<string[]> {
+    await this.page.waitForSelector(this.statusFilter, { state: 'visible' });
+    return this.page.locator(`${this.statusFilter} option`).allTextContents();
+  }
+
+  async selectDepartmentFilter(value: string): Promise<void> {
+    await this.page.waitForSelector(this.departmentFilter, { state: 'visible' });
+    await Promise.all([
+      this.page.waitForResponse(res => res.url().includes('/api/employees') && res.status() === 200),
+      this.page.selectOption(this.departmentFilter, { label: value }),
+    ]);
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  }
+
+  async selectDepartmentFilterByValue(value: string): Promise<void> {
+    await this.page.waitForSelector(this.departmentFilter, { state: 'visible' });
+    await Promise.all([
+      this.page.waitForResponse(res => res.url().includes('/api/employees') && res.status() === 200),
+      this.page.selectOption(this.departmentFilter, value),
+    ]);
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  }
+
+  async selectStatusFilter(value: string): Promise<void> {
+    await this.page.waitForSelector(this.statusFilter, { state: 'visible' });
+    await Promise.all([
+      this.page.waitForResponse(res => res.url().includes('/api/employees') && res.status() === 200),
+      this.page.selectOption(this.statusFilter, { label: value }),
+    ]);
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  }
+
+  async selectStatusFilterByValue(value: string): Promise<void> {
+    await this.page.waitForSelector(this.statusFilter, { state: 'visible' });
+    await Promise.all([
+      this.page.waitForResponse(res => res.url().includes('/api/employees') && res.status() === 200),
+      this.page.selectOption(this.statusFilter, value),
+    ]);
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  }
+
+  async resetDepartmentFilter(): Promise<void> {
+    await this.page.waitForSelector(this.departmentFilter, { state: 'visible' });
+    await Promise.all([
+      this.page.waitForResponse(res => res.url().includes('/api/employees') && res.status() === 200),
+      this.page.selectOption(this.departmentFilter, ''),
+    ]);
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  }
+
+  async resetStatusFilter(): Promise<void> {
+    await this.page.waitForSelector(this.statusFilter, { state: 'visible' });
+    await Promise.all([
+      this.page.waitForResponse(res => res.url().includes('/api/employees') && res.status() === 200),
+      this.page.selectOption(this.statusFilter, ''),
+    ]);
+    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+  }
+
   async getSelectedDepartmentFilter(): Promise<string> {
     await this.page.waitForSelector(this.departmentFilter, { state: 'visible' });
     return this.page.locator(this.departmentFilter).inputValue();
@@ -100,34 +163,6 @@ export class EmployeeFiltersPage {
   async getSelectedStatusFilter(): Promise<string> {
     await this.page.waitForSelector(this.statusFilter, { state: 'visible' });
     return this.page.locator(this.statusFilter).inputValue();
-  }
-
-  async filterByDepartment(value: string): Promise<void> {
-    await this.page.waitForSelector(this.departmentFilter, { state: 'visible' });
-    await this.page.selectOption(this.departmentFilter, { label: value });
-    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
-    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
-  }
-
-  async filterByStatus(value: string): Promise<void> {
-    await this.page.waitForSelector(this.statusFilter, { state: 'visible' });
-    await this.page.selectOption(this.statusFilter, { label: value });
-    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
-    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
-  }
-
-  async resetDepartmentFilter(): Promise<void> {
-    await this.page.waitForSelector(this.departmentFilter, { state: 'visible' });
-    await this.page.selectOption(this.departmentFilter, { label: 'All departments' });
-    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
-    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
-  }
-
-  async resetStatusFilter(): Promise<void> {
-    await this.page.waitForSelector(this.statusFilter, { state: 'visible' });
-    await this.page.selectOption(this.statusFilter, { label: 'All statuses' });
-    await this.page.locator(this.loadingRow).waitFor({ state: 'visible', timeout: 2000 }).catch(() => {});
-    await this.page.locator(this.loadingRow).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
   }
 
   async getAllVisibleDepartments(): Promise<string[]> {
@@ -141,9 +176,10 @@ export class EmployeeFiltersPage {
     const count = await rows.count();
     const statuses: string[] = [];
     for (let i = 0; i < count; i++) {
-      const cells = rows.nth(i).locator('td');
-      const text = await cells.nth(3).textContent();
-      statuses.push((text ?? '').trim());
+      const row = rows.nth(i);
+      const cells = row.locator('td');
+      const statusText = await cells.nth(3).textContent();
+      statuses.push((statusText ?? '').trim());
     }
     return statuses;
   }

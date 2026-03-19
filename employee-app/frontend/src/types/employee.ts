@@ -20,6 +20,7 @@ export interface Employee {
   lastName:         string;
   email:            string;
   phone:            string;
+  cellPhone:        string;
   designation:      string;
   department:       Department;
   employmentType:   EmploymentType;

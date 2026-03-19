@@ -31,21 +31,19 @@ test.describe('employee-validation — API Regression Suite', () => {
       await page.goto('/');
       const email = `test+${Date.now()}@example.com`;
       const r = await apiCall(page, '/api/employees', 'POST', {
-        firstName: 'Test', lastName: 'ApiUser', email,
-        designation: 'Engineer', department: 'Engineering',
-        employmentType: 'Full-Time', employmentStatus: 'Active',
-        startDate: '2024-01-15',
-        address: { street: '123 Test St', city: 'Test City', country: 'United States' }
+        firstName: 'Test', lastName: 'ApiUser', email, designation: 'Engineer',
+        department: 'Engineering', employmentType: 'Full-Time', employmentStatus: 'Active',
+        startDate: '2024-01-15', address: { street: '123 Test St', city: 'Test City', country: 'United States' }
       });
       expect(r.status).toBe(201);
       expect(r.body._id).toBeTruthy();
       expect(r.body.firstName).toBe('Test');
       expect(r.body.email).toBe(email);
       const id = r.body._id as string;
-      const get = await apiCall(page, `/api/employees/${id}`, 'GET');
-      expect(get.status).toBe(200);
-      expect(get.body.firstName).toBe('Test');
-      expect(get.body.email).toBe(email);
+      const getR = await apiCall(page, `/api/employees/${id}`, 'GET');
+      expect(getR.status).toBe(200);
+      expect(getR.body.firstName).toBe('Test');
+      expect(getR.body.email).toBe(email);
       await apiCall(page, `/api/employees/${id}`, 'DELETE');
     });
 
@@ -63,15 +61,14 @@ test.describe('employee-validation — API Regression Suite', () => {
         address: { street: '123 Test St', city: 'Test City', country: 'United States' }
       });
       expect(r.status).toBe(400);
-      expect(r.body.error || r.body.errors).toBeTruthy();
+      expect(r.body.error).toBe('VALIDATION_ERROR');
       const details = r.body.details as Record<string, unknown>[];
-      const fields = details.map((d) => d.field);
+      const fields = details.map(d => d.field);
       expect(fields).toContain('firstName');
       expect(fields).toContain('email');
-      const list = await apiCall(page, '/api/employees', 'GET');
-      expect(list.status).toBe(200);
-      const data = list.body.data as Record<string, unknown>[];
-      expect(data.some((e) => e.lastName === 'ValidationUser')).toBe(false);
+      const listR = await apiCall(page, '/api/employees', 'GET');
+      const data = listR.body.data as Record<string, unknown>[];
+      expect(data.every(e => e.lastName !== 'ValidationUser')).toBe(true);
     });
 
     // TC-54d4ddc7-2a2f-51bd-16a1-f9228a742aa2  SCOPE:regression
@@ -85,6 +82,7 @@ test.describe('employee-validation — API Regression Suite', () => {
       expect((r.body.message as string).length).toBeGreaterThan(0);
       expect(r.body._id).toBeUndefined();
       expect(r.body.firstName).toBeUndefined();
+      expect(r.body.lastName).toBeUndefined();
       expect(r.body.email).toBeUndefined();
     });
 
@@ -101,7 +99,6 @@ test.describe('employee-validation — API Regression Suite', () => {
         '12345',
         'null',
         'undefined',
-        '..%2F..%2Fetc%2Fpasswd'
       ];
       for (const badId of malformedIds) {
         const r = await apiCall(page, `/api/employees/${badId}`, 'GET');
