@@ -148,17 +148,18 @@ If no ticket is found, regression analysis still runs; new-feature scenario gene
 
 Detailed documentation is on the [GitHub Wiki](https://github.com/thavaganesh22/tg-automation-pipleine/wiki):
 
-| Page | Contents |
-| ---- | -------- |
+| Page                                                                                                                                              | Contents                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | [Regression baseline & new-feature tests](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Regression-Baseline-and-New-Feature-Tests) | How the baseline is frozen, how `pending-promotion.json` prevents UUID drift, promotion on merge |
-| [Auto-heal](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Auto-Heal) | Script vs app error classification, heal cycle, guardrails |
-| [Generated test files](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Generated-Test-Files) | File layout, UI vs API rules, live app inspection, browser strategy |
-| [Coverage audit](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Coverage-Audit) | Per-type thresholds, remediation flow, `CoverageReport` shape |
-| [Kibana dashboards](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Kibana-Dashboards) | ES indices, dashboard panels, Azure VM setup |
-| [MCP server](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/MCP-Server) | Registration, available tools, input parameters |
-| [CI/CD](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/CI-CD) | All 3 jobs, blocking conditions, GitHub Secrets + Variables |
-| [Environment variables](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Environment-Variables) | Full reference for all supported env vars |
-| [Project structure](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Project-Structure) | Directory tree with descriptions |
-| [Inter-agent data flow](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Inter-Agent-Data-Flow) | pipeline-state/ file map, restartability |
-| [Guardrails](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Guardrails) | Security, quality, and operational limits |
-| [Employee Directory App](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Employee-Directory-App) | Stack, API endpoints, frontend routing |
+| [Auto-heal](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Auto-Heal)                                                               | Script vs app error classification, heal cycle, guardrails                                       |
+| [Generated test files](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Generated-Test-Files)                                         | File layout, UI vs API rules, live app inspection, browser strategy                              |
+| [Coverage audit](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Coverage-Audit)                                                     | Per-type thresholds, remediation flow, `CoverageReport` shape                                    |
+| [Kibana dashboards](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Kibana-Dashboards)                                               | ES indices, dashboard panels, Azure VM setup                                                     |
+| [MCP server](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/MCP-Server)                                                             | Registration, available tools, input parameters                                                  |
+| [CI/CD](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/CI-CD)                                                                       | All 3 jobs, blocking conditions, GitHub Secrets + Variables                                      |
+| [Environment variables](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Environment-Variables)                                       | Full reference for all supported env vars                                                        |
+| [Project structure](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Project-Structure)                                               | Directory tree with descriptions                                                                 |
+| [Inter-agent data flow](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Inter-Agent-Data-Flow)                                       | pipeline-state/ file map, restartability                                                         |
+| [Guardrails](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Guardrails)                                                             | Security, quality, and operational limits                                                        |
+| [Employee Directory App](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Employee-Directory-App)                                     | Stack, API endpoints, frontend routing                                                           |
+| [LLM Model Change Guide](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/LLM-Model-Change-Guide)                                     | Stack, API endpoints, frontend routing                                                           |
