@@ -78,40 +78,10 @@ async function main(): Promise<void> {
 
     const scenariosExist = await state.exists("scenarios");
     if (!regenScenarios && scenariosExist) {
-      let existing = await state.load<Scenario[]>("scenarios");
-      // Always refresh changedFiles from the current PR context — cached scenarios
-      // retain the changed files from when they were originally generated, which
-      // becomes stale when new commits are pushed after the cache was created.
-      // AGT-02 depends on changedFiles to assess alignment, so it must reflect
-      // the current PR diff even when regression scenarios come from cache.
-      // Resolve changed files: prefer PR_CHANGED_FILES (set by CI), fall back to git diff locally
-      let currentChangedFiles = (process.env.PR_CHANGED_FILES ?? "")
-        .split("\n")
-        .map((f: string) => f.trim())
-        .filter(Boolean);
-      if (currentChangedFiles.length === 0) {
-        try {
-          const { execSync } = await import("child_process");
-          const baseBranch = process.env.GITHUB_BASE_REF ?? "main";
-          const raw = execSync(
-            `git diff --name-only origin/${baseBranch}...HEAD 2>/dev/null || git diff --name-only HEAD~1`,
-            { encoding: "utf-8" }
-          );
-          currentChangedFiles = raw.split("\n").map((f: string) => f.trim()).filter(Boolean);
-        } catch {
-          // git not available or no commits — leave empty
-        }
-      }
-      if (currentChangedFiles.length > 0) {
-        existing = existing.map((s) => ({ ...s, changedFiles: currentChangedFiles }));
-        await state.save("scenarios", existing);
-        log.info(`AGT-01 skipped — refreshed changedFiles (${currentChangedFiles.length} files) on ${existing.length} cached scenarios.`);
-      } else {
-        log.info(
-          `AGT-01 skipped — using ${existing.length} cached scenarios. ` +
-            `Pass --regen-scenarios (or REGEN_SCENARIOS=true) to regenerate.`
-        );
-      }
+      log.info(
+        `AGT-01 skipped — using cached scenarios. ` +
+          `Pass --regen-scenarios (or REGEN_SCENARIOS=true) to regenerate.`
+      );
     } else {
       // PR context is set by the CI workflow via environment variables:
       //   PR_TITLE, PR_BRANCH, PR_NUMBER, GITHUB_BASE_REF, PR_CHANGED_FILES
@@ -131,6 +101,37 @@ async function main(): Promise<void> {
     if (singleAgent === 1) {
       log.complete("Single-agent run complete");
       return;
+    }
+  }
+
+  // ── changedFiles refresh (runs before AGT-02 regardless of --from) ──────────
+  // AGT-02 reads changedFiles from the scenarios state to assess code-vs-story
+  // alignment. Cached scenarios retain the changedFiles from when they were first
+  // generated, which goes stale on every new push. Refresh unconditionally here
+  // so that --from=2 (or any resume that skips AGT-01) still gets correct files.
+  if (await state.exists("scenarios") && singleAgent !== 1) {
+    let currentChangedFiles = (process.env.PR_CHANGED_FILES ?? "")
+      .split("\n")
+      .map((f: string) => f.trim())
+      .filter(Boolean);
+    if (currentChangedFiles.length === 0) {
+      try {
+        const { execSync } = await import("child_process");
+        const baseBranch = process.env.GITHUB_BASE_REF ?? "main";
+        const raw = execSync(
+          `git diff --name-only origin/${baseBranch}...HEAD 2>/dev/null || git diff --name-only HEAD~1`,
+          { encoding: "utf-8" }
+        );
+        currentChangedFiles = raw.split("\n").map((f: string) => f.trim()).filter(Boolean);
+      } catch {
+        // git not available — leave empty
+      }
+    }
+    if (currentChangedFiles.length > 0) {
+      const existing = await state.load<Scenario[]>("scenarios");
+      const updated = existing.map((s) => ({ ...s, changedFiles: currentChangedFiles }));
+      await state.save("scenarios", updated);
+      log.info(`Refreshed changedFiles on ${updated.length} scenarios (${currentChangedFiles.length} files).`);
     }
   }
 
