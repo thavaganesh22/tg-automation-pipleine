@@ -84,10 +84,24 @@ async function main(): Promise<void> {
       // becomes stale when new commits are pushed after the cache was created.
       // AGT-02 depends on changedFiles to assess alignment, so it must reflect
       // the current PR diff even when regression scenarios come from cache.
-      const currentChangedFiles = (process.env.PR_CHANGED_FILES ?? "")
+      // Resolve changed files: prefer PR_CHANGED_FILES (set by CI), fall back to git diff locally
+      let currentChangedFiles = (process.env.PR_CHANGED_FILES ?? "")
         .split("\n")
         .map((f: string) => f.trim())
         .filter(Boolean);
+      if (currentChangedFiles.length === 0) {
+        try {
+          const { execSync } = await import("child_process");
+          const baseBranch = process.env.GITHUB_BASE_REF ?? "main";
+          const raw = execSync(
+            `git diff --name-only origin/${baseBranch}...HEAD 2>/dev/null || git diff --name-only HEAD~1`,
+            { encoding: "utf-8" }
+          );
+          currentChangedFiles = raw.split("\n").map((f: string) => f.trim()).filter(Boolean);
+        } catch {
+          // git not available or no commits — leave empty
+        }
+      }
       if (currentChangedFiles.length > 0) {
         existing = existing.map((s) => ({ ...s, changedFiles: currentChangedFiles }));
         await state.save("scenarios", existing);
