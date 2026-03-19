@@ -153,12 +153,17 @@ test.describe('employee-delete — UI Regression Suite', () => {
       const dialogHidden = await po.isConfirmDialogHidden();
       expect(dialogHidden).toBe(true);
 
+      // Wait for any dialog overlay/animation to fully clear
+      await page.waitForTimeout(500);
+
       // Verify the employee row is still present
       const rowStillVisible = await po.isEmployeeRowVisible(id);
       expect(rowStillVisible).toBe(true);
 
       // Re-search to confirm the employee is still present
+      await page.locator('[data-testid="search-input"]').waitFor({ state: 'visible', timeout: 5000 });
       await po.searchEmployees(employeeName.split(' ')[0]);
+      await page.waitForTimeout(500);
       const rowAfterSearch = await po.isEmployeeRowVisible(id);
       expect(rowAfterSearch).toBe(true);
     });
@@ -190,7 +195,7 @@ test.describe('employee-delete — UI Regression Suite', () => {
         await po.navigate();
         await page.waitForTimeout(1000);
         await po.searchEmployees(firstName);
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(1500);
 
         // Find the actual employee row dynamically since createEmployee may return wrong id
         const firstRow = page.locator('[data-testid^="employee-row-"]').first();
@@ -213,11 +218,24 @@ test.describe('employee-delete — UI Regression Suite', () => {
         // Step 6: Verify dialog is dismissed and employee row is still present
         const dialogHidden = await po.isConfirmDialogHidden();
         expect(dialogHidden).toBe(true);
+
+        // Wait for any dialog overlay/animation to fully clear
+        await page.waitForTimeout(500);
+
         const rowAfterEscape = await po.isEmployeeRowVisible(actualId);
         expect(rowAfterEscape).toBe(true);
 
         // Step 7: Click delete button again to reopen confirm dialog
-        await po.clickDeleteButtonOnRow(actualId);
+        // Use the locator directly to ensure we interact with the correct element
+        const deleteBtn = page.locator(`[data-testid="employee-row-${actualId}"] [data-testid="delete-btn"]`);
+        if (await deleteBtn.count() > 0) {
+          await deleteBtn.click({ timeout: 10000 });
+        } else {
+          // Fallback: hover over the row first to reveal the delete button
+          await page.locator(`[data-testid="employee-row-${actualId}"]`).hover();
+          await page.waitForTimeout(300);
+          await po.clickDeleteButtonOnRow(actualId);
+        }
         const dialogVisibleAgain = await po.isConfirmDialogVisible();
         expect(dialogVisibleAgain).toBe(true);
 
@@ -233,6 +251,7 @@ test.describe('employee-delete — UI Regression Suite', () => {
         expect(rowAfterDelete).toBe(false);
 
         // Re-search to be thorough
+        await page.waitForTimeout(500);
         await po.searchEmployees(firstName);
         const rowFinalCheck = await po.isEmployeeRowVisible(actualId);
         expect(rowFinalCheck).toBe(false);

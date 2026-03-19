@@ -24,7 +24,8 @@ export class EmployeeFormPage {
   private readonly countryInput = '[data-testid="country-input"]';
   private readonly submitBtn = '[data-testid="submit-btn"]';
   private readonly successToast = '[data-testid="success-toast"]';
-
+  private readonly phoneError = '[data-testid="phone-error"]';
+  private readonly cellPhoneError = '[data-testid="cellPhone-error"]';
   constructor(page: Page) {
     this.page = page;
   }
@@ -258,5 +259,106 @@ export class EmployeeFormPage {
     if (!body.data || body.data.length === 0) throw new Error('No employees found');
     const emp = body.data[0];
     return `${emp.firstName} ${emp.lastName}` as string;
+  }
+
+  async isWorkPhoneLabelVisible(): Promise<boolean> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = await this.getFormLabelTexts();
+    return labels.some(l => l.trim() === 'Work Phone');
+  }
+
+  async isCellPhoneLabelVisible(): Promise<boolean> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = await this.getFormLabelTexts();
+    return labels.some(l => l.trim() === 'Cell Phone');
+  }
+
+  async isPhoneErrorVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.phoneError, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getPhoneErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.phoneError, { state: 'visible' });
+    return this.page.locator(this.phoneError).textContent().then(t => t ?? '');
+  }
+
+  async isCellPhoneErrorVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.cellPhoneError, { state: 'visible', timeout: 3000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getCellPhoneErrorText(): Promise<string> {
+    await this.page.waitForSelector(this.cellPhoneError, { state: 'visible' });
+    return this.page.locator(this.cellPhoneError).textContent().then(t => t ?? '');
+  }
+
+  async fillCellPhoneAndVerifyInteractive(value: string): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible', timeout: 3000 });
+      await this.page.locator(this.cellPhoneInput).click();
+      await this.page.fill(this.cellPhoneInput, value);
+      const inputValue = await this.page.locator(this.cellPhoneInput).inputValue();
+      return inputValue === value;
+    } catch {
+      return false;
+    }
+  }
+
+  async areBothPhoneFieldsVisible(): Promise<boolean> {
+    const workPhoneVisible = await this.isWorkPhoneInputVisible();
+    const cellPhoneVisible = await this.isCellPhoneInputVisible();
+    return workPhoneVisible && cellPhoneVisible;
+  }
+
+  async areBothPhoneLabelsVisible(): Promise<boolean> {
+    const workPhoneLabel = await this.isWorkPhoneLabelVisible();
+    const cellPhoneLabel = await this.isCellPhoneLabelVisible();
+    return workPhoneLabel && cellPhoneLabel;
+  }
+
+  async getFirstNameValue(): Promise<string> {
+    await this.page.waitForSelector(this.firstNameInput, { state: 'visible' });
+    return this.page.locator(this.firstNameInput).inputValue();
+  }
+
+  async getLastNameValue(): Promise<string> {
+    await this.page.waitForSelector(this.lastNameInput, { state: 'visible' });
+    return this.page.locator(this.lastNameInput).inputValue();
+  }
+
+  async getEmailValue(): Promise<string> {
+    await this.page.waitForSelector(this.emailInput, { state: 'visible' });
+    return this.page.locator(this.emailInput).inputValue();
+  }
+
+  async waitForDrawerHidden(): Promise<void> {
+    await this.page.locator(this.employeeDrawer).waitFor({ state: 'hidden', timeout: 10000 });
+  }
+
+  async isSuccessToastVisible(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector(this.successToast, { state: 'visible', timeout: 15000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async hasNoValidationErrors(): Promise<boolean> {
+    try {
+      await this.page.waitForSelector('[data-testid$="-error"]', { state: 'visible', timeout: 2000 });
+      return false;
+    } catch {
+      return true;
+    }
   }
 }
