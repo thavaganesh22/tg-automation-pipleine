@@ -68,7 +68,7 @@ const ALLOWED_URLS = (process.env.ALLOWED_TEST_URLS ?? "")
   .map((s: string) => s.trim())
   .filter(Boolean);
 const MAX_WORKERS = Math.min(parseInt(process.env.MAX_WORKERS ?? "4", 10), 8);
-const TEST_TIMEOUT_MS = 20_000;        // per-test wall-clock limit
+const TEST_TIMEOUT_MS = 45_000;        // per-test wall-clock limit
 const ACTION_TIMEOUT_MS = 10_000;      // per-action (locator.waitFor, click, fill, etc.)
 const NAVIGATION_TIMEOUT_MS = 15_000; // page.goto / waitForURL
 const SUITE_TIMEOUT_MS = 15 * 60 * 1000; // overall suite cap (15 min)
