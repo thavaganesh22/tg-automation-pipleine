@@ -476,4 +476,100 @@ export class EmployeeFormPage {
     const hasCellPhoneError = await this.isCellPhoneErrorVisible();
     return hasCellPhoneError;
   }
+
+  async hasNoPhoneOrCellPhoneErrors(): Promise<boolean> {
+    const phoneErr = await this.isPhoneErrorVisible();
+    const cellErr = await this.isCellPhoneErrorVisible();
+    return !phoneErr && !cellErr;
+  }
+
+  async fillAllRequiredFieldsAndBothPhones(data: {
+    firstName: string; lastName: string; email: string; designation: string;
+    department: string; employmentType: string; street: string; city: string; country: string;
+    workPhone: string; cellPhone: string;
+  }): Promise<void> {
+    await this.fillRequiredFields({
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      designation: data.designation,
+      department: data.department,
+      employmentType: data.employmentType,
+      street: data.street,
+      city: data.city,
+      country: data.country,
+    });
+    await this.fillWorkPhone(data.workPhone);
+    await this.fillCellPhone(data.cellPhone);
+  }
+
+  async createEmployeeViaFormAndReturnToList(data: {
+    firstName: string; lastName: string; email: string; designation: string;
+    department: string; employmentType: string; street: string; city: string; country: string;
+    workPhone?: string; cellPhone?: string;
+  }): Promise<void> {
+    await this.openAddEmployeeDrawer();
+    await this.fillRequiredFields({
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      designation: data.designation,
+      department: data.department,
+      employmentType: data.employmentType,
+      street: data.street,
+      city: data.city,
+      country: data.country,
+    });
+    if (data.workPhone) {
+      await this.fillWorkPhone(data.workPhone);
+    }
+    if (data.cellPhone) {
+      await this.fillCellPhone(data.cellPhone);
+    }
+    await this.submitAndWaitForSuccess();
+    await this.page.locator(this.employeeDrawer).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+  }
+
+  async verifyWorkPhoneValueAfterReopen(employeeName: string, expectedValue: string): Promise<boolean> {
+    await this.searchAndClickFirstEmployee(employeeName);
+    const actualValue = await this.getWorkPhoneValue();
+    return actualValue === expectedValue;
+  }
+
+  async verifyCellPhoneValueAfterReopen(employeeName: string, expectedValue: string): Promise<boolean> {
+    await this.searchAndClickFirstEmployee(employeeName);
+    const actualValue = await this.getCellPhoneValue();
+    return actualValue === expectedValue;
+  }
+
+  async verifyBothPhoneValuesAfterReopen(employeeName: string, expectedWorkPhone: string, expectedCellPhone: string): Promise<{ workPhone: string; cellPhone: string }> {
+    await this.searchAndClickFirstEmployee(employeeName);
+    const workPhone = await this.getWorkPhoneValue();
+    const cellPhone = await this.getCellPhoneValue();
+    return { workPhone, cellPhone };
+  }
+
+  async fillWorkPhoneAndCheckCellPhoneUnchanged(workPhoneValue: string, expectedCellPhoneValue: string): Promise<boolean> {
+    await this.fillWorkPhone(workPhoneValue);
+    const cellPhoneVal = await this.getCellPhoneValue();
+    return cellPhoneVal === expectedCellPhoneValue;
+  }
+
+  async fillCellPhoneAndCheckWorkPhoneUnchanged(cellPhoneValue: string, expectedWorkPhoneValue: string): Promise<boolean> {
+    await this.fillCellPhone(cellPhoneValue);
+    const workPhoneVal = await this.getWorkPhoneValue();
+    return workPhoneVal === expectedWorkPhoneValue;
+  }
+
+  async getWorkPhoneInputLength(): Promise<number> {
+    await this.page.waitForSelector(this.phoneInput, { state: 'visible' });
+    const val = await this.page.locator(this.phoneInput).inputValue();
+    return val.length;
+  }
+
+  async getCellPhoneInputLength(): Promise<number> {
+    await this.page.waitForSelector(this.cellPhoneInput, { state: 'visible' });
+    const val = await this.page.locator(this.cellPhoneInput).inputValue();
+    return val.length;
+  }
 }
