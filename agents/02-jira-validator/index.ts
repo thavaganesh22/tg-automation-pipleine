@@ -370,12 +370,16 @@ ${JSON.stringify(scenarioDescriptions, null, 2)}
 ---
 
 ## Your Task
-Perform a deep alignment analysis. Evaluate:
-1. Does the code implement what the JIRA story description says?
-2. Does the code satisfy each acceptance criterion (if any are defined)?
-3. Are there behaviours in the code NOT mentioned in the story (scope creep)?
-4. Are there story requirements that appear to be missing from the code?
-5. Do the API endpoints or modules match the story's stated technical scope?
+Perform a deep alignment analysis. Evaluate whether the APP FILES CHANGED implement the JIRA story.
+
+IMPORTANT: The "Detected behaviours" above are pre-existing REGRESSION scenarios generated from the full codebase — they cover features that existed before this PR. Do NOT use them to assess whether the story is covered by tests. Test coverage for new features is generated separately after this step. Only use the detected behaviours as context for understanding the existing codebase shape.
+
+Evaluate solely based on the app files changed:
+1. Does the code in the changed app files implement what the JIRA story description says?
+2. Do the changed app files satisfy each acceptance criterion (if any are defined)?
+3. Are there changes in the app files NOT mentioned in the story (scope creep)?
+4. Are there story requirements that appear to be missing from the changed app files?
+5. Do the API endpoints or modules in the changed files match the story's stated technical scope?
 
 Return ONLY a valid JSON object:
 {
@@ -403,9 +407,11 @@ Return ONLY a valid JSON object:
 }
 
 Verdict guide:
-  PASS = Code clearly implements the story intent; all/most ACs addressed
-  WARN = Partial alignment, missing ACs, or scope concerns — needs review
-  FAIL = Code contradicts the story, implements something completely different, or is dangerously out of scope`;
+  PASS = Changed app files clearly implement the story intent; all/most ACs addressed in code
+  WARN = Partial implementation in code, missing ACs in the changed files, or scope concerns — needs review
+  FAIL = Code contradicts the story, implements something completely different, or is dangerously out of scope
+
+Do NOT issue WARN or FAIL solely because regression test scenarios don't yet cover the new feature — that is expected and handled separately.`;
 
   const response = await client.messages.create({
     model: "claude-sonnet-4-6",
