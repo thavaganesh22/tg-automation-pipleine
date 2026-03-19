@@ -26,7 +26,6 @@ interface Employee {
   updatedAt: string;
 }
 
-const departments = ['Engineering', 'Product', 'Design', 'QA', 'HR', 'DevOps', 'Data', 'Marketing', 'Sales', 'Finance'];
 const statuses: string[] = ['Active', 'Active', 'Active', 'On Leave', 'Terminated'];
 const types = ['Full-Time', 'Part-Time', 'Contract', 'Intern'];
 const names: [string, string, string, string][] = [
