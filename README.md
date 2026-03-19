@@ -68,14 +68,14 @@ A live PR comment is posted when the pipeline starts and updated with the full r
 
 ## Agent reference
 
-| Agent  | Name                 | Model             | Role |
-|--------|----------------------|-------------------|------|
-| AGT-01 | Codebase Analyst     | claude-sonnet-4-6 | Full codebase scan → regression scenarios; cached; `--regen-scenarios` to refresh |
-| AGT-02 | JIRA Story Validator | claude-sonnet-4-6 | Alignment verdict (PASS/WARN/FAIL) + new-feature scenario generation; always runs |
-| AGT-03 | Test Case Designer   | claude-sonnet-4-6 | Regression baseline preserved; reuses `pending-promotion.json` on repeat pushes |
-| AGT-04 | Playwright Engineer  | claude-opus-4-6   | Live app inspection → POM + fixture + spec (UI); fixture + api.spec (API) |
-| AGT-05 | Coverage Auditor     | —                 | Separate UI + API traceability matrices; blocks + triggers remediation if below threshold |
-| AGT-06 | Test Executor        | claude-opus-4-6   | Playwright runner; auto-heal for script errors; classifies failures as script vs app |
+| Agent  | Name                 | Model             | Role                                                                                        |
+| ------ | -------------------- | ----------------- | ------------------------------------------------------------------------------------------- |
+| AGT-01 | Codebase Analyst     | claude-sonnet-4-6 | Full codebase scan → regression scenarios; cached; `--regen-scenarios` to refresh           |
+| AGT-02 | JIRA Story Validator | claude-sonnet-4-6 | Alignment verdict (PASS/WARN/FAIL) + new-feature scenario generation; always runs           |
+| AGT-03 | Test Case Designer   | claude-sonnet-4-6 | Regression baseline preserved; reuses `pending-promotion.json` on repeat pushes             |
+| AGT-04 | Playwright Engineer  | claude-opus-4-6   | Live app inspection → POM + fixture + spec (UI); fixture + api.spec (API)                   |
+| AGT-05 | Coverage Auditor     | —                 | Separate UI + API traceability matrices; blocks + triggers remediation if below threshold   |
+| AGT-06 | Test Executor        | claude-opus-4-6   | Playwright runner; auto-heal for script errors; classifies failures as script vs app        |
 | AGT-07 | Report Architect     | claude-sonnet-4-6 | ES indexing (`qa-test-runs`, `qa-failed-tests`, `qa-test-results`); HTML report; SLA alerts |
 
 ---
@@ -102,12 +102,12 @@ docker compose up --build
 npm run pipeline
 ```
 
-| Service | URL | Purpose |
-|---------|-----|---------|
-| Frontend | http://localhost:3000 | Employee Directory app (test target) |
-| Backend API | http://localhost:4000/api/health | Express REST API |
-| Elasticsearch | http://localhost:9200 | Report storage |
-| Kibana | http://localhost:5601 | Dashboard visualisation |
+| Service       | URL                              | Purpose                              |
+| ------------- | -------------------------------- | ------------------------------------ |
+| Frontend      | http://localhost:3000            | Employee Directory app (test target) |
+| Backend API   | http://localhost:4000/api/health | Express REST API                     |
+| Elasticsearch | http://localhost:9200            | Report storage                       |
+| Kibana        | http://localhost:5601            | Dashboard visualisation              |
 
 > Kibana setup is a one-time operation. Run `npm run kibana:setup` after first start to create indices, data views, and the dashboard.
 
@@ -146,19 +146,19 @@ If no ticket is found, regression analysis still runs; new-feature scenario gene
 
 ## Wiki
 
-Detailed documentation is on the [GitHub Wiki](../../wiki):
+Detailed documentation is on the [GitHub Wiki](https://github.com/thavaganesh22/tg-automation-pipleine/wiki):
 
 | Page | Contents |
-|------|----------|
-| [Regression baseline & new-feature tests](../../wiki/Regression-Baseline-and-New-Feature-Tests) | How the baseline is frozen, how `pending-promotion.json` prevents UUID drift, promotion on merge |
-| [Auto-heal](../../wiki/Auto-Heal) | Script vs app error classification, heal cycle, guardrails |
-| [Generated test files](../../wiki/Generated-Test-Files) | File layout, UI vs API rules, live app inspection, browser strategy |
-| [Coverage audit](../../wiki/Coverage-Audit) | Per-type thresholds, remediation flow, `CoverageReport` shape |
-| [Kibana dashboards](../../wiki/Kibana-Dashboards) | ES indices, dashboard panels, Azure VM setup |
-| [MCP server](../../wiki/MCP-Server) | Registration, available tools, input parameters |
-| [CI/CD](../../wiki/CI-CD) | All 3 jobs, blocking conditions, GitHub Secrets + Variables |
-| [Environment variables](../../wiki/Environment-Variables) | Full reference for all supported env vars |
-| [Project structure](../../wiki/Project-Structure) | Directory tree with descriptions |
-| [Inter-agent data flow](../../wiki/Inter-Agent-Data-Flow) | pipeline-state/ file map, restartability |
-| [Guardrails](../../wiki/Guardrails) | Security, quality, and operational limits |
-| [Employee Directory App](../../wiki/Employee-Directory-App) | Stack, API endpoints, frontend routing |
+| ---- | -------- |
+| [Regression baseline & new-feature tests](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Regression-Baseline-and-New-Feature-Tests) | How the baseline is frozen, how `pending-promotion.json` prevents UUID drift, promotion on merge |
+| [Auto-heal](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Auto-Heal) | Script vs app error classification, heal cycle, guardrails |
+| [Generated test files](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Generated-Test-Files) | File layout, UI vs API rules, live app inspection, browser strategy |
+| [Coverage audit](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Coverage-Audit) | Per-type thresholds, remediation flow, `CoverageReport` shape |
+| [Kibana dashboards](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Kibana-Dashboards) | ES indices, dashboard panels, Azure VM setup |
+| [MCP server](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/MCP-Server) | Registration, available tools, input parameters |
+| [CI/CD](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/CI-CD) | All 3 jobs, blocking conditions, GitHub Secrets + Variables |
+| [Environment variables](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Environment-Variables) | Full reference for all supported env vars |
+| [Project structure](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Project-Structure) | Directory tree with descriptions |
+| [Inter-agent data flow](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Inter-Agent-Data-Flow) | pipeline-state/ file map, restartability |
+| [Guardrails](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Guardrails) | Security, quality, and operational limits |
+| [Employee Directory App](https://github.com/thavaganesh22/tg-automation-pipleine/wiki/Employee-Directory-App) | Stack, API endpoints, frontend routing |
