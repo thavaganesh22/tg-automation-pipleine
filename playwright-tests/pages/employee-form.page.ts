@@ -572,4 +572,88 @@ export class EmployeeFormPage {
     const val = await this.page.locator(this.cellPhoneInput).inputValue();
     return val.length;
   }
+
+  async openEditDrawerForFirstSeededEmployee(): Promise<string> {
+    const name = await this.getFirstEmployeeName();
+    await this.searchAndClickFirstEmployee(name);
+    return name;
+  }
+
+  async hasNoStandalonePhoneLabelOnly(): Promise<boolean> {
+    await this.page.waitForSelector(this.employeeDrawer, { state: 'visible' });
+    const labels = await this.getFormLabelTexts();
+    const hasWorkPhone = labels.some(l => l.trim() === 'Work Phone');
+    const hasStandalonePhone = labels.some(l => l.trim() === 'Phone');
+    return hasWorkPhone && !hasStandalonePhone;
+  }
+
+  async fillRequiredFieldsSubmitAndReopenByName(data: {
+    firstName: string; lastName: string; email: string; designation: string;
+    department: string; employmentType: string; street: string; city: string; country: string;
+    workPhone?: string; cellPhone?: string;
+  }): Promise<void> {
+    await this.openAddEmployeeDrawer();
+    await this.fillRequiredFields({
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      designation: data.designation,
+      department: data.department,
+      employmentType: data.employmentType,
+      street: data.street,
+      city: data.city,
+      country: data.country,
+    });
+    if (data.workPhone) {
+      await this.fillWorkPhone(data.workPhone);
+    }
+    if (data.cellPhone) {
+      await this.fillCellPhone(data.cellPhone);
+    }
+    await this.submitAndWaitForSuccess();
+    await this.page.locator(this.employeeDrawer).waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {});
+    await this.searchAndClickFirstEmployee(`${data.firstName} ${data.lastName}`);
+  }
+
+  async fillBothPhonesAndVerifyIndependence(workPhoneValue: string, cellPhoneValue: string): Promise<{ workPhoneUnchanged: boolean; cellPhoneUnchanged: boolean }> {
+    await this.fillWorkPhone(workPhoneValue);
+    await this.fillCellPhone(cellPhoneValue);
+    const workPhoneAfter = await this.getWorkPhoneValue();
+    const cellPhoneAfter = await this.getCellPhoneValue();
+    return {
+      workPhoneUnchanged: workPhoneAfter === workPhoneValue,
+      cellPhoneUnchanged: cellPhoneAfter === cellPhoneValue,
+    };
+  }
+
+  async fillMaxLengthPhonesAndSubmitSuccessfully(data: {
+    firstName: string; lastName: string; email: string; designation: string;
+    department: string; employmentType: string; street: string; city: string; country: string;
+    workPhone: string; cellPhone: string;
+  }): Promise<boolean> {
+    await this.fillRequiredFields({
+      firstName: data.firstName,
+      lastName: data.lastName,
+      email: data.email,
+      designation: data.designation,
+      department: data.department,
+      employmentType: data.employmentType,
+      street: data.street,
+      city: data.city,
+      country: data.country,
+    });
+    await this.fillWorkPhone(data.workPhone);
+    await this.fillCellPhone(data.cellPhone);
+    await this.submitAndWaitForSuccess();
+    const noErrors = await this.hasNoPhoneOrCellPhoneErrors();
+    return noErrors;
+  }
+
+  async isWorkPhoneInputTruncatedOrErrorShownWithRequiredFields(workPhoneValue: string, requiredData: {
+    firstName: string; lastName: string; email: string; designation: string;
+    department: string; employmentType: string; street: string; city: string; country: string;
+  }): Promise<boolean> {
+    await this.fillRequiredFields(requiredData);
+    return this.isPhoneInputTruncatedOrErrorShown(workPhoneValue);
+  }
 }
