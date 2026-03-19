@@ -211,6 +211,10 @@ export async function setupEmployeeEditMocks(page: Page): Promise<void> {
         return;
       }
       const body = req.postDataJSON() as Record<string, unknown>;
+      if ('designation' in body && (typeof body['designation'] !== 'string' || (body['designation'] as string).trim() === '')) {
+        await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'VALIDATION_ERROR', message: 'Designation must not be empty', details: [{ field: 'designation', message: 'Too small: expected string to have >=1 characters' }] }) });
+        return;
+      }
       if (body['email'] && typeof body['email'] === 'string' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body['email'])) {
         await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'VALIDATION_ERROR', message: 'Invalid email format', details: [{ field: 'email', message: 'Invalid email' }] }) });
         return;

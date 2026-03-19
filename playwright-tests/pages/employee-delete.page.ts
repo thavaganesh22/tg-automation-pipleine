@@ -73,11 +73,13 @@ export class EmployeeDeletePage {
   }
 
   async clickDeleteButtonOnRow(id: string): Promise<void> {
+    // The delete button is inside the edit drawer, not on the row itself.
+    // Click the row to open the drawer, then click the delete button.
     const rowSelector = `[data-testid="employee-row-${id}"]`;
     await this.page.waitForSelector(rowSelector, { state: 'visible' });
-    const row = this.page.locator(rowSelector);
-    const deleteBtn = row.locator('button').last();
-    await deleteBtn.click();
+    await this.page.click(rowSelector);
+    await this.page.waitForSelector('[data-testid="delete-btn"]', { state: 'visible', timeout: 5000 });
+    await this.page.click('[data-testid="delete-btn"]');
   }
 
   async isConfirmDialogVisible(): Promise<boolean> {

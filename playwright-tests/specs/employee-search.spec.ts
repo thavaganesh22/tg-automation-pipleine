@@ -26,8 +26,10 @@ test.describe('employee-search — UI Regression Suite', () => {
       const firstEmployeeName = await po.getFirstEmployeeName();
       expect(firstEmployeeName.length).toBeGreaterThan(0);
 
-      // Step 5: Type the first 3 characters of the employee's name into search
-      const searchTerm = firstEmployeeName.substring(0, 3);
+      // Step 5: Search by the employee's first name.
+      // The backend uses MongoDB $text search (full-word matching), so we need a
+      // complete word — a 3-char prefix like "Gra" will not match "Grace".
+      const searchTerm = firstEmployeeName.split(' ')[0];
       await po.searchEmployees(searchTerm);
 
       // Step 6 & 7: Wait for debounce and observe filtered results

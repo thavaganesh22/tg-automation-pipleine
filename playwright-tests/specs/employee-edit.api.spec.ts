@@ -44,11 +44,11 @@ test.describe('employee-edit — API Regression Suite', () => {
       const id = createdData._id as string;
       expect(id).toBeTruthy();
 
-      const patched = await apiCall(page, `/api/employees/${id}`, 'PATCH', { designation: 'Senior Engineer', employmentStatus: 'Inactive' });
+      const patched = await apiCall(page, `/api/employees/${id}`, 'PATCH', { designation: 'Senior Engineer', employmentStatus: 'On Leave' });
       expect(patched.status).toBe(200);
       const patchedData = getData(patched.body);
       expect(patchedData.designation).toBe('Senior Engineer');
-      expect(patchedData.employmentStatus).toBe('Inactive');
+      expect(patchedData.employmentStatus).toBe('On Leave');
       expect(patchedData.firstName).toBe('Patch');
       expect(patchedData.lastName).toBe('Target');
       expect(patchedData.department).toBe('Engineering');
@@ -59,7 +59,7 @@ test.describe('employee-edit — API Regression Suite', () => {
       expect(fetched.status).toBe(200);
       const fetchedData = getData(fetched.body);
       expect(fetchedData.designation).toBe('Senior Engineer');
-      expect(fetchedData.employmentStatus).toBe('Inactive');
+      expect(fetchedData.employmentStatus).toBe('On Leave');
 
       await apiCall(page, `/api/employees/${id}`, 'DELETE');
     });

@@ -59,7 +59,8 @@ test.describe('employee-edit — UI Regression Suite', () => {
       expect(drawerStillVisible).toBe(true);
 
       // Step 11: Close the drawer without making changes
-      await po.pressEscape();
+      // Note: the employee drawer has no Escape key handler — use the close button
+      await po.closeDrawer();
       const drawerHidden = await po.isDrawerHidden();
       expect(drawerHidden).toBe(true);
     });
