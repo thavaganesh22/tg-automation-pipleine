@@ -216,7 +216,9 @@ New-feature scenarios are deduplicated within each run (normalised title compari
 
 ### Promoting new-feature tests to regression
 
-New-feature test cases are **not** automatically promoted to regression during a PR run. They are staged in `pipeline-state/pending-promotion.json` and promoted only when the PR is merged:
+New-feature test cases are **not** automatically promoted to regression during a PR run. They are staged in `pipeline-state/pending-promotion.json` and promoted only when the PR is merged.
+
+> **Stable across pushes**: once `pending-promotion.json` is committed back to the branch by the CI bot (after the first push), AGT-03 reuses those exact cases on every subsequent push instead of calling the LLM again. This prevents LLM title drift from generating new UUIDs each run, which would otherwise cause AGT-04 to append duplicate tests on every CI push.
 
 - **In CI**: The `promote-on-merge` job fires on `push` to `main`, reads `pending-promotion.json`, and appends those cases (with `caseScope: "regression"`) to `regression-baseline.json`.
 - **Locally**: Run `npm run promote` after a successful pipeline run, then commit the updated baseline before opening your PR.
@@ -226,9 +228,11 @@ New-feature test cases are **not** automatically promoted to regression during a
 Because regression scenarios are cached and spec files are never overwritten (only appended to), each PR run:
 
 1. Uses the committed regression spec files as-is
-2. Generates new-feature tests for only the new code changes
-3. Appends those tests to the existing spec files
+2. Reuses new-feature cases from `pending-promotion.json` (if it exists) — no LLM call, stable UUIDs
+3. Appends only genuinely new tests to the existing spec files
 4. Deduplicates by test-case UUID before appending (prevents duplicate test titles)
+
+> **UUID consistency**: `// TC-<uuid>` comments in spec files must match the UUID format produced by `deterministicId()` (`xxxxxxxx-xxxx-5xxx-xxxx-xxxxxxxxxxxx`). If spec files contain short-hash IDs from an older pipeline version, delete `playwright-tests/specs/`, `pages/`, and `fixtures/` and let the next CI run regenerate them with matching IDs.
 
 ---
 
@@ -239,7 +243,9 @@ When Playwright tests fail, AGT-06 classifies each failure before deciding wheth
 | Failure type | Examples | Action |
 |---|---|---|
 | `script` | `TimeoutError`, wrong selector, missing POM method, bad route pattern | LLM repairs the spec file and re-runs it |
-| `app` | `ECONNREFUSED`, `net::ERR_*`, 5xx response, `Internal Server Error` | Surfaced as a real failure — not healed |
+| `app` | `ECONNREFUSED`, `net::ERR_*`, 5xx response, `Internal Server Error`, `expect.*toBeVisible.*failed`, element not found | Surfaced as a real failure — not healed |
+
+> **`toBeVisible` failures are app errors**: if an element is absent it means the feature is not yet implemented — the healer cannot fix this. These are surfaced directly as test failures for the engineer to address.
 
 The heal cycle runs at most once per pipeline execution:
 
@@ -362,6 +368,79 @@ Three ES indices and data views are created:
 | Failures by Spec File | Horizontal bar | `qa-failed-tests` |
 | Flaky Tests Leaderboard | Table (`retried=true`) | `qa-failed-tests` |
 | SLA Breach History | Table (`slaBreached=true`) | `qa-test-runs` |
+
+---
+
+## MCP server
+
+The pipeline exposes five agents as MCP tools so Claude Code (or any MCP-compatible client) can call them directly without running the full pipeline.
+
+### Registration
+
+Add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project-level):
+
+```json
+{
+  "mcpServers": {
+    "qa-pipeline": {
+      "command": "npx",
+      "args": ["ts-node", "mcp/server.ts"],
+      "cwd": "/absolute/path/to/tg-automation-pipeline"
+    }
+  }
+}
+```
+
+Start manually with `npm run mcp:server` (uses stdio transport).
+
+### Available tools
+
+AGT-02 (JIRA Validator) and AGT-07 (Report Architect) are **not** exposed — they require JIRA credentials and Elasticsearch access respectively.
+
+| Tool | Agent | Returns |
+|------|-------|---------|
+| `analyse_codebase` | AGT-01 | `{ count, scenarios: Scenario[] }` |
+| `design_test_cases` | AGT-03 | `{ count, cases: TestCase[] }` |
+| `generate_playwright_tests` | AGT-04 | `{ outputDir, filesWritten, files[], warnings[] }` |
+| `audit_coverage` | AGT-05 | `{ report: CoverageReport }` |
+| `execute_tests` | AGT-06 | `{ result: ExecutionResult }` (auto-heal disabled) |
+
+### Tool input parameters
+
+**`analyse_codebase`**
+```
+repoPath   string   required  — absolute path to repo
+testType   enum     optional  — "ui" | "api" | "both" (default "both")
+```
+
+**`design_test_cases`**
+```
+scenarios  array    required  — ValidatedScenario[] from AGT-01/AGT-02
+```
+
+**`generate_playwright_tests`**
+```
+cases            array    required  — TestCase[] (id, title, module, testType, caseScope, priority, steps[], expectedResult)
+baseUrl          string   optional  — live app URL for selector inspection (default: $BASE_URL or http://localhost:3000)
+outputDir        string   optional  — output directory (default: "playwright-tests")
+remediationMode  boolean  optional  — append gap tests only; never overwrite existing specs (default: false)
+```
+
+**`audit_coverage`**
+```
+cases           array   required  — TestCase[] to check coverage for
+specDir         string  optional  — spec file directory (default: "playwright-tests/specs")
+minP0Coverage   number  optional  — minimum P0 coverage 0–100 (default: 80)
+minP1Coverage   number  optional  — minimum P1 coverage 0–100 (default: 80)
+```
+
+**`execute_tests`**
+```
+specDir   string   optional  — spec file directory (default: "playwright-tests/specs")
+baseUrl   string   optional  — test target URL (default: $BASE_URL or http://localhost:3000)
+testType  enum     optional  — "ui" | "api" | "both" (default: "both")
+headless  boolean  optional  — run browsers headless (default: true)
+```
 
 ---
 
@@ -524,6 +603,9 @@ bash infra/azure/vm-setup.sh
 | `MAX_CASES_PER_SCENARIO` | No | Per-scenario cap (default 10) |
 | `MAX_CASES_PER_SPEC` | No | Per-module spec cap for AGT-04 (default 20) |
 | `MAX_REGRESSION_SCENARIOS_PER_CHUNK` | No | AGT-01 chunk size (default 20) |
+| `MAX_REGRESSION_CASES` | No | Cap on regression test cases per run (default 50) |
+| `MAX_NEW_FEATURE_CASES` | No | Cap on new-feature test cases per run (default 10) |
+| `MAX_JIRA_SCENARIOS` | No | Cap on scenarios generated from JIRA acceptance criteria (default 10) |
 | `MIN_P0_COVERAGE` | No | Block threshold % (default 80) |
 | `MIN_P1_COVERAGE` | No | Block threshold % (default 80) |
 | `SLA_PASS_RATE` | No | Block threshold 0–1 (default `1` in CI = 100%; set `0.95` locally for lenient threshold) |

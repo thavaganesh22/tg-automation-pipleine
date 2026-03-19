@@ -112,13 +112,63 @@ playwright-tests/
   playwright.config.ts
 ```
 
-Current spec files: `employee-create.spec.ts`, `employee-delete.spec.ts`, `employee-edit.spec.ts`, `employee-filters.spec.ts`, `employee-list.spec.ts`, `employee-pagination.spec.ts`, `employee-search.spec.ts`, `employee-validation.spec.ts` (UI) | `employee-create.api.spec.ts`, `employee-delete.api.spec.ts`, `employee-edit.api.spec.ts`, `employee-list.api.spec.ts`, `employee-search.api.spec.ts`, `employee-validation.api.spec.ts`, `error-handling.api.spec.ts`, `health.api.spec.ts` (API)
+Current spec files: `employee-create.spec.ts`, `employee-delete.spec.ts`, `employee-edit.spec.ts`, `employee-filters.spec.ts`, `employee-form.spec.ts`, `employee-list.spec.ts`, `employee-pagination.spec.ts`, `employee-search.spec.ts`, `employee-validation.spec.ts` (UI) | `employee-create.api.spec.ts`, `employee-delete.api.spec.ts`, `employee-edit.api.spec.ts`, `employee-list.api.spec.ts`, `employee-search.api.spec.ts`, `employee-validation.api.spec.ts`, `error-handling.api.spec.ts`, `health.api.spec.ts` (API)
 
-Current fixtures: `employee-create.fixture.ts`, `employee-delete.fixture.ts`, `employee-edit.fixture.ts`, `employee-list.fixture.ts`, `employee-search.fixture.ts`, `employee-validation.fixture.ts`, `error-handling.fixture.ts`, `health.fixture.ts`
+Current fixtures: `employee-create.fixture.ts`, `employee-delete.fixture.ts`, `employee-edit.fixture.ts`, `employee-form.fixture.ts`, `employee-list.fixture.ts`, `employee-search.fixture.ts`, `employee-validation.fixture.ts`, `error-handling.fixture.ts`, `health.fixture.ts`
 
 ### MCP server (`mcp/server.ts`)
 
-Exposes individual agents as tools for Claude Code integration (stdio transport). Available tools: `generate_playwright_tests`, `design_test_cases`, `analyse_codebase`, `audit_coverage`, `execute_tests`. Start with `npm run mcp:server`.
+Exposes individual agents as tools for Claude Code integration (stdio transport). Start with `npm run mcp:server`.
+
+**Registration** — add to `~/.claude/settings.json` (global) or `.claude/settings.json` (project):
+```json
+{
+  "mcpServers": {
+    "qa-pipeline": {
+      "command": "npx",
+      "args": ["ts-node", "mcp/server.ts"],
+      "cwd": "/absolute/path/to/tg-automation-pipeline"
+    }
+  }
+}
+```
+
+**Available tools** (AGT-02 and AGT-07 are excluded — they require JIRA credentials and Elasticsearch):
+
+| Tool | Agent | Description |
+|------|-------|-------------|
+| `analyse_codebase` | AGT-01 | Scan a repo and produce regression `Scenario[]` |
+| `design_test_cases` | AGT-03 | Convert `ValidatedScenario[]` into `TestCase[]` with UUIDs |
+| `generate_playwright_tests` | AGT-04 | Generate POM + fixture + spec files from `TestCase[]` |
+| `audit_coverage` | AGT-05 | Check `// TC-<uuid>` coverage in existing spec files |
+| `execute_tests` | AGT-06 | Run Playwright tests and return full execution report (auto-heal disabled) |
+
+**Tool input parameters:**
+
+`analyse_codebase`
+- `repoPath` (string, required) — absolute path to the repository to scan
+- `testType` (`"ui" | "api" | "both"`, optional, default `"both"`)
+
+`design_test_cases`
+- `scenarios` (array, required) — `ValidatedScenario[]` from AGT-01/AGT-02
+
+`generate_playwright_tests`
+- `cases` (array, required) — `TestCase[]`; each needs `id`, `title`, `module`, `testType`, `caseScope`, `priority`, `steps[]`, `expectedResult`
+- `baseUrl` (string, optional, default `$BASE_URL` or `http://localhost:3000`) — live app URL for selector inspection
+- `outputDir` (string, optional, default `"playwright-tests"`) — output directory
+- `remediationMode` (boolean, optional, default `false`) — if `true`, append gap tests only; never overwrite existing specs
+
+`audit_coverage`
+- `cases` (array, required) — `TestCase[]` to check coverage for
+- `specDir` (string, optional, default `"playwright-tests/specs"`)
+- `minP0Coverage` (number, optional, default `80`) — minimum P0 coverage 0–100
+- `minP1Coverage` (number, optional, default `80`) — minimum P1 coverage 0–100
+
+`execute_tests`
+- `specDir` (string, optional, default `"playwright-tests/specs"`)
+- `baseUrl` (string, optional, default `$BASE_URL` or `http://localhost:3000`)
+- `testType` (`"ui" | "api" | "both"`, optional, default `"both"`)
+- `headless` (boolean, optional, default `true`)
 
 ### Shared types (`shared/types.ts`)
 
@@ -161,8 +211,8 @@ Important guardrail env vars (all have defaults):
 - `MIN_P0_COVERAGE=80`, `MIN_P1_COVERAGE=80` — AGT-05 blocks if below
 - `SLA_PASS_RATE=1` in CI (100%); set `0.95` locally for a 95% threshold — AGT-06 blocks if below
 - `MAX_CASES_PER_SPEC=20`, `MAX_REGRESSION_SCENARIOS_PER_CHUNK=20` — keeps LLM output within `max_tokens`
-- `MAX_TEST_CASES=500`, `MAX_REGRESSION_CASES=50`, `MAX_NEW_FEATURE_CASES=50`
-- `MAX_CASES_PER_SCENARIO=10`, `MAX_JIRA_SCENARIOS=15`
+- `MAX_TEST_CASES=500`, `MAX_REGRESSION_CASES=50`, `MAX_NEW_FEATURE_CASES=10`
+- `MAX_CASES_PER_SCENARIO=10`, `MAX_JIRA_SCENARIOS=10`
 - `MAX_FILES_SCAN=1000` — codebase scan limit for AGT-01
 - `TEST_TYPE=both|ui|api` — override test type filter via env (also set by `--test-type` flag)
 - `ADD_REGRESSION=true` — allow new regression modules to be added to the baseline (default: false; use `--add-regression` flag or `npm run pipeline:add-regression`)
@@ -208,3 +258,8 @@ Important guardrail env vars (all have defaults):
 - **Browser strategy (AGT-06)**: AGT-06 generates a fresh `playwright.config.ts` per run (Chromium only, for both UI and API). The root `playwright.config.ts` is only used for local `npm test` runs and includes Firefox + WebKit for UI specs.
 - **`waitForResponse` anti-pattern in POMs**: `Promise.all([waitForResponse, fill/selectOption/click])` is unreliable in Firefox — React's debounce means the request may not fire within the action timeout. `postprocessPOM()` in AGT-04 automatically strips these and replaces with click+fill+loading-row wait (for search/clear) or action+loading-row wait (for filter dropdowns and pagination clicks).
 - **`getFirstVisibleEmployeeId()` vs `getFirstEmployeeId()`**: After calling `searchEmployees(query)` and filtering the visible list, always use `getFirstVisibleEmployeeId()` to read the first visible row's ID from the DOM — NOT `getFirstEmployeeId()` which queries the unfiltered API and returns the wrong employee.
+- **`pending-promotion.json` reuse — prevents spec accumulation**: On the first CI push for a branch, AGT-03 generates new-feature cases via LLM and saves them to `pending-promotion.json`. On every subsequent push, the orchestrator detects that `pending-promotion.json` already exists (committed back to the branch by the CI bot) and **reuses those exact cases** instead of calling the LLM again. This prevents LLM title drift from producing new UUIDs each run, which would otherwise cause AGT-04 to append ~10 duplicate tests per CI push. The reuse is skipped only when `--add-regression` is passed alongside new regression modules, in which case `pending-promotion.json` is reused for new-feature cases and the LLM is called only for the new regression modules.
+- **UUID format — must match between baseline and spec files**: `deterministicId()` produces UUID-shaped strings (e.g. `4fdded8b-0d33-5f27-c59a-bffe9d992106`). If spec files contain short-hash IDs from an older generation format (e.g. `f1b75045`), AGT-05 will always see 0% coverage, triggering perpetual AGT-04 gap remediation and unbounded spec growth. Fix: delete all generated `playwright-tests/specs/`, `pages/`, and `fixtures/` directories and let the next CI run regenerate them cleanly from the current baseline.
+- **AGT-02 app vs infra file partitioning**: `partitionChangedFiles()` splits `PR_CHANGED_FILES` using `REPO_PATH` as prefix into `appFiles` (under the target app path) and `infraFiles` (pipeline, CI, agents, etc.). Only `appFiles` are passed to the alignment prompt and scenario generation — `infraFiles` are shown separately with a note that they are pipeline-owned and must NOT be treated as story scope creep.
+- **Auto-heal `toBeVisible` classification**: `expect.*toBeVisible.*failed` and `element(s) not found` patterns are classified as `app` errors (not `script` errors) — the element is genuinely absent because the feature is not yet implemented. The healer skips these; they surface as real test failures.
+- **Healer no-new-tests rule**: The auto-healer system prompt contains an explicit rule: "NEVER add new `test()` blocks — the output file must contain exactly the same number of tests as the input." This prevents the LLM from expanding spec coverage during a heal pass.

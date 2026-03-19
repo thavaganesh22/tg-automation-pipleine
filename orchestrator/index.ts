@@ -216,75 +216,96 @@ async function main(): Promise<void> {
         );
       }
 
-      const scenariosToProcess = [...allowedRegressionScenarios, ...newFeatureScenarios];
-      let freshCases: TestCase[] = [];
+      // ── New-feature cases: reuse cached pending-promotion if it exists ───
+      // On the first CI push for a branch, pending-promotion.json does not exist
+      // so we generate new-feature cases via LLM and save them.
+      // On every SUBSEQUENT push on the same branch, pending-promotion.json already
+      // exists (committed back to the branch by the CI bot after the first run).
+      // Reusing it prevents LLM title drift from producing new UUIDs each run,
+      // which would cause AGT-04 to append ~10 duplicate tests on every CI push.
+      const pendingExists = await state.exists("pending-promotion");
+      let stableNewFeature: TestCase[];
+      let newModuleRegressionCases: TestCase[] = [];
 
-      if (scenariosToProcess.length > 0) {
+      // Also fall through to LLM path if --add-regression was passed with new modules —
+      // in that case we need to generate regression cases even if pending-promotion exists.
+      if (pendingExists && newFeatureScenarios.length > 0 && allowedRegressionScenarios.length === 0) {
+        stableNewFeature = await state.load<TestCase[]>("pending-promotion");
         log.info(
-          `Generating test cases for ${allowedRegressionScenarios.length} new regression module(s) + ` +
-            `${newFeatureScenarios.length} new-feature scenario(s)`
+          `Reusing ${stableNewFeature.length} cached new-feature case(s) from pending-promotion.json ` +
+          `— skipping LLM regeneration to prevent spec accumulation on repeated CI pushes`
         );
-        freshCases = await runTestCaseDesigner(scenariosToProcess);
       } else {
-        log.info("No new modules or new-feature scenarios — using baseline as-is");
-      }
+        // First push on this branch, OR --add-regression with new modules — generate via LLM.
+        // New-feature scenarios are included only when pending-promotion.json doesn't exist yet;
+        // if it does exist (--add-regression edge case), we'll reuse it after the LLM call.
+        let freshCases: TestCase[] = [];
+        const scenariosForLLM = pendingExists
+          ? allowedRegressionScenarios                         // regression new-modules only
+          : [...allowedRegressionScenarios, ...newFeatureScenarios];
+        const scenariosToProcess = scenariosForLLM;
+        if (scenariosToProcess.length > 0) {
+          log.info(
+            `Generating test cases for ${allowedRegressionScenarios.length} new regression module(s) + ` +
+              `${newFeatureScenarios.length} new-feature scenario(s)`
+          );
+          freshCases = await runTestCaseDesigner(scenariosToProcess);
+        } else {
+          log.info("No new modules or new-feature scenarios — using baseline as-is");
+        }
 
-      // Additive baseline update: append new regression cases only when --add-regression was passed
-      const freshRegression = freshCases.filter((tc) => tc.caseScope === "regression");
-      if (freshRegression.length > 0) {
-        const updatedBaseline = [...baselineCases, ...freshRegression];
-        await state.save("regression-baseline", updatedBaseline);
-        log.info(`Baseline updated: +${freshRegression.length} new regression case(s) (total: ${updatedBaseline.length})`);
-      }
+        const freshNewFeature = freshCases.filter((tc) => tc.caseScope === "new-feature");
 
-      const freshNewFeature = freshCases.filter((tc) => tc.caseScope === "new-feature");
-
-      // Stabilise new-feature UUIDs across runs so AGT-05 can match them back to
-      // spec files. Two sources: (1) previous test-cases.json by exact title,
-      // (2) spec files themselves by TC-UUID comment + normalised title — catches
-      // cases where the LLM generates slightly different titles between runs.
-      const prevTestCases = (await state.exists("test-cases"))
-        ? await state.load<TestCase[]>("test-cases")
-        : [];
-      const prevNFTitleToId = new Map<string, string>(
-        prevTestCases
-          .filter((tc) => tc.caseScope === "new-feature")
-          .map((tc) => [tc.title, tc.id])
-      );
-      // Also build a normalised-title → UUID map from spec files so that minor
-      // title drift between LLM runs doesn't break UUID stability.
-      const specNormTitleToId = await buildSpecTitleUUIDMap("playwright-tests/specs");
-
-      const normTitle = (t: string) =>
-        t.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
-
-      const stableNewFeature = freshNewFeature.map((tc) => ({
-        ...tc,
-        id:
-          prevNFTitleToId.get(tc.title) ??
-          specNormTitleToId.get(normTitle(tc.title)) ??
-          tc.id,
-      }));
-      const reusedCount = stableNewFeature.filter((tc) => tc.id !== freshNewFeature.find((f) => f.title === tc.title)?.id).length;
-      if (reusedCount > 0) {
-        log.info(
-          `UUID stabilised: ${reusedCount}/${stableNewFeature.length} new-feature case(s) reused IDs from previous run`
+        // Stabilise new-feature UUIDs across runs so AGT-05 can match them back to
+        // spec files. Two sources: (1) previous test-cases.json by exact title,
+        // (2) spec files themselves by TC-UUID comment + normalised title — catches
+        // cases where the LLM generates slightly different titles between runs.
+        const prevTestCases = (await state.exists("test-cases"))
+          ? await state.load<TestCase[]>("test-cases")
+          : [];
+        const prevNFTitleToId = new Map<string, string>(
+          prevTestCases
+            .filter((tc) => tc.caseScope === "new-feature")
+            .map((tc) => [tc.title, tc.id])
         );
+        const specNormTitleToId = await buildSpecTitleUUIDMap("playwright-tests/specs");
+
+        const normTitle = (t: string) =>
+          t.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+
+        stableNewFeature = freshNewFeature.map((tc) => ({
+          ...tc,
+          id:
+            prevNFTitleToId.get(tc.title) ??
+            specNormTitleToId.get(normTitle(tc.title)) ??
+            tc.id,
+        }));
+        const reusedCount = stableNewFeature.filter((tc) => tc.id !== freshNewFeature.find((f) => f.title === tc.title)?.id).length;
+        if (reusedCount > 0) {
+          log.info(
+            `UUID stabilised: ${reusedCount}/${stableNewFeature.length} new-feature case(s) reused IDs from previous run`
+          );
+        }
+
+        // Stage new-feature cases for promotion on PR merge
+        if (stableNewFeature.length > 0) {
+          await state.save("pending-promotion", stableNewFeature);
+          log.info(
+            `Staged ${stableNewFeature.length} new-feature case(s) in pending-promotion.json ` +
+            `— will be promoted to regression baseline when this PR merges`
+          );
+        }
+
+        // Handle regression cases from new modules (--add-regression path)
+        newModuleRegressionCases = freshCases.filter((tc) => tc.caseScope === "regression");
+        if (newModuleRegressionCases.length > 0) {
+          const updatedBaseline = [...baselineCases, ...newModuleRegressionCases];
+          await state.save("regression-baseline", updatedBaseline);
+          log.info(`Baseline updated: +${newModuleRegressionCases.length} new regression case(s) (total: ${updatedBaseline.length})`);
+        }
       }
 
-      // ── Stage new-feature cases for promotion on PR merge ────────────────
-      // New-feature cases are NOT promoted here — promotion happens when the PR
-      // is merged to main (push trigger in CI). Save them to pending-promotion.json
-      // so the post-merge job can read them and add to the regression baseline.
-      if (stableNewFeature.length > 0) {
-        await state.save("pending-promotion", stableNewFeature);
-        log.info(
-          `Staged ${stableNewFeature.length} new-feature case(s) in pending-promotion.json ` +
-          `— will be promoted to regression baseline when this PR merges`
-        );
-      }
-
-      testCases = [...baselineCases, ...freshRegression, ...stableNewFeature];
+      testCases = [...baselineCases, ...newModuleRegressionCases, ...stableNewFeature];
     } else {
       // ── First run: generate all test cases and save regression baseline ──
       log.info("No regression baseline found — running full test case design");
